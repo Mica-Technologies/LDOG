@@ -9,6 +9,7 @@
     "MixinGuiOptions",
     "MixinGuiVideoSettings",
     "MixinBlockModelRenderer",
+    "MixinBlockRendererDispatcher",
     "MixinRenderGlobal",
     "MixinTileEntityRendererDispatcher",
     "MixinParticleManager"

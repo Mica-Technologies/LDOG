@@ -6,8 +6,9 @@ import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.block.model.IBakedModel;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.util.EnumFacing;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.IBlockAccess;
 import net.minecraftforge.client.model.BakedModelWrapper;
-import net.minecraftforge.common.property.IExtendedBlockState;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -15,11 +16,9 @@ import java.util.List;
 
 /**
  * Wraps a baked block model to provide connected textures.
- * Intercepts getQuads() calls and swaps texture sprites based on
- * neighbor block connections.
- *
- * This model wrapper is applied at ModelBakeEvent time by CTMRegistry
- * for blocks that have CTM definitions.
+ * Reads neighbor data from CTMRenderContext (set via ThreadLocal
+ * by MixinBlockRendererDispatcher during chunk rebuilds) and swaps
+ * texture sprites based on connection patterns.
  */
 public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
 
@@ -40,26 +39,55 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
                                      long rand) {
         List<BakedQuad> originalQuads = originalModel.getQuads(state, side, rand);
 
-        // If no state info (item rendering) or no side, return original
         if (state == null || side == null || tileSprites.isEmpty()) {
             return originalQuads;
         }
 
-        // For now, return original quads -- the actual texture swapping
-        // requires IBlockAccess (world) which isn't available in getQuads().
-        // Full CTM implementation needs either:
-        // 1. IExtendedBlockState with neighbor data baked in
-        // 2. A custom chunk rebuild hook that passes world context
-        //
-        // This wrapper is the framework; the actual neighbor-based texture
-        // swapping will be completed when we add the chunk rebuild hook.
-        return originalQuads;
+        // Get world context from ThreadLocal (set by MixinBlockRendererDispatcher)
+        IBlockAccess world = CTMRenderContext.getWorld();
+        BlockPos pos = CTMRenderContext.getPos();
+
+        if (world == null || pos == null) {
+            return originalQuads;
+        }
+
+        // Calculate the tile index based on neighbor connections
+        int tileIndex = calculateTileIndex(world, pos, side);
+        if (tileIndex < 0 || tileIndex >= tileSprites.size()) {
+            return originalQuads;
+        }
+
+        TextureAtlasSprite tileSprite = tileSprites.get(tileIndex);
+        if (tileSprite == null) {
+            return originalQuads;
+        }
+
+        // Retexture all quads on this face with the connected texture
+        List<BakedQuad> result = new ArrayList<>(originalQuads.size());
+        for (BakedQuad quad : originalQuads) {
+            result.add(retextureQuad(quad, tileSprite));
+        }
+        return result;
+    }
+
+    private int calculateTileIndex(IBlockAccess world, BlockPos pos, EnumFacing side) {
+        switch (properties.getMethod()) {
+            case CTM:
+                return CTMLogic.getFullCTMIndex(world, pos, side, targetBlock);
+            case HORIZONTAL:
+                return CTMLogic.getHorizontalCTMIndex(world, pos, side, targetBlock);
+            case VERTICAL:
+                return CTMLogic.getVerticalCTMIndex(world, pos, targetBlock);
+            case FIXED:
+                return 0;
+            default:
+                return 0;
+        }
     }
 
     /**
      * Retexture a quad with a different sprite.
-     * Copies vertex data and remaps UV coordinates from the original sprite
-     * to the new sprite.
+     * Copies vertex data and remaps UV coordinates.
      */
     public static BakedQuad retextureQuad(BakedQuad original, TextureAtlasSprite newSprite) {
         TextureAtlasSprite oldSprite = original.getSprite();
@@ -67,23 +95,18 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
 
         int[] vertexData = original.getVertexData().clone();
 
-        // Each vertex has 7 ints: x, y, z, color, u, v, lightmap
-        // UV is at indices 4 and 5 within each vertex
         for (int v = 0; v < 4; v++) {
             int offset = v * 7;
             float u = Float.intBitsToFloat(vertexData[offset + 4]);
             float vCoord = Float.intBitsToFloat(vertexData[offset + 5]);
 
-            // Unmap from old sprite's UV space to 0-16 space
             float unmappedU = oldSprite.getUnInterpolatedU(u);
             float unmappedV = oldSprite.getUnInterpolatedV(vCoord);
 
-            // Remap to new sprite's UV space
-            float newU = newSprite.getInterpolatedU(unmappedU);
-            float newV = newSprite.getInterpolatedV(unmappedV);
-
-            vertexData[offset + 4] = Float.floatToRawIntBits(newU);
-            vertexData[offset + 5] = Float.floatToRawIntBits(newV);
+            vertexData[offset + 4] = Float.floatToRawIntBits(
+                newSprite.getInterpolatedU(unmappedU));
+            vertexData[offset + 5] = Float.floatToRawIntBits(
+                newSprite.getInterpolatedV(unmappedV));
         }
 
         return new BakedQuad(vertexData, original.getTintIndex(), original.getFace(),
