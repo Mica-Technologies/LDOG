@@ -8,6 +8,7 @@
   "client": [
     "MixinGuiOptions",
     "MixinGuiVideoSettings",
+    "MixinBlockModelRenderer",
     "MixinRenderGlobal",
     "MixinTileEntityRendererDispatcher",
     "MixinParticleManager"

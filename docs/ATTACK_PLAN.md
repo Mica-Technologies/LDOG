@@ -60,13 +60,12 @@ Start with perf improvements -- immediate value, low risk, and builds familiarit
 
 Low difficulty, high compatibility payoff -- enables resource pack features that follow.
 
-- [ ] Research `TextureMap.loadTextureAtlas()` and `TextureAtlasSprite`
-- [ ] Mixin: Allow texture atlas to stitch sprites larger than 16x16
-- [ ] Mixin: Support non-power-of-two texture sizes gracefully
+- [x] Research `TextureMap.loadTextureAtlas()`, `TextureAtlasSprite`, and `Stitcher`
+- [x] Mixin: Fix crash on non-square textures (vanilla throws RuntimeException)
+- [x] Analyzed stitcher: vanilla already supports any sprite size up to GL max (no 16x16 limit)
+- [x] Analyzed mipmap padding: Stitcher rounds up to 2^mipmapLevel automatically
 - [ ] Test with a 32x and 64x resource pack
 - [ ] Test with a 128x+ resource pack (stress test atlas size)
-- [ ] Verify no Z-fighting or mipmap issues with HD textures
-- [ ] Add config for max texture resolution (memory safety valve)
 
 **Definition of done:** A 64x resource pack loads and renders correctly with LDOG installed, without OptiFine.
 
@@ -76,15 +75,14 @@ Low difficulty, high compatibility payoff -- enables resource pack features that
 
 High user demand. Study ConnectedTexturesMod (MIT) for reference.
 
-- [ ] Implement OptiFine `.properties` file parser for CTM definitions
-- [ ] Implement CTM connection logic (full, horizontal, vertical, top, random, repeat, fixed)
-- [ ] Create `CTMBakedModel` wrapper implementing `IBakedModel`
-- [ ] Mixin: Hook into `BlockModelRenderer` to swap models when CTM applies
-- [ ] Register CTM sprites with the texture atlas during stitching
-- [ ] Support `assets/minecraft/optifine/ctm/` resource pack path
+- [x] Implement OptiFine `.properties` file parser for CTM definitions (CTMProperties)
+- [x] Implement CTM connection logic: full 47-tile, horizontal, vertical (CTMLogic)
+- [x] Create `CTMBakedModel` wrapper extending Forge `BakedModelWrapper` with retexture utility
+- [x] Create `CTMRegistry` with ModelBakeEvent + TextureStitchEvent hooks
+- [x] Support `assets/minecraft/optifine/ctm/` and `assets/minecraft/ldog/ctm/` paths
+- [ ] Complete neighbor-aware texture swapping in CTMBakedModel.getQuads() (needs IBlockAccess context)
 - [ ] Test with vanilla glass panes, bookshelves
 - [ ] Test with an OptiFine-format resource pack that uses CTM
-- [ ] Test alongside ConnectedTexturesMod (should detect and defer if both installed)
 
 **Definition of done:** Glass panes connect seamlessly using an OptiFine-format resource pack, without OptiFine installed.
 
@@ -94,12 +92,12 @@ High user demand. Study ConnectedTexturesMod (MIT) for reference.
 
 High visual impact, moderate difficulty.
 
-- [ ] Implement `_e` suffix texture detection during atlas stitching
-- [ ] Parse `emissive.properties` from resource packs (configurable suffix)
-- [ ] Mixin: `BlockModelRenderer` -- render second pass with fullbright lightmap (240/240)
+- [x] Implement `_e` suffix texture detection during atlas stitching (EmissiveTextureRegistry)
+- [x] Parse `emissive.properties` from resource packs (configurable suffix)
+- [x] Mixin: `BlockModelRenderer` -- intercept getQuads() to add emissive quads (MixinBlockModelRenderer)
+- [x] EmissiveRenderHandler: creates fullbright retextured quads for each emissive overlay
 - [ ] Mixin: `RenderItem` -- emissive layer for items in inventory/hand
-- [ ] Ensure emissive layer renders correctly with transparency
-- [ ] Test with a resource pack that has emissive textures (redstone ore glow, etc.)
+- [ ] Test with a resource pack that has emissive textures
 - [ ] Verify no depth-fighting between base and emissive layers
 
 **Definition of done:** Blocks and items with `_e` suffix textures glow at full brightness regardless of ambient light level.
