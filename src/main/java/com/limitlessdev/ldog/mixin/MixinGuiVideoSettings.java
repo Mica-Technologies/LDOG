@@ -10,9 +10,9 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Adds an "LDOG..." button to the Video Settings screen,
- * placed next to the Done button at the bottom -- similar to
- * how OptiFine integrates its settings into Video Settings.
+ * Adds an "LDOG..." button to the Video Settings screen next to the
+ * Done button, similar to how OptiFine integrates its settings.
+ * Shrinks the Done button to make room.
  */
 @Mixin(GuiVideoSettings.class)
 public abstract class MixinGuiVideoSettings extends GuiScreen {
@@ -21,12 +21,20 @@ public abstract class MixinGuiVideoSettings extends GuiScreen {
 
     @Inject(method = "initGui", at = @At("RETURN"))
     private void ldog$addSettingsButton(CallbackInfo ci) {
-        // Place the LDOG button to the left of the Done button
-        // Done button is at: width/2 - 100, height - 27, width 200
-        // LDOG button goes to the left: width/2 - 155, height - 27, width 50
+        // Find the Done button (id 200) and shrink it to make room for LDOG
+        for (GuiButton button : this.buttonList) {
+            if (button.id == 200) {
+                // Move Done to the right column: width/2 + 5, width 150
+                button.x = this.width / 2 + 5;
+                button.setWidth(150);
+                break;
+            }
+        }
+
+        // Add LDOG button in the left column, same row as Done
         this.buttonList.add(new GuiButton(BTN_LDOG,
             this.width / 2 - 155, this.height - 27,
-            50, 20, "LDOG"));
+            150, 20, "LDOG..."));
     }
 
     @Inject(method = "actionPerformed", at = @At("HEAD"), cancellable = true)
