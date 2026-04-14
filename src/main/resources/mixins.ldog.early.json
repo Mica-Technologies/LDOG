@@ -6,11 +6,7 @@
   "compatibilityLevel": "JAVA_8",
   "mixins": [],
   "client": [
-    "MixinGuiOptions",
-    "MixinGuiVideoSettings",
-    "MixinRenderGlobal",
-    "MixinTileEntityRendererDispatcher",
-    "MixinParticleManager"
+    "MixinBlockFluidRenderer"
   ],
   "server": []
 }

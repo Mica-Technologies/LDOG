@@ -5,6 +5,7 @@ import com.limitlessdev.ldog.config.LDOGConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import net.minecraftforge.fml.common.gameevent.InputEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 import net.minecraftforge.fml.relauncher.Side;
 import org.lwjgl.opengl.Display;
@@ -12,6 +13,7 @@ import org.lwjgl.opengl.Display;
 /**
  * Reduces frame rate when the game window is unfocused or the player is AFK.
  * Replaces the standalone FPS Reducer mod.
+ * Uses Forge InputEvents for AFK tracking (no mixin needed).
  */
 @Mod.EventBusSubscriber(modid = Tags.MODID, value = Side.CLIENT)
 public class FpsReducerHandler {
@@ -20,13 +22,23 @@ public class FpsReducerHandler {
     private static boolean wasAfk = false;
 
     /**
-     * Called externally (e.g., from a Mixin on mouse/keyboard input) to reset the AFK timer.
+     * Called externally to reset the AFK timer.
      */
     public static void onUserInput() {
         lastInputTimeMs = System.currentTimeMillis();
         if (wasAfk) {
             wasAfk = false;
         }
+    }
+
+    @SubscribeEvent
+    public static void onKeyInput(InputEvent.KeyInputEvent event) {
+        onUserInput();
+    }
+
+    @SubscribeEvent
+    public static void onMouseInput(InputEvent.MouseInputEvent event) {
+        onUserInput();
     }
 
     /**
@@ -67,11 +79,9 @@ public class FpsReducerHandler {
 
         int targetFps = getTargetFpsLimit();
         if (targetFps > 0) {
-            // Limit FPS by sleeping the appropriate amount
             Minecraft mc = Minecraft.getMinecraft();
             int currentLimit = mc.gameSettings.limitFramerate;
             if (currentLimit == 0 || currentLimit > targetFps) {
-                // Use Display.sync for frame limiting when we want to throttle
                 Display.sync(targetFps);
             }
         }
