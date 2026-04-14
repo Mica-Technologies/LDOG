@@ -32,6 +32,10 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_AFK_FPS = 23;
     private static final int BTN_CLEAR_WATER = 30;
     private static final int BTN_WATER_OPACITY = 31;
+    private static final int BTN_WATER_TINT = 32;
+    private static final int BTN_WATER_RED = 33;
+    private static final int BTN_WATER_GREEN = 34;
+    private static final int BTN_WATER_BLUE = 35;
     private static final int BTN_CTM = 40;
     private static final int BTN_EMISSIVE = 41;
     private static final int BTN_DYNAMIC_LIGHTS = 42;
@@ -45,6 +49,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int[] AFK_TIMEOUT_VALUES = {0, 60, 120, 300, 600, 900, 1800, 3600};
     private static final int[] AFK_FPS_VALUES = {1, 2, 5, 10, 15, 30, 60};
     private static final double[] WATER_OPACITY_VALUES = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0};
+    private static final double[] TINT_VALUES = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0};
 
     public GuiLDOGSettings(GuiScreen parentScreen) {
         this.parentScreen = parentScreen;
@@ -93,6 +98,16 @@ public class GuiLDOGSettings extends GuiScreen {
                 toggleLabel("Clear Water", LDOGConfig.enableClearWater)),
             new GuiButton(BTN_WATER_OPACITY, 0, 0, w, h,
                 opacityLabel("Water Opacity", LDOGConfig.waterOpacity)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_WATER_TINT, 0, 0, w, h,
+                toggleLabel("Water Tint", LDOGConfig.enableWaterTint)),
+            new GuiButton(BTN_WATER_RED, 0, 0, w, h,
+                tintLabel("Red", LDOGConfig.waterTintRed, "\u00a7c")));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_WATER_GREEN, 0, 0, w, h,
+                tintLabel("Green", LDOGConfig.waterTintGreen, "\u00a7a")),
+            new GuiButton(BTN_WATER_BLUE, 0, 0, w, h,
+                tintLabel("Blue", LDOGConfig.waterTintBlue, "\u00a79")));
 
         // -- Features --
         String featureNote = OptiFineCompat.isOptiFineLoaded()
@@ -208,6 +223,22 @@ public class GuiLDOGSettings extends GuiScreen {
                 LDOGConfig.waterOpacity = cycleValue(WATER_OPACITY_VALUES, LDOGConfig.waterOpacity);
                 button.displayString = opacityLabel("Water Opacity", LDOGConfig.waterOpacity);
                 break;
+            case BTN_WATER_TINT:
+                LDOGConfig.enableWaterTint = !LDOGConfig.enableWaterTint;
+                button.displayString = toggleLabel("Water Tint", LDOGConfig.enableWaterTint);
+                break;
+            case BTN_WATER_RED:
+                LDOGConfig.waterTintRed = cycleValue(TINT_VALUES, LDOGConfig.waterTintRed);
+                button.displayString = tintLabel("Red", LDOGConfig.waterTintRed, "\u00a7c");
+                break;
+            case BTN_WATER_GREEN:
+                LDOGConfig.waterTintGreen = cycleValue(TINT_VALUES, LDOGConfig.waterTintGreen);
+                button.displayString = tintLabel("Green", LDOGConfig.waterTintGreen, "\u00a7a");
+                break;
+            case BTN_WATER_BLUE:
+                LDOGConfig.waterTintBlue = cycleValue(TINT_VALUES, LDOGConfig.waterTintBlue);
+                button.displayString = tintLabel("Blue", LDOGConfig.waterTintBlue, "\u00a79");
+                break;
             case BTN_CTM:
                 LDOGConfig.enableConnectedTextures = !LDOGConfig.enableConnectedTextures;
                 button.displayString = featureLabel("Connected Textures", LDOGConfig.enableConnectedTextures, OptiFineCompat.shouldHandleCTM());
@@ -270,6 +301,10 @@ public class GuiLDOGSettings extends GuiScreen {
         if (seconds == 0) return "AFK Timeout: \u00a7cDisabled";
         if (seconds < 60) return "AFK Timeout: \u00a7a" + seconds + "s";
         return "AFK Timeout: \u00a7a" + (seconds / 60) + "m";
+    }
+
+    static String tintLabel(String channel, double value, String colorCode) {
+        return channel + ": " + colorCode + String.format("%.1f", value);
     }
 
     static String featureLabel(String name, boolean enabled, boolean ldogHandles) {

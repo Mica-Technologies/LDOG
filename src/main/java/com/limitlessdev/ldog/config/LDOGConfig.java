@@ -90,6 +90,24 @@ public class LDOGConfig {
     @Config.RangeDouble(min = 0.0, max = 1.0)
     public static double waterOpacity = 0.4;
 
+    @Config.Comment({
+        "Enable custom water color tinting.",
+        "When enabled, the RGB values below are multiplied with the biome water color."
+    })
+    public static boolean enableWaterTint = false;
+
+    @Config.Comment("Water red channel multiplier. 1.0 = unchanged, lower = less red.")
+    @Config.RangeDouble(min = 0.0, max = 2.0)
+    public static double waterTintRed = 0.7;
+
+    @Config.Comment("Water green channel multiplier. 1.0 = unchanged, higher = more green.")
+    @Config.RangeDouble(min = 0.0, max = 2.0)
+    public static double waterTintGreen = 0.85;
+
+    @Config.Comment("Water blue channel multiplier. 1.0 = unchanged, lower = less saturated blue.")
+    @Config.RangeDouble(min = 0.0, max = 2.0)
+    public static double waterTintBlue = 0.85;
+
     @Mod.EventBusSubscriber(modid = Tags.MODID)
     private static class EventHandler {
 

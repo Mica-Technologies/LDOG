@@ -14,16 +14,15 @@ import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Makes water surface semi-transparent by modifying the alpha value
- * passed to BufferBuilder.color() during water quad rendering.
+ * Modifies water rendering:
+ * - Adjustable alpha (clear water / transparency)
+ * - Color tinting (RGB multipliers for realistic water colors)
  *
- * Vanilla hardcodes alpha to 1.0F for all fluid quads. We intercept
- * the color() calls and reduce alpha for water (not lava).
+ * Only affects water, not lava. All modifications are gated by config.
  */
 @Mixin(BlockFluidRenderer.class)
 public abstract class MixinBlockFluidRenderer {
 
-    // Track whether the current renderFluid call is for water (not lava)
     private boolean ldog$isWater = false;
 
     @Inject(method = "renderFluid", at = @At("HEAD"))
@@ -33,11 +32,51 @@ public abstract class MixinBlockFluidRenderer {
         ldog$isWater = blockStateIn.getMaterial() == Material.WATER;
     }
 
-    /**
-     * Modify the alpha argument (4th float, index 3) of every
-     * bufferBuilder.color(float, float, float, float) call in renderFluid.
-     * Water quads get reduced alpha; lava stays at 1.0.
-     */
+    @ModifyArg(
+        method = "renderFluid",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/client/renderer/BufferBuilder;color(FFFF)Lnet/minecraft/client/renderer/BufferBuilder;"
+        ),
+        index = 0
+    )
+    private float ldog$modifyWaterRed(float red) {
+        if (ldog$isWater && LDOGConfig.enableWaterTint) {
+            return Math.min(red * (float) LDOGConfig.waterTintRed, 1.0F);
+        }
+        return red;
+    }
+
+    @ModifyArg(
+        method = "renderFluid",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/client/renderer/BufferBuilder;color(FFFF)Lnet/minecraft/client/renderer/BufferBuilder;"
+        ),
+        index = 1
+    )
+    private float ldog$modifyWaterGreen(float green) {
+        if (ldog$isWater && LDOGConfig.enableWaterTint) {
+            return Math.min(green * (float) LDOGConfig.waterTintGreen, 1.0F);
+        }
+        return green;
+    }
+
+    @ModifyArg(
+        method = "renderFluid",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/client/renderer/BufferBuilder;color(FFFF)Lnet/minecraft/client/renderer/BufferBuilder;"
+        ),
+        index = 2
+    )
+    private float ldog$modifyWaterBlue(float blue) {
+        if (ldog$isWater && LDOGConfig.enableWaterTint) {
+            return Math.min(blue * (float) LDOGConfig.waterTintBlue, 1.0F);
+        }
+        return blue;
+    }
+
     @ModifyArg(
         method = "renderFluid",
         at = @At(
@@ -47,7 +86,7 @@ public abstract class MixinBlockFluidRenderer {
         index = 3
     )
     private float ldog$modifyWaterAlpha(float alpha) {
-        if (LDOGConfig.enableClearWater && ldog$isWater) {
+        if (ldog$isWater && LDOGConfig.enableClearWater) {
             return (float) LDOGConfig.waterOpacity;
         }
         return alpha;
