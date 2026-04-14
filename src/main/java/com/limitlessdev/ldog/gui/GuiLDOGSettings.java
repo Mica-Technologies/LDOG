@@ -12,14 +12,15 @@ import net.minecraftforge.common.config.ConfigManager;
 import java.io.IOException;
 
 /**
- * LDOG settings GUI accessible from Minecraft's options screen.
- * Compact two-column layout with category separators.
+ * LDOG settings GUI with a scrollable list of settings.
+ * Uses GuiLDOGSettingsList (extends GuiListExtended) for the scrollable
+ * content area, with a fixed Done button at the bottom.
  */
 public class GuiLDOGSettings extends GuiScreen {
 
     private final GuiScreen parentScreen;
+    private GuiLDOGSettingsList settingsList;
 
-    // Button IDs
     private static final int BTN_DONE = 200;
     private static final int BTN_RENDER_OPTS = 10;
     private static final int BTN_ENTITY_DIST = 11;
@@ -45,9 +46,6 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int[] AFK_FPS_VALUES = {1, 2, 5, 10, 15, 30, 60};
     private static final double[] WATER_OPACITY_VALUES = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0};
 
-    // Y positions for section headers (computed in initGui)
-    private int perfHeaderY, fpsHeaderY, visualHeaderY, featureHeaderY;
-
     public GuiLDOGSettings(GuiScreen parentScreen) {
         this.parentScreen = parentScreen;
     }
@@ -56,109 +54,110 @@ public class GuiLDOGSettings extends GuiScreen {
     public void initGui() {
         this.buttonList.clear();
 
-        int left = this.width / 2 - 155;
-        int right = this.width / 2 + 5;
         int w = 150;
         int h = 20;
-        int row = 22; // tight row spacing
-        int gap = 12; // space for section separator
 
-        // Start below title
-        int y = 30;
+        // Create scrollable list (area between title and Done button)
+        settingsList = new GuiLDOGSettingsList(this.mc, this.width, this.height, 28, this.height - 32);
 
         // -- Performance --
-        perfHeaderY = y;
-        y += gap;
-        addButton(new GuiButton(BTN_RENDER_OPTS, left, y, w, h,
-            toggleLabel("Render Opts", LDOGConfig.enableRenderOptimizations)));
-        addButton(new GuiButton(BTN_PARTICLE_CULL, right, y, w, h,
-            toggleLabel("Particle Culling", LDOGConfig.enableParticleCulling)));
-        y += row;
-        addButton(new GuiButton(BTN_ENTITY_DIST, left, y, w, h,
-            distLabel("Entity Dist", LDOGConfig.entityRenderDistance)));
-        addButton(new GuiButton(BTN_TE_DIST, right, y, w, h,
-            distLabel("TileEntity Dist", LDOGConfig.tileEntityRenderDistance)));
-        y += row;
+        settingsList.addHeaderRow("Performance");
+        settingsList.addButtonRow(
+            new GuiButton(BTN_RENDER_OPTS, 0, 0, w, h,
+                toggleLabel("Render Opts", LDOGConfig.enableRenderOptimizations)),
+            new GuiButton(BTN_PARTICLE_CULL, 0, 0, w, h,
+                toggleLabel("Particle Culling", LDOGConfig.enableParticleCulling)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_ENTITY_DIST, 0, 0, w, h,
+                distLabel("Entity Dist", LDOGConfig.entityRenderDistance)),
+            new GuiButton(BTN_TE_DIST, 0, 0, w, h,
+                distLabel("TileEntity Dist", LDOGConfig.tileEntityRenderDistance)));
 
         // -- FPS Management --
-        fpsHeaderY = y;
-        y += gap;
-        addButton(new GuiButton(BTN_FPS_REDUCER, left, y, w, h,
-            toggleLabel("FPS Reducer", LDOGConfig.enableFpsReducer)));
-        addButton(new GuiButton(BTN_UNFOCUSED_FPS, right, y, w, h,
-            valLabel("Unfocused FPS", LDOGConfig.unfocusedFpsLimit)));
-        y += row;
-        addButton(new GuiButton(BTN_AFK_TIMEOUT, left, y, w, h,
-            afkTimeoutLabel(LDOGConfig.afkTimeoutSeconds)));
-        addButton(new GuiButton(BTN_AFK_FPS, right, y, w, h,
-            valLabel("AFK FPS", LDOGConfig.afkFpsLimit)));
-        y += row;
+        settingsList.addHeaderRow("FPS Management");
+        settingsList.addButtonRow(
+            new GuiButton(BTN_FPS_REDUCER, 0, 0, w, h,
+                toggleLabel("FPS Reducer", LDOGConfig.enableFpsReducer)),
+            new GuiButton(BTN_UNFOCUSED_FPS, 0, 0, w, h,
+                valLabel("Unfocused FPS", LDOGConfig.unfocusedFpsLimit)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_AFK_TIMEOUT, 0, 0, w, h,
+                afkTimeoutLabel(LDOGConfig.afkTimeoutSeconds)),
+            new GuiButton(BTN_AFK_FPS, 0, 0, w, h,
+                valLabel("AFK FPS", LDOGConfig.afkFpsLimit)));
 
         // -- Visual --
-        visualHeaderY = y;
-        y += gap;
-        addButton(new GuiButton(BTN_CLEAR_WATER, left, y, w, h,
-            toggleLabel("Clear Water", LDOGConfig.enableClearWater)));
-        addButton(new GuiButton(BTN_WATER_OPACITY, right, y, w, h,
-            opacityLabel("Water Opacity", LDOGConfig.waterOpacity)));
-        y += row;
+        settingsList.addHeaderRow("Visual");
+        settingsList.addButtonRow(
+            new GuiButton(BTN_CLEAR_WATER, 0, 0, w, h,
+                toggleLabel("Clear Water", LDOGConfig.enableClearWater)),
+            new GuiButton(BTN_WATER_OPACITY, 0, 0, w, h,
+                opacityLabel("Water Opacity", LDOGConfig.waterOpacity)));
 
-        // -- Features (future / OptiFine overlap) --
-        featureHeaderY = y;
-        y += gap;
-        addButton(makeFeatureButton(BTN_CTM, left, y, w, h,
-            "Connected Textures", LDOGConfig.enableConnectedTextures, OptiFineCompat.shouldHandleCTM()));
-        addButton(makeFeatureButton(BTN_EMISSIVE, right, y, w, h,
-            "Emissive Textures", LDOGConfig.enableEmissiveTextures, OptiFineCompat.shouldHandleEmissive()));
-        y += row;
-        addButton(makeFeatureButton(BTN_DYNAMIC_LIGHTS, left, y, w, h,
-            "Dynamic Lights", LDOGConfig.enableDynamicLights, OptiFineCompat.shouldHandleDynamicLights()));
-        addButton(makeFeatureButton(BTN_CUSTOM_SKY, right, y, w, h,
-            "Custom Sky", LDOGConfig.enableCustomSky, OptiFineCompat.shouldHandleCustomSky()));
-        y += row;
-        addButton(makeFeatureButton(BTN_HD_TEXTURES, left, y, w, h,
-            "HD Textures", LDOGConfig.enableHDTextures, OptiFineCompat.shouldHandleHDTextures()));
-        addButton(makeFeatureButton(BTN_SHADERS, right, y, w, h,
-            "Shaders", LDOGConfig.enableShaders, OptiFineCompat.shouldHandleShaders()));
+        // -- Features --
+        String featureNote = OptiFineCompat.isOptiFineLoaded()
+            ? "Features (OptiFine handles these)"
+            : "Features (coming soon)";
+        settingsList.addHeaderRow(featureNote);
+        settingsList.addButtonRow(
+            makeFeatureButton(BTN_CTM, w, h, "Connected Textures",
+                LDOGConfig.enableConnectedTextures, OptiFineCompat.shouldHandleCTM()),
+            makeFeatureButton(BTN_EMISSIVE, w, h, "Emissive Textures",
+                LDOGConfig.enableEmissiveTextures, OptiFineCompat.shouldHandleEmissive()));
+        settingsList.addButtonRow(
+            makeFeatureButton(BTN_DYNAMIC_LIGHTS, w, h, "Dynamic Lights",
+                LDOGConfig.enableDynamicLights, OptiFineCompat.shouldHandleDynamicLights()),
+            makeFeatureButton(BTN_CUSTOM_SKY, w, h, "Custom Sky",
+                LDOGConfig.enableCustomSky, OptiFineCompat.shouldHandleCustomSky()));
+        settingsList.addButtonRow(
+            makeFeatureButton(BTN_HD_TEXTURES, w, h, "HD Textures",
+                LDOGConfig.enableHDTextures, OptiFineCompat.shouldHandleHDTextures()),
+            makeFeatureButton(BTN_SHADERS, w, h, "Shaders",
+                LDOGConfig.enableShaders, OptiFineCompat.shouldHandleShaders()));
 
-        // -- Done (pinned to bottom) --
-        addButton(new GuiButton(BTN_DONE, this.width / 2 - 100, this.height - 27, 200, h,
+        // Done button (fixed at bottom, outside scrollable area)
+        this.buttonList.add(new GuiButton(BTN_DONE,
+            this.width / 2 - 100, this.height - 27, 200, h,
             I18n.format("gui.done")));
     }
 
     @Override
-    public void drawScreen(int mouseX, int mouseY, float partialTicks) {
-        this.drawDefaultBackground();
-
-        // Title
-        this.drawCenteredString(this.fontRenderer, "LDOG Settings", this.width / 2, 8, 0xFFFFFF);
-
-        // Section separator lines with labels
-        drawSectionHeader("Performance", perfHeaderY);
-        drawSectionHeader("FPS Management", fpsHeaderY);
-        drawSectionHeader("Visual", visualHeaderY);
-
-        String featureNote = OptiFineCompat.isOptiFineLoaded()
-            ? "Features \u00a77(OptiFine handles these)"
-            : "Features \u00a77(coming soon)";
-        drawSectionHeader(featureNote, featureHeaderY);
-
-        super.drawScreen(mouseX, mouseY, partialTicks);
+    public void handleMouseInput() throws IOException {
+        super.handleMouseInput();
+        settingsList.handleMouseInput();
     }
 
-    private void drawSectionHeader(String text, int y) {
-        int left = this.width / 2 - 155;
-        int right = this.width / 2 + 155;
-        int textWidth = this.fontRenderer.getStringWidth(text);
-        int textX = left + 2;
+    @Override
+    protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
+        super.mouseClicked(mouseX, mouseY, mouseButton);
+        settingsList.mouseClicked(mouseX, mouseY, mouseButton);
 
-        // Draw a thin horizontal line with the label
-        // Line before text
-        drawHorizontalLine(left, textX - 2, y + 4, 0x66FFFFFF);
-        // Label
-        this.fontRenderer.drawStringWithShadow("\u00a7e" + text, textX, y, 0xFFFFFF);
-        // Line after text
-        drawHorizontalLine(textX + textWidth + 2, right, y + 4, 0x66FFFFFF);
+        // Handle button clicks from the scrollable list
+        handleListButtonClick(mouseX, mouseY);
+    }
+
+    @Override
+    protected void mouseReleased(int mouseX, int mouseY, int state) {
+        super.mouseReleased(mouseX, mouseY, state);
+        settingsList.mouseReleased(mouseX, mouseY, state);
+    }
+
+    private void handleListButtonClick(int mouseX, int mouseY) {
+        // Find which button in the list was clicked and dispatch actionPerformed
+        for (int i = 0; i < settingsList.getSize(); i++) {
+            net.minecraft.client.gui.GuiListExtended.IGuiListEntry entry = settingsList.getListEntry(i);
+            if (entry instanceof GuiLDOGSettingsList.ButtonRowEntry) {
+                GuiLDOGSettingsList.ButtonRowEntry row = (GuiLDOGSettingsList.ButtonRowEntry) entry;
+                GuiButton left = row.getLeftButton();
+                GuiButton right = row.getRightButton();
+                if (left != null && left.mousePressed(this.mc, mouseX, mouseY)) {
+                    try { actionPerformed(left); } catch (IOException ignored) {}
+                }
+                if (right != null && right.mousePressed(this.mc, mouseX, mouseY)) {
+                    try { actionPerformed(right); } catch (IOException ignored) {}
+                }
+            }
+        }
     }
 
     @Override
@@ -236,6 +235,14 @@ public class GuiLDOGSettings extends GuiScreen {
         }
     }
 
+    @Override
+    public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+        this.drawDefaultBackground();
+        settingsList.drawScreen(mouseX, mouseY, partialTicks);
+        this.drawCenteredString(this.fontRenderer, "LDOG Settings", this.width / 2, 8, 0xFFFFFF);
+        super.drawScreen(mouseX, mouseY, partialTicks);
+    }
+
     private void saveAndClose() {
         ConfigManager.sync(Tags.MODID, Config.Type.INSTANCE);
         this.mc.displayGuiScreen(this.parentScreen);
@@ -270,9 +277,9 @@ public class GuiLDOGSettings extends GuiScreen {
         return name + ": " + (enabled ? "\u00a7aON" : "\u00a7cOFF");
     }
 
-    private static GuiButton makeFeatureButton(int id, int x, int y, int w, int h,
+    private static GuiButton makeFeatureButton(int id, int w, int h,
                                                 String name, boolean enabled, boolean ldogHandles) {
-        GuiButton btn = new GuiButton(id, x, y, w, h, featureLabel(name, enabled, ldogHandles));
+        GuiButton btn = new GuiButton(id, 0, 0, w, h, featureLabel(name, enabled, ldogHandles));
         if (!ldogHandles) {
             btn.enabled = false;
         }
