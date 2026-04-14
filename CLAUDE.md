@@ -97,3 +97,5 @@ See `docs/` for detailed project documentation:
 - `docs/ATTACK_PLAN.md` -- Phased development plan with checklists and resume prompt
 - `docs/FEASIBILITY.md` -- Feasibility analysis of replicating OptiFine features
 - `docs/ARCHITECTURE.md` -- Planned architecture for each feature module
+- `docs/PHASE1_RESEARCH.md` -- Detailed rendering optimization research with vanilla code analysis
+- `docs/MOD_CONSOLIDATION.md` -- Plan for absorbing/replacing other optimization mods from the alto modpack

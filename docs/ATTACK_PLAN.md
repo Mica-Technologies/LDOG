@@ -211,6 +211,49 @@ The big one. Only attempt after Phases 1-7 are solid.
 
 ---
 
+## Phase C1: Quick Mod Absorptions (During Phase 1)
+
+Trivial standalone mods that can be folded into LDOG immediately.
+
+### C1A: FPS Reducer
+- [ ] Detect window focus loss (LWJGL / `Minecraft.isGameFocused()`)
+- [ ] Track last input time for AFK detection
+- [ ] Reduce frame rate when unfocused/AFK (`Display.sync()` or sleep)
+- [ ] Config: `unfocusedFpsLimit` (default 5), `afkTimeoutSeconds` (default 300), `afkFpsLimit` (default 15)
+
+### C1B: Clear Water
+- [ ] Mixin: Override water color/alpha in water render path
+- [ ] Config: `enableClearWater` (default true), `waterTransparency` (0.0-1.0)
+
+**Definition of done:** FPS Reducer and Clear Water mods can be removed from the alto modpack.
+
+---
+
+## Phase C2: Memory Optimization Absorption (After Phase 2)
+
+Absorb Vintage Fix and Censored ASM (LoliASM) functionality.
+
+### C2A: From Vintage Fix
+- [ ] Research VintageFix source and license (GPL-3.0 via FoamFix)
+- [ ] Model deduplication: Content-hash and share identical BakedQuad/IBakedModel instances
+- [ ] BlockState compaction: Array-backed property storage instead of ImmutableMap
+- [ ] Dynamic model loading: Lazy-load models, evict unused
+- [ ] Property value interning
+- [ ] Measure heap before/after with full alto modpack
+
+### C2B: From Censored ASM (LoliASM)
+- [ ] Research LoliASM source and license
+- [ ] BakedQuad vertex data deduplication
+- [ ] Texture sprite pixel data deduplication
+- [ ] IBlockState lookup canonicalization (direct-mapped cache)
+- [ ] NBT tag name string interning
+- [ ] Class loading optimization (LaunchClassLoader improvements)
+- [ ] Verify no overlap with C2A features
+
+**Definition of done:** Vintage Fix and Censored ASM can be removed from the alto modpack. Heap usage is equal or better.
+
+---
+
 ## Cross-Cutting Concerns (All Phases)
 
 These apply throughout development, not to any single phase.
@@ -230,11 +273,14 @@ These apply throughout development, not to any single phase.
 | Version | Phase | What Users Get |
 |---|---|---|
 | `v0.0.1-alpha` | Phase 0 | Mod loads, nothing visible yet |
-| `v0.1.0-alpha` | Phase 1 | FPS improvements, worth installing on its own |
+| `v0.1.0-alpha` | Phase 1 + C1 | FPS improvements, FPS reducer, clear water (replaces 3 mods) |
 | `v0.2.0-alpha` | Phase 2 | HD resource pack support |
+| `v0.2.5-alpha` | Phase C2 | Memory optimizations (replaces Vintage Fix + Censored ASM) |
 | `v0.3.0-alpha` | Phase 3 | Connected textures |
 | `v0.4.0-alpha` | Phase 4 | Emissive textures |
 | `v0.5.0-alpha` | Phase 5 | Dynamic lights |
 | `v0.6.0-alpha` | Phase 6 | Full resource pack feature parity |
 | `v0.7.0-alpha` | Phase 7 | AA/AF options |
 | `v1.0.0-beta` | Phase 8 | Shader support -- OptiFine fully replaceable |
+
+At full maturity, LDOG replaces **5-7 separate mods** in the alto modpack.
