@@ -5,6 +5,13 @@
   "minVersion": "0.8",
   "compatibilityLevel": "JAVA_8",
   "mixins": [],
-  "client": [],
+  "client": [
+    "MixinGuiOptions",
+    "MixinMinecraft",
+    "MixinBlockLiquid",
+    "MixinRenderGlobal",
+    "MixinTileEntityRendererDispatcher",
+    "MixinParticleManager"
+  ],
   "server": []
 }
