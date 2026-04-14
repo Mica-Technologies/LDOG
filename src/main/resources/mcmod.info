@@ -1,0 +1,12 @@
+[{
+    "modid": "${modid}",
+    "name": "${modname}",
+    "description": "Limitless Development Optigame (LDOG) - A high-performance, open-source rendering enhancement and optimization mod for Minecraft 1.12.2 Forge. Aims to provide shader support, connected textures, emissive textures, dynamic lights, and rendering optimizations.",
+    "version": "${version}",
+    "mcversion": "${mcversion}",
+    "logoFile": "",
+    "url": "",
+    "authorList": ["Limitless Development"],
+    "credits": "",
+    "dependencies": []
+}]
