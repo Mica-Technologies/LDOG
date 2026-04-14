@@ -28,7 +28,7 @@ Get the mod compiling, launching, and testable before writing any features.
 - [x] Verify `./gradlew setupDecompWorkspace` succeeds
 - [x] Verify `./gradlew build` produces a valid jar
 - [x] Verify `./gradlew runClient` launches Minecraft with the mod loaded
-- [ ] Create initial git tag `v0.0.1-alpha` after first successful build
+- [x] Create initial git tag `v0.0.1-alpha` after first successful build
 
 **Definition of done:** The mod loads in-game, shows up in the mod list, config file generates, OptiFine detection works (logs the correct message based on presence/absence).
 

@@ -15,7 +15,6 @@ thumbs.db
 # Package Files #
 *.war
 *.ear
-*.txt
 
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
@@ -78,6 +77,11 @@ local.properties
 # Linux
 *~
 
-run/
+run/*
+!run/config/
+run/config/*
+!run/config/lwjgl3ify-early.json
 
 logs/
+.claude/settings.local.json
+.claude/worktrees/
