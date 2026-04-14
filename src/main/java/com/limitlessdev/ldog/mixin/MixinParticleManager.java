@@ -1,6 +1,7 @@
 package com.limitlessdev.ldog.mixin;
 
 import com.limitlessdev.ldog.config.LDOGConfig;
+import com.limitlessdev.ldog.render.LDOGStats;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.ParticleManager;
 import net.minecraft.client.renderer.BufferBuilder;
@@ -60,11 +61,13 @@ public abstract class MixinParticleManager {
                 // Skip particles that are behind the camera (negative dot product)
                 // Use a generous threshold to avoid popping at screen edges
                 if (dot < -2.0) {
+                    LDOGStats.particlesCulled++;
                     return;
                 }
             }
         }
 
+        LDOGStats.particlesRendered++;
         particle.renderParticle(buffer, entityIn, partialTicks,
             rotationX, rotationZ, rotationYZ, rotationXY, rotationXZ);
     }

@@ -1,6 +1,7 @@
 package com.limitlessdev.ldog.mixin;
 
 import com.limitlessdev.ldog.config.LDOGConfig;
+import com.limitlessdev.ldog.render.LDOGStats;
 import net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher;
 import net.minecraft.tileentity.TileEntity;
 import org.spongepowered.asm.mixin.Mixin;
@@ -37,6 +38,7 @@ public abstract class MixinTileEntityRendererDispatcher {
             double maxDist = LDOGConfig.tileEntityRenderDistance;
             double distSq = te.getDistanceSq(staticPlayerX, staticPlayerY, staticPlayerZ);
             if (distSq > maxDist * maxDist) {
+                LDOGStats.tileEntitiesCulled++;
                 ci.cancel();
             }
         }

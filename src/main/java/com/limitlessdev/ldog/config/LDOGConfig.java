@@ -64,6 +64,13 @@ public class LDOGConfig {
     @Config.Comment("Enable frustum culling for particles (skip rendering off-screen particles).")
     public static boolean enableParticleCulling = true;
 
+    @Config.Comment({
+        "Enable entity LOD (Level of Detail).",
+        "Distant entities render less frequently to save GPU work.",
+        "64-128 blocks: every other frame. 128+: every 4th frame."
+    })
+    public static boolean enableEntityLOD = true;
+
     // ---- Performance: FPS Management ----
 
     @Config.Comment("Enable FPS reduction when the game window is unfocused or player is AFK.")

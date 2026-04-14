@@ -26,6 +26,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_ENTITY_DIST = 11;
     private static final int BTN_TE_DIST = 12;
     private static final int BTN_PARTICLE_CULL = 13;
+    private static final int BTN_ENTITY_LOD = 14;
     private static final int BTN_FPS_REDUCER = 20;
     private static final int BTN_UNFOCUSED_FPS = 21;
     private static final int BTN_AFK_TIMEOUT = 22;
@@ -77,6 +78,10 @@ public class GuiLDOGSettings extends GuiScreen {
                 distLabel("Entity Dist", LDOGConfig.entityRenderDistance)),
             new GuiButton(BTN_TE_DIST, 0, 0, w, h,
                 distLabel("TileEntity Dist", LDOGConfig.tileEntityRenderDistance)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_ENTITY_LOD, 0, 0, w, h,
+                toggleLabel("Entity LOD", LDOGConfig.enableEntityLOD)),
+            null);
 
         // -- FPS Management --
         settingsList.addHeaderRow("FPS Management");
@@ -198,6 +203,10 @@ public class GuiLDOGSettings extends GuiScreen {
             case BTN_TE_DIST:
                 LDOGConfig.tileEntityRenderDistance = cycleValue(TE_DIST_VALUES, LDOGConfig.tileEntityRenderDistance);
                 button.displayString = distLabel("TileEntity Dist", LDOGConfig.tileEntityRenderDistance);
+                break;
+            case BTN_ENTITY_LOD:
+                LDOGConfig.enableEntityLOD = !LDOGConfig.enableEntityLOD;
+                button.displayString = toggleLabel("Entity LOD", LDOGConfig.enableEntityLOD);
                 break;
             case BTN_FPS_REDUCER:
                 LDOGConfig.enableFpsReducer = !LDOGConfig.enableFpsReducer;

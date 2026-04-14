@@ -1,25 +1,41 @@
 package com.limitlessdev.ldog.mixin;
 
 import com.limitlessdev.ldog.config.LDOGConfig;
-import net.minecraft.client.Minecraft;
+import com.limitlessdev.ldog.render.LDOGStats;
 import net.minecraft.client.renderer.RenderGlobal;
 import net.minecraft.client.renderer.culling.ICamera;
 import net.minecraft.entity.Entity;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Optimizes entity rendering by adding a configurable render distance check
- * before the vanilla shouldRender call. Entities beyond the configured distance
- * are skipped entirely, saving the cost of shouldRender + the actual render.
+ * Entity rendering optimizations:
+ * 1. Distance culling: skip entities beyond configurable distance
+ * 2. LOD: reduce render frequency for distant entities
+ * 3. Stats tracking for the debug overlay
  */
 @Mixin(RenderGlobal.class)
 public abstract class MixinRenderGlobal {
 
+    @Unique
+    private static long ldog$frameCounter = 0;
+
     /**
-     * Redirect the shouldRender call in renderEntities to add distance culling.
-     * If entityRenderDistance is configured (> 0), skip entities beyond that distance.
+     * Reset stats and increment frame counter at the start of each renderEntities call.
+     */
+    @Inject(method = "renderEntities", at = @At("HEAD"))
+    private void ldog$resetStats(Entity renderViewEntity, ICamera camera, float partialTicks,
+                                  CallbackInfo ci) {
+        LDOGStats.resetFrame();
+        ldog$frameCounter++;
+    }
+
+    /**
+     * Redirect shouldRender to add distance culling and LOD.
      */
     @Redirect(
         method = "renderEntities",
@@ -28,19 +44,47 @@ public abstract class MixinRenderGlobal {
             target = "Lnet/minecraft/client/renderer/entity/RenderManager;shouldRender(Lnet/minecraft/entity/Entity;Lnet/minecraft/client/renderer/culling/ICamera;DDD)Z"
         )
     )
-    private boolean ldog$entityDistanceCull(net.minecraft.client.renderer.entity.RenderManager renderManager,
-                                            Entity entity, ICamera camera,
-                                            double camX, double camY, double camZ) {
+    private boolean ldog$entityCullingAndLOD(net.minecraft.client.renderer.entity.RenderManager renderManager,
+                                              Entity entity, ICamera camera,
+                                              double camX, double camY, double camZ) {
+        double dx = entity.posX - camX;
+        double dy = entity.posY - camY;
+        double dz = entity.posZ - camZ;
+        double distSq = dx * dx + dy * dy + dz * dz;
+
+        // Distance culling
         if (LDOGConfig.entityRenderDistance > 0) {
-            double dx = entity.posX - camX;
-            double dy = entity.posY - camY;
-            double dz = entity.posZ - camZ;
-            double distSq = dx * dx + dy * dy + dz * dz;
             double maxDist = LDOGConfig.entityRenderDistance;
             if (distSq > maxDist * maxDist) {
+                LDOGStats.entitiesCulledByDistance++;
                 return false;
             }
         }
-        return renderManager.shouldRender(entity, camera, camX, camY, camZ);
+
+        // LOD: skip distant entity renders on some frames
+        if (LDOGConfig.enableEntityLOD && distSq > 64.0 * 64.0) {
+            // Hash entity ID + frame counter to get stable skip pattern per entity
+            // This prevents all distant entities from disappearing on the same frame
+            int hash = entity.getEntityId();
+            if (distSq > 128.0 * 128.0) {
+                // Very far (>128 blocks): render every 4th frame
+                if (((hash + ldog$frameCounter) & 3) != 0) {
+                    LDOGStats.entitiesSkippedByLOD++;
+                    return false;
+                }
+            } else {
+                // Far (64-128 blocks): render every other frame
+                if (((hash + ldog$frameCounter) & 1) != 0) {
+                    LDOGStats.entitiesSkippedByLOD++;
+                    return false;
+                }
+            }
+        }
+
+        boolean result = renderManager.shouldRender(entity, camera, camX, camY, camZ);
+        if (result) {
+            LDOGStats.entitiesRendered++;
+        }
+        return result;
     }
 }

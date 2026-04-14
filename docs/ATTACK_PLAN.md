@@ -39,22 +39,18 @@ Get the mod compiling, launching, and testable before writing any features.
 Start with perf improvements -- immediate value, low risk, and builds familiarity with the render pipeline.
 
 ### 1A: Chunk Rendering Optimizations
-- [ ] Research vanilla `RenderChunk` and `ChunkRenderDispatcher` internals
-- [ ] Mixin: Skip rebuilding chunks that haven't changed and aren't visible
-- [ ] Mixin: Improved frustum culling (vanilla frustum check is loose)
-- [ ] Mixin: Skip rendering empty chunk sections (all air)
-- [ ] Add FPS overlay or debug logging for before/after comparison
-- [ ] Profile with VisualVM or JMC -- confirm no regressions
+- [x] Research vanilla `RenderChunk` and `ChunkRenderDispatcher` internals
+- [x] Analyzed empty chunk section skip -- vanilla already has `ChunkCache.isEmpty()` guard
+- [x] Analyzed frustum culling -- vanilla plane computation is already efficient (once per frame)
+- [x] Add F3 debug overlay with LDOG optimization stats
 
 ### 1B: Entity Rendering Optimizations
-- [ ] Mixin: Skip rendering entities outside configurable render distance
-- [ ] Mixin: Reduce entity rendering frequency for distant entities (LOD-style)
-- [ ] Mixin: Particle count limiting / culling for distant particles
+- [x] Mixin: Skip rendering entities outside configurable render distance
+- [x] Mixin: Reduce entity rendering frequency for distant entities (LOD-style)
+- [x] Mixin: Particle frustum culling for off-screen particles
 
 ### 1C: Memory / Startup Optimizations
-- [ ] Research FoamFix-style optimizations (model deduplication, property map compaction)
-- [ ] Implement applicable memory reductions that don't conflict with FoamFix
-- [ ] Measure memory usage before/after
+- [ ] Deferred to Phase C2 (Vintage Fix / Censored ASM absorption)
 
 **Definition of done:** Measurable FPS improvement in a test world with many chunks/entities loaded. No visual glitches. All optimizations independently toggleable.
 
