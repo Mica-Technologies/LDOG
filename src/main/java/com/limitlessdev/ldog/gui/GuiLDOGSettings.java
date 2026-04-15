@@ -37,6 +37,20 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_WATER_RED = 33;
     private static final int BTN_WATER_GREEN = 34;
     private static final int BTN_WATER_BLUE = 35;
+    private static final int BTN_WATER_PRESET = 36;
+
+    // Water presets: {name, opacity, red, green, blue}
+    private static final Object[][] WATER_PRESETS = {
+        {"Clear",          0.2, 0.8, 0.9, 1.0},
+        {"Tropical",       0.3, 0.4, 0.9, 1.0},
+        {"Default",        0.4, 0.7, 0.85, 0.85},
+        {"Arctic",         0.3, 0.7, 0.8, 1.0},
+        {"Murky",          0.7, 0.7, 0.65, 0.5},
+        {"Swamp",          0.8, 0.4, 0.6, 0.3},
+        {"Muddy",          0.9, 0.8, 0.5, 0.3},
+        {"Vanilla",        1.0, 1.0, 1.0, 1.0},
+    };
+    private int currentPresetIndex = -1; // -1 = custom (no preset matched)
     private static final int BTN_CTM = 40;
     private static final int BTN_EMISSIVE = 41;
     private static final int BTN_DYNAMIC_LIGHTS = 42;
@@ -97,22 +111,27 @@ public class GuiLDOGSettings extends GuiScreen {
                 valLabel("AFK FPS", LDOGConfig.afkFpsLimit)));
 
         // -- Visual --
+        currentPresetIndex = detectCurrentPreset();
         settingsList.addHeaderRow("Visual");
         settingsList.addButtonRow(
             new GuiButton(BTN_CLEAR_WATER, 0, 0, w, h,
                 toggleLabel("Clear Water", LDOGConfig.enableClearWater)),
+            new GuiButton(BTN_WATER_PRESET, 0, 0, w, h,
+                presetLabel()));
+        settingsList.addButtonRow(
             new GuiButton(BTN_WATER_OPACITY, 0, 0, w, h,
-                opacityLabel("Water Opacity", LDOGConfig.waterOpacity)));
-        settingsList.addButtonRow(
+                opacityLabel("Water Opacity", LDOGConfig.waterOpacity)),
             new GuiButton(BTN_WATER_TINT, 0, 0, w, h,
-                toggleLabel("Water Tint", LDOGConfig.enableWaterTint)),
-            new GuiButton(BTN_WATER_RED, 0, 0, w, h,
-                tintLabel("Red", LDOGConfig.waterTintRed, "\u00a7c")));
+                toggleLabel("Water Tint", LDOGConfig.enableWaterTint)));
         settingsList.addButtonRow(
+            new GuiButton(BTN_WATER_RED, 0, 0, w, h,
+                tintLabel("Red", LDOGConfig.waterTintRed, "\u00a7c")),
             new GuiButton(BTN_WATER_GREEN, 0, 0, w, h,
-                tintLabel("Green", LDOGConfig.waterTintGreen, "\u00a7a")),
+                tintLabel("Green", LDOGConfig.waterTintGreen, "\u00a7a")));
+        settingsList.addButtonRow(
             new GuiButton(BTN_WATER_BLUE, 0, 0, w, h,
-                tintLabel("Blue", LDOGConfig.waterTintBlue, "\u00a79")));
+                tintLabel("Blue", LDOGConfig.waterTintBlue, "\u00a79")),
+            null);
 
         // -- Features --
         String featureNote = OptiFineCompat.isOptiFineLoaded()
@@ -231,22 +250,31 @@ public class GuiLDOGSettings extends GuiScreen {
             case BTN_WATER_OPACITY:
                 LDOGConfig.waterOpacity = cycleValue(WATER_OPACITY_VALUES, LDOGConfig.waterOpacity);
                 button.displayString = opacityLabel("Water Opacity", LDOGConfig.waterOpacity);
+                currentPresetIndex = -1;
                 break;
             case BTN_WATER_TINT:
                 LDOGConfig.enableWaterTint = !LDOGConfig.enableWaterTint;
                 button.displayString = toggleLabel("Water Tint", LDOGConfig.enableWaterTint);
+                currentPresetIndex = -1;
                 break;
             case BTN_WATER_RED:
                 LDOGConfig.waterTintRed = cycleValue(TINT_VALUES, LDOGConfig.waterTintRed);
                 button.displayString = tintLabel("Red", LDOGConfig.waterTintRed, "\u00a7c");
+                currentPresetIndex = -1;
                 break;
             case BTN_WATER_GREEN:
                 LDOGConfig.waterTintGreen = cycleValue(TINT_VALUES, LDOGConfig.waterTintGreen);
                 button.displayString = tintLabel("Green", LDOGConfig.waterTintGreen, "\u00a7a");
+                currentPresetIndex = -1;
                 break;
             case BTN_WATER_BLUE:
                 LDOGConfig.waterTintBlue = cycleValue(TINT_VALUES, LDOGConfig.waterTintBlue);
                 button.displayString = tintLabel("Blue", LDOGConfig.waterTintBlue, "\u00a79");
+                currentPresetIndex = -1; // manual change = custom
+                break;
+            case BTN_WATER_PRESET:
+                applyNextPreset();
+                refreshWaterButtons();
                 break;
             case BTN_CTM:
                 LDOGConfig.enableConnectedTextures = !LDOGConfig.enableConnectedTextures;
@@ -346,5 +374,71 @@ public class GuiLDOGSettings extends GuiScreen {
             }
         }
         return values[0];
+    }
+
+    // ---- Water preset helpers ----
+
+    private String presetLabel() {
+        if (currentPresetIndex < 0) return "Preset: \u00a77Custom";
+        return "Preset: \u00a7a" + WATER_PRESETS[currentPresetIndex][0];
+    }
+
+    private int detectCurrentPreset() {
+        for (int i = 0; i < WATER_PRESETS.length; i++) {
+            double opacity = (Double) WATER_PRESETS[i][1];
+            double red     = (Double) WATER_PRESETS[i][2];
+            double green   = (Double) WATER_PRESETS[i][3];
+            double blue    = (Double) WATER_PRESETS[i][4];
+            if (Math.abs(LDOGConfig.waterOpacity   - opacity) < 0.01 &&
+                Math.abs(LDOGConfig.waterTintRed   - red)    < 0.01 &&
+                Math.abs(LDOGConfig.waterTintGreen - green)  < 0.01 &&
+                Math.abs(LDOGConfig.waterTintBlue  - blue)   < 0.01) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private void applyNextPreset() {
+        currentPresetIndex = (currentPresetIndex + 1) % WATER_PRESETS.length;
+        Object[] preset = WATER_PRESETS[currentPresetIndex];
+        LDOGConfig.waterOpacity   = (Double) preset[1];
+        LDOGConfig.waterTintRed   = (Double) preset[2];
+        LDOGConfig.waterTintGreen = (Double) preset[3];
+        LDOGConfig.waterTintBlue  = (Double) preset[4];
+        // All presets except Vanilla enable clear water + tint
+        boolean isVanilla = "Vanilla".equals(preset[0]);
+        LDOGConfig.enableClearWater = !isVanilla;
+        LDOGConfig.enableWaterTint  = !isVanilla;
+    }
+
+    private void refreshWaterButtons() {
+        for (int i = 0; i < settingsList.getSize(); i++) {
+            net.minecraft.client.gui.GuiListExtended.IGuiListEntry entry = settingsList.getListEntry(i);
+            if (!(entry instanceof GuiLDOGSettingsList.ButtonRowEntry)) continue;
+            GuiLDOGSettingsList.ButtonRowEntry row = (GuiLDOGSettingsList.ButtonRowEntry) entry;
+            refreshButton(row.getLeftButton());
+            refreshButton(row.getRightButton());
+        }
+    }
+
+    private void refreshButton(GuiButton btn) {
+        if (btn == null) return;
+        switch (btn.id) {
+            case BTN_CLEAR_WATER:
+                btn.displayString = toggleLabel("Clear Water", LDOGConfig.enableClearWater); break;
+            case BTN_WATER_PRESET:
+                btn.displayString = presetLabel(); break;
+            case BTN_WATER_OPACITY:
+                btn.displayString = opacityLabel("Water Opacity", LDOGConfig.waterOpacity); break;
+            case BTN_WATER_TINT:
+                btn.displayString = toggleLabel("Water Tint", LDOGConfig.enableWaterTint); break;
+            case BTN_WATER_RED:
+                btn.displayString = tintLabel("Red", LDOGConfig.waterTintRed, "\u00a7c"); break;
+            case BTN_WATER_GREEN:
+                btn.displayString = tintLabel("Green", LDOGConfig.waterTintGreen, "\u00a7a"); break;
+            case BTN_WATER_BLUE:
+                btn.displayString = tintLabel("Blue", LDOGConfig.waterTintBlue, "\u00a79"); break;
+        }
     }
 }
