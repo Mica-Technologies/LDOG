@@ -56,6 +56,13 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
         List<BakedQuad> result = new ArrayList<>(originalQuads.size());
         for (BakedQuad quad : originalQuads) {
             EnumFacing face = side != null ? side : quad.getFace();
+
+            // Check face restriction from properties
+            if (!properties.appliesToFace(faceName(face))) {
+                result.add(quad);
+                continue;
+            }
+
             int tileIndex = calculateTileIndex(world, pos, face);
 
             if (tileIndex >= 0 && tileIndex < tileSprites.size()) {
@@ -111,5 +118,14 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
 
         return new BakedQuad(vertexData, original.getTintIndex(), original.getFace(),
             newSprite, original.shouldApplyDiffuseLighting(), original.getFormat());
+    }
+
+    private static String faceName(EnumFacing face) {
+        if (face == null) return "all";
+        switch (face) {
+            case UP:    return "top";
+            case DOWN:  return "bottom";
+            default:    return face.getName();
+        }
     }
 }

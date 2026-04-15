@@ -79,4 +79,69 @@ class CTMPropertiesTest {
         assertNotNull(props);
         assertTrue(props.parseTileIndices().isEmpty());
     }
+
+    @Test
+    @DisplayName("Parse matchTiles property")
+    void parseMatchTiles() {
+        CTMProperties props = parse("matchTiles=glass_white glass_gray");
+        assertNotNull(props);
+        assertEquals(2, props.getMatchTiles().size());
+        assertTrue(props.getMatchTiles().contains("glass_white"));
+        assertTrue(props.getMatchTiles().contains("glass_gray"));
+    }
+
+    @Test
+    @DisplayName("Parse connect property")
+    void parseConnect() {
+        CTMProperties props = parse("matchBlocks=glass\nconnect=tile");
+        assertNotNull(props);
+        assertEquals("tile", props.getConnect());
+    }
+
+    @Test
+    @DisplayName("Default connect is block")
+    void defaultConnect() {
+        CTMProperties props = parse("matchBlocks=glass");
+        assertNotNull(props);
+        assertEquals("block", props.getConnect());
+    }
+
+    @Test
+    @DisplayName("Parse faces property")
+    void parseFaces() {
+        CTMProperties props = parse("matchBlocks=glass\nfaces=top bottom");
+        assertNotNull(props);
+        assertTrue(props.appliesToFace("top"));
+        assertTrue(props.appliesToFace("bottom"));
+        assertFalse(props.appliesToFace("north"));
+    }
+
+    @Test
+    @DisplayName("Faces 'sides' expands to all 4 horizontal faces")
+    void parseFacesSides() {
+        CTMProperties props = parse("matchBlocks=glass\nfaces=sides");
+        assertNotNull(props);
+        assertTrue(props.appliesToFace("north"));
+        assertTrue(props.appliesToFace("south"));
+        assertTrue(props.appliesToFace("east"));
+        assertTrue(props.appliesToFace("west"));
+        assertFalse(props.appliesToFace("top"));
+    }
+
+    @Test
+    @DisplayName("Empty faces allows all faces")
+    void emptyFacesAllowsAll() {
+        CTMProperties props = parse("matchBlocks=glass");
+        assertNotNull(props);
+        assertTrue(props.appliesToFace("top"));
+        assertTrue(props.appliesToFace("north"));
+    }
+
+    @Test
+    @DisplayName("Parse weight property")
+    void parseWeight() {
+        CTMProperties props = parse("matchBlocks=glass\nweight=10");
+        assertNotNull(props);
+        assertEquals(10, props.getWeight());
+    }
 }
