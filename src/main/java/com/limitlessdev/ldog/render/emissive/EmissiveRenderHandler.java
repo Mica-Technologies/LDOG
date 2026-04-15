@@ -1,6 +1,5 @@
 package com.limitlessdev.ldog.render.emissive;
 
-import com.limitlessdev.ldog.LDOGMod;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.renderer.BufferBuilder;
 import net.minecraft.client.renderer.RegionRenderCacheBuilder;
@@ -29,7 +28,6 @@ public final class EmissiveRenderHandler {
 
     /** Position offset along face normal to prevent z-fighting */
     private static final float Z_OFFSET = 0.001f;
-    private static int debugCount = 0;
 
     private EmissiveRenderHandler() {}
 
@@ -42,14 +40,7 @@ public final class EmissiveRenderHandler {
                                               boolean checkSides, long rand) {
         RegionRenderCacheBuilder cacheBuilder = EmissiveRenderLayer.getCacheBuilder();
         CompiledChunk compiledChunk = EmissiveRenderLayer.getCompiledChunk();
-        if (cacheBuilder == null || compiledChunk == null) {
-            if (debugCount < 5) {
-                LDOGMod.LOGGER.info("LDOG DEBUG emissive: cacheBuilder={} compiledChunk={} (null early-out)",
-                    cacheBuilder != null, compiledChunk != null);
-                debugCount++;
-            }
-            return;
-        }
+        if (cacheBuilder == null || compiledChunk == null) return;
 
         BufferBuilder buffer = cacheBuilder.getWorldRendererByLayer(BlockRenderLayer.CUTOUT_MIPPED);
 
@@ -65,8 +56,6 @@ public final class EmissiveRenderHandler {
                 -(double)(pos.getZ() & ~15));
         }
 
-        int emissiveQuadCount = 0;
-
         // Sided quads
         for (EnumFacing face : EnumFacing.values()) {
             if (checkSides && !state.shouldSideBeRendered(world, pos, face)) continue;
@@ -76,7 +65,6 @@ public final class EmissiveRenderHandler {
                 TextureAtlasSprite emissive = EmissiveTextureRegistry.getEmissiveSprite(quad.getSprite());
                 if (emissive != null) {
                     addFullbrightQuad(buffer, quad, emissive, pos, face);
-                    emissiveQuadCount++;
                 }
             }
         }
@@ -87,14 +75,7 @@ public final class EmissiveRenderHandler {
             TextureAtlasSprite emissive = EmissiveTextureRegistry.getEmissiveSprite(quad.getSprite());
             if (emissive != null) {
                 addFullbrightQuad(buffer, quad, emissive, pos, quad.getFace());
-                emissiveQuadCount++;
             }
-        }
-
-        if (emissiveQuadCount > 0 && debugCount < 10) {
-            LDOGMod.LOGGER.info("LDOG DEBUG: Rendered {} emissive quads for {} at {} into CUTOUT_MIPPED buffer",
-                emissiveQuadCount, state.getBlock().getRegistryName(), pos);
-            debugCount++;
         }
     }
 
