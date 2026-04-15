@@ -45,9 +45,9 @@ public class GuiLDOGSettings extends GuiScreen {
         {"Tropical",       0.3, 0.4, 0.9, 1.0},
         {"Default",        0.4, 0.7, 0.85, 0.85},
         {"Arctic",         0.3, 0.7, 0.8, 1.0},
-        {"Murky",          0.7, 0.7, 0.65, 0.5},
-        {"Swamp",          0.8, 0.4, 0.6, 0.3},
-        {"Muddy",          0.9, 0.8, 0.5, 0.3},
+        {"Murky",          1.2, 0.7, 0.65, 0.5},
+        {"Swamp",          1.5, 0.4, 0.6, 0.3},
+        {"Muddy",          2.0, 0.8, 0.5, 0.3},
         {"Vanilla",        1.0, 1.0, 1.0, 1.0},
     };
     private int currentPresetIndex = -1; // -1 = custom (no preset matched)
@@ -63,7 +63,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int[] UNFOCUSED_FPS_VALUES = {1, 2, 5, 10, 15, 30, 60};
     private static final int[] AFK_TIMEOUT_VALUES = {0, 60, 120, 300, 600, 900, 1800, 3600};
     private static final int[] AFK_FPS_VALUES = {1, 2, 5, 10, 15, 30, 60};
-    private static final double[] WATER_OPACITY_VALUES = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0};
+    private static final double[] WATER_OPACITY_VALUES = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.5, 2.0, 3.0};
     private static final double[] TINT_VALUES = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0};
 
     public GuiLDOGSettings(GuiScreen parentScreen) {
