@@ -1,10 +1,15 @@
 package com.limitlessdev.ldog.render.emissive;
 
+import com.limitlessdev.ldog.LDOGMod;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.renderer.BufferBuilder;
+import net.minecraft.client.renderer.RegionRenderCacheBuilder;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.block.model.IBakedModel;
+import net.minecraft.client.renderer.chunk.CompiledChunk;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
+import net.minecraft.util.BlockRenderLayer;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.IBlockAccess;
@@ -15,30 +20,43 @@ import java.util.List;
  * Renders emissive (fullbright) overlay quads for blocks that have
  * emissive texture overlays (*_e.png files).
  *
- * Emissive quads are rendered in the CUTOUT_MIPPED layer (which has
- * alpha testing enabled) so transparent pixels are discarded. Quads
- * are written directly to the BufferBuilder with fullbright lightmap
+ * Emissive quads are rendered into the CUTOUT_MIPPED buffer (obtained
+ * from the chunk rebuild ThreadLocal) so alpha testing discards
+ * transparent pixels. Quads are written with fullbright lightmap
  * (sky=15, block=15), bypassing vanilla AO/smooth lighting.
- *
- * A small position offset along the face normal prevents z-fighting
- * with the base block texture rendered in the SOLID layer.
  */
 public final class EmissiveRenderHandler {
 
-    /** Position offset along face normal to prevent z-fighting with base quad */
+    /** Position offset along face normal to prevent z-fighting */
     private static final float Z_OFFSET = 0.001f;
 
     private EmissiveRenderHandler() {}
 
     /**
-     * Render emissive overlay quads for a block model.
-     * Called from the CUTOUT_MIPPED render pass.
+     * Render emissive overlay quads for a block model into the CUTOUT_MIPPED buffer.
+     * The buffer is obtained from the chunk rebuild's ThreadLocal storage.
      */
     public static void renderEmissiveOverlay(IBakedModel model, IBlockState state,
                                               IBlockAccess world, BlockPos pos,
-                                              BufferBuilder buffer, boolean checkSides,
-                                              long rand) {
-        // Sided quads (one per face direction)
+                                              boolean checkSides, long rand) {
+        RegionRenderCacheBuilder cacheBuilder = EmissiveRenderLayer.getCacheBuilder();
+        CompiledChunk compiledChunk = EmissiveRenderLayer.getCompiledChunk();
+        if (cacheBuilder == null || compiledChunk == null) return;
+
+        BufferBuilder buffer = cacheBuilder.getWorldRendererByLayer(BlockRenderLayer.CUTOUT_MIPPED);
+
+        // Ensure the CUTOUT_MIPPED layer is started (buffer needs begin() call)
+        // Translation must match RenderChunk.preRenderBlocks: negative of chunk base position
+        if (!compiledChunk.isLayerStarted(BlockRenderLayer.CUTOUT_MIPPED)) {
+            compiledChunk.setLayerStarted(BlockRenderLayer.CUTOUT_MIPPED);
+            buffer.begin(7, DefaultVertexFormats.BLOCK);
+            buffer.setTranslation(
+                -(double)(pos.getX() & ~15),
+                -(double)(pos.getY() & ~15),
+                -(double)(pos.getZ() & ~15));
+        }
+
+        // Sided quads
         for (EnumFacing face : EnumFacing.values()) {
             if (checkSides && !state.shouldSideBeRendered(world, pos, face)) continue;
 
@@ -51,7 +69,7 @@ public final class EmissiveRenderHandler {
             }
         }
 
-        // General quads (null face, always rendered)
+        // General quads (null face)
         List<BakedQuad> generalQuads = model.getQuads(state, null, rand);
         for (BakedQuad quad : generalQuads) {
             TextureAtlasSprite emissive = EmissiveTextureRegistry.getEmissiveSprite(quad.getSprite());
@@ -63,8 +81,6 @@ public final class EmissiveRenderHandler {
 
     /**
      * Add a single fullbright quad to the buffer with the emissive texture.
-     * Reads vertex positions from the original quad, remaps UV to the emissive sprite,
-     * and sets fullbright lightmap (240, 240 = sky 15, block 15).
      */
     private static void addFullbrightQuad(BufferBuilder buffer, BakedQuad original,
                                            TextureAtlasSprite emissiveSprite,
@@ -72,12 +88,10 @@ public final class EmissiveRenderHandler {
         int[] vertexData = original.getVertexData();
         TextureAtlasSprite oldSprite = original.getSprite();
 
-        // Small offset along face normal to prevent z-fighting
         float nx = face.getXOffset() * Z_OFFSET;
         float ny = face.getYOffset() * Z_OFFSET;
         float nz = face.getZOffset() * Z_OFFSET;
 
-        // BLOCK vertex format: pos(3f) + color(4ub) + tex(2f) + lightmap(2s) = 7 ints per vertex
         for (int v = 0; v < 4; v++) {
             int offset = v * 7;
 
@@ -85,7 +99,6 @@ public final class EmissiveRenderHandler {
             float y = Float.intBitsToFloat(vertexData[offset + 1]) + pos.getY() + ny;
             float z = Float.intBitsToFloat(vertexData[offset + 2]) + pos.getZ() + nz;
 
-            // Remap UV coordinates from base sprite to emissive sprite
             float u = Float.intBitsToFloat(vertexData[offset + 4]);
             float vCoord = Float.intBitsToFloat(vertexData[offset + 5]);
             float unmappedU = oldSprite.getUnInterpolatedU(u);

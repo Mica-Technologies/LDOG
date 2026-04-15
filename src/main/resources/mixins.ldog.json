@@ -10,7 +10,7 @@
     "MixinGuiVideoSettings",
     "MixinBlockModelRenderer",
     "MixinBlockRendererDispatcher",
-    "MixinForgeHooksClient",
+    "MixinRenderChunk",
     "MixinRenderGlobal",
     "MixinTileEntityRendererDispatcher",
     "MixinParticleManager"
