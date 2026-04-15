@@ -69,9 +69,19 @@ public final class CTMLogic {
 
     public static int getFullCTMIndex(IBlockAccess world, BlockPos pos, EnumFacing face,
                                        Block targetBlock) {
+        return getFullCTMIndex(world, pos, face, targetBlock, false);
+    }
+
+    /**
+     * @param mirrorH If true, swap left↔right in the neighbor pattern. Used for faces
+     *                where the model mirrors the U axis (e.g. pane WEST and NORTH faces
+     *                mirror UV so both sides of each arm show the same texture region).
+     */
+    public static int getFullCTMIndex(IBlockAccess world, BlockPos pos, EnumFacing face,
+                                       Block targetBlock, boolean mirrorH) {
         EnumFacing[] dirs = getPerpendicularDirections(face);
         EnumFacing up = dirs[0];
-        EnumFacing right = dirs[1];
+        EnumFacing right = mirrorH ? dirs[1].getOpposite() : dirs[1];
         EnumFacing down = up.getOpposite();
         EnumFacing left = right.getOpposite();
 
@@ -93,8 +103,14 @@ public final class CTMLogic {
 
     public static int getHorizontalCTMIndex(IBlockAccess world, BlockPos pos,
                                              EnumFacing face, Block targetBlock) {
+        return getHorizontalCTMIndex(world, pos, face, targetBlock, false);
+    }
+
+    public static int getHorizontalCTMIndex(IBlockAccess world, BlockPos pos,
+                                             EnumFacing face, Block targetBlock,
+                                             boolean mirrorH) {
         EnumFacing[] dirs = getPerpendicularDirections(face);
-        EnumFacing right = dirs[1];
+        EnumFacing right = mirrorH ? dirs[1].getOpposite() : dirs[1];
         EnumFacing left = right.getOpposite();
         boolean l = connects(world, pos, left, targetBlock);
         boolean r = connects(world, pos, right, targetBlock);

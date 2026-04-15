@@ -113,7 +113,12 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
                 continue;
             }
 
-            int tileIndex = calculateTileIndex(world, pos, face);
+            // Pane models mirror the U axis on WEST and NORTH faces so both sides
+            // of each arm show the same texture at the same world position. Mirror
+            // the CTM left-right neighbor check to match the mirrored UV orientation.
+            boolean mirrorH = targetBlock instanceof BlockPane
+                    && (face == EnumFacing.WEST || face == EnumFacing.NORTH);
+            int tileIndex = calculateTileIndex(world, pos, face, mirrorH);
 
             if (tileIndex >= 0 && tileIndex < tileSprites.size()) {
                 TextureAtlasSprite tileSprite = tileSprites.get(tileIndex);
@@ -136,12 +141,20 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
         return result;
     }
 
-    private int calculateTileIndex(IBlockAccess world, BlockPos pos, EnumFacing side) {
+    /**
+     * @param mirrorH Mirror the horizontal (left-right) neighbor pattern. Used for pane
+     *                WEST and NORTH faces where the model intentionally mirrors the U axis
+     *                so both sides of each arm show the same texture at the same world
+     *                position. Without mirroring, the CTM tile's border orientation
+     *                doesn't match the mirrored UV, causing borders at wrong edges.
+     */
+    private int calculateTileIndex(IBlockAccess world, BlockPos pos, EnumFacing side,
+                                    boolean mirrorH) {
         switch (properties.getMethod()) {
             case CTM:
-                return CTMLogic.getFullCTMIndex(world, pos, side, targetBlock);
+                return CTMLogic.getFullCTMIndex(world, pos, side, targetBlock, mirrorH);
             case HORIZONTAL:
-                return CTMLogic.getHorizontalCTMIndex(world, pos, side, targetBlock);
+                return CTMLogic.getHorizontalCTMIndex(world, pos, side, targetBlock, mirrorH);
             case VERTICAL:
                 return CTMLogic.getVerticalCTMIndex(world, pos, targetBlock);
             case FIXED:
@@ -149,6 +162,10 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
             default:
                 return 0;
         }
+    }
+
+    private int calculateTileIndex(IBlockAccess world, BlockPos pos, EnumFacing side) {
+        return calculateTileIndex(world, pos, side, false);
     }
 
     /**
@@ -236,7 +253,8 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
                                      EnumFacing face, float xPos, float zMin, float zMax) {
         if (!properties.appliesToFace(faceName(face))) return;
 
-        int tileIndex = calculateTileIndex(world, pos, face);
+        boolean mirrorH = (face == EnumFacing.WEST);
+        int tileIndex = calculateTileIndex(world, pos, face, mirrorH);
         if (tileIndex < 0 || tileIndex >= tileSprites.size()) return;
         TextureAtlasSprite tile = tileSprites.get(tileIndex);
         if (tile == null || "missingno".equals(tile.getIconName())) return;
@@ -284,7 +302,8 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
                                      EnumFacing face, float zPos, float xMin, float xMax) {
         if (!properties.appliesToFace(faceName(face))) return;
 
-        int tileIndex = calculateTileIndex(world, pos, face);
+        boolean mirrorH = (face == EnumFacing.NORTH);
+        int tileIndex = calculateTileIndex(world, pos, face, mirrorH);
         if (tileIndex < 0 || tileIndex >= tileSprites.size()) return;
         TextureAtlasSprite tile = tileSprites.get(tileIndex);
         if (tile == null || "missingno".equals(tile.getIconName())) return;
