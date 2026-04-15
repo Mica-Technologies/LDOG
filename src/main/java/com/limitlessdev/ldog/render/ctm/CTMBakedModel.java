@@ -170,37 +170,51 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
         boolean east  = state.getValue(BlockPane.EAST);
         boolean west  = state.getValue(BlockPane.WEST);
 
-        // No synthetic quads for fully isolated panes — they have no arm geometry
-        // at all and the CTM tile selection would be standalone anyway.
-        if (!north && !south && !east && !west) return;
+        // Only add synthetic quads when at least one arm on the same axis is present.
+        // Synthetic EAST/WEST face quads (for absent N/S arms) only make sense when
+        // the pane has at least one N or S arm — these quads fill the missing half of
+        // the N-S arm glass surface so CTM borders appear at the outer edge.
+        // Synthetic NORTH/SOUTH face quads similarly require at least one E/W arm.
+        // Without this guard, a flat N-S wall (north+south only, east=false, west=false)
+        // would get phantom glass surfaces added in the east/west arm areas (x=[0,7/16]
+        // and x=[9/16,1]) where no physical arm exists.
+        boolean hasNS = north || south;
+        boolean hasEW = east  || west;
 
-        // North arm absent: add EAST + WEST quads covering z=[0, PANE_Z_NORTH_JUNCTION]
-        if (!north) {
-            addSyntheticEWQuad(result, world, pos, EnumFacing.EAST,
-                PANE_X_EAST, 0f, PANE_Z_NORTH_JUNCTION);
-            addSyntheticEWQuad(result, world, pos, EnumFacing.WEST,
-                PANE_X_WEST, 0f, PANE_Z_NORTH_JUNCTION);
+        if (!hasNS && !hasEW) return; // fully isolated pane, nothing to fill
+
+        if (hasNS) {
+            // North arm absent on the N/S axis: add EAST + WEST quads for z=[0, PANE_Z_NORTH_JUNCTION]
+            if (!north) {
+                addSyntheticEWQuad(result, world, pos, EnumFacing.EAST,
+                    PANE_X_EAST, 0f, PANE_Z_NORTH_JUNCTION);
+                addSyntheticEWQuad(result, world, pos, EnumFacing.WEST,
+                    PANE_X_WEST, 0f, PANE_Z_NORTH_JUNCTION);
+            }
+            // South arm absent on the N/S axis: add EAST + WEST quads for z=[PANE_Z_SOUTH_JUNCTION, 1]
+            if (!south) {
+                addSyntheticEWQuad(result, world, pos, EnumFacing.EAST,
+                    PANE_X_EAST, PANE_Z_SOUTH_JUNCTION, 1f);
+                addSyntheticEWQuad(result, world, pos, EnumFacing.WEST,
+                    PANE_X_WEST, PANE_Z_SOUTH_JUNCTION, 1f);
+            }
         }
-        // South arm absent: add EAST + WEST quads covering z=[PANE_Z_SOUTH_JUNCTION, 1]
-        if (!south) {
-            addSyntheticEWQuad(result, world, pos, EnumFacing.EAST,
-                PANE_X_EAST, PANE_Z_SOUTH_JUNCTION, 1f);
-            addSyntheticEWQuad(result, world, pos, EnumFacing.WEST,
-                PANE_X_WEST, PANE_Z_SOUTH_JUNCTION, 1f);
-        }
-        // East arm absent: add NORTH + SOUTH quads covering x=[PANE_X_EAST, 1]
-        if (!east) {
-            addSyntheticNSQuad(result, world, pos, EnumFacing.NORTH,
-                PANE_Z_NORTH_JUNCTION, PANE_X_EAST, 1f);
-            addSyntheticNSQuad(result, world, pos, EnumFacing.SOUTH,
-                PANE_Z_SOUTH_JUNCTION, PANE_X_EAST, 1f);
-        }
-        // West arm absent: add NORTH + SOUTH quads covering x=[0, PANE_X_WEST]
-        if (!west) {
-            addSyntheticNSQuad(result, world, pos, EnumFacing.NORTH,
-                PANE_Z_NORTH_JUNCTION, 0f, PANE_X_WEST);
-            addSyntheticNSQuad(result, world, pos, EnumFacing.SOUTH,
-                PANE_Z_SOUTH_JUNCTION, 0f, PANE_X_WEST);
+
+        if (hasEW) {
+            // East arm absent on the E/W axis: add NORTH + SOUTH quads for x=[PANE_X_EAST, 1]
+            if (!east) {
+                addSyntheticNSQuad(result, world, pos, EnumFacing.NORTH,
+                    PANE_Z_NORTH_JUNCTION, PANE_X_EAST, 1f);
+                addSyntheticNSQuad(result, world, pos, EnumFacing.SOUTH,
+                    PANE_Z_SOUTH_JUNCTION, PANE_X_EAST, 1f);
+            }
+            // West arm absent on the E/W axis: add NORTH + SOUTH quads for x=[0, PANE_X_WEST]
+            if (!west) {
+                addSyntheticNSQuad(result, world, pos, EnumFacing.NORTH,
+                    PANE_Z_NORTH_JUNCTION, 0f, PANE_X_WEST);
+                addSyntheticNSQuad(result, world, pos, EnumFacing.SOUTH,
+                    PANE_Z_SOUTH_JUNCTION, 0f, PANE_X_WEST);
+            }
         }
     }
 
