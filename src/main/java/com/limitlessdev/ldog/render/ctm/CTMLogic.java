@@ -99,13 +99,15 @@ public final class CTMLogic {
         boolean l = connects(world, pos, left, targetBlock);
         boolean r = connects(world, pos, right, targetBlock);
 
-        // MCPatcher/OptiFine tile convention:
-        //   tile 2 = left-end piece (border on LEFT,  seamless RIGHT)  → block connects right only
-        //   tile 3 = right-end piece (seamless LEFT,  border on RIGHT) → block connects left only
+        // MCPatcher/OptiFine tile convention (verified against actual tile images):
+        //   tile 0 = left-end piece  (border LEFT,  seamless RIGHT) → block connects right only
+        //   tile 1 = middle piece    (seamless both sides)          → block connects both sides
+        //   tile 2 = right-end piece (seamless LEFT, border RIGHT)  → block connects left only
+        //   tile 3 = standalone      (border LEFT,  border RIGHT)   → no connections
         if (l && r) return 1;
-        if (r)      return 2;   // right neighbor → left end piece
-        if (l)      return 3;   // left  neighbor → right end piece
-        return 0;
+        if (r)      return 0;   // right neighbor → left-end piece (tile 0)
+        if (l)      return 2;   // left  neighbor → right-end piece (tile 2)
+        return 3;               // standalone → tile 3
     }
 
     public static int getVerticalCTMIndex(IBlockAccess world, BlockPos pos,
