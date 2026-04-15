@@ -112,7 +112,7 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
             if (tileIndex >= 0 && tileIndex < tileSprites.size()) {
                 TextureAtlasSprite tileSprite = tileSprites.get(tileIndex);
                 if (tileSprite != null && !"missingno".equals(tileSprite.getIconName())) {
-                    result.add(retextureQuad(quad, tileSprite));
+                    result.add(retextureQuad(quad, tileSprite, face));
                     continue;
                 }
             }
@@ -137,27 +137,102 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
     }
 
     /**
-     * Retexture a quad with a different sprite.
-     * Copies vertex data and remaps UV coordinates.
+     * Retexture a quad with a different sprite using geometry-based UV mapping.
+     *
+     * Instead of preserving the original sprite's UV offsets (which are wrong for
+     * partial-face quads like glass pane arms — each arm only covers half the block
+     * face width and therefore only samples half the CTM tile), this method computes
+     * UV from vertex world-space positions and the face direction.
+     *
+     * For horizontal faces (EAST/WEST/NORTH/SOUTH):
+     *   - U is derived from the position along the face-perpendicular axis (Z for E/W,
+     *     X for N/S), STRETCHED to span [0,16] across the quad's actual extent.
+     *     This ensures pane arms and other sub-face quads always show the full CTM
+     *     tile, so borders appear at the quad's edges rather than outside it.
+     *   - V is derived from absolute Y position (no stretch), so slabs/stairs still
+     *     show the proportional vertical slice of the tile.
+     *
+     * For horizontal-face quads (UP/DOWN), absolute X and Z are used (no stretch).
      */
-    public static BakedQuad retextureQuad(BakedQuad original, TextureAtlasSprite newSprite) {
-        TextureAtlasSprite oldSprite = original.getSprite();
-        if (oldSprite == newSprite) return original;
+    public static BakedQuad retextureQuad(BakedQuad original, TextureAtlasSprite newSprite,
+                                           @Nullable EnumFacing face) {
+        if (original.getSprite() == newSprite) return original;
 
         int[] vertexData = original.getVertexData().clone();
 
+        // Pre-scan vertices to find the extent along the face-perpendicular axis.
+        // This is only needed for vertical faces (E/W/N/S) to enable U-stretching.
+        float axisMin = Float.MAX_VALUE, axisMax = -Float.MAX_VALUE;
+        if (face == EnumFacing.EAST || face == EnumFacing.WEST) {
+            for (int v = 0; v < 4; v++) {
+                float z = Float.intBitsToFloat(vertexData[v * 7 + 2]);
+                if (z < axisMin) axisMin = z;
+                if (z > axisMax) axisMax = z;
+            }
+        } else if (face == EnumFacing.NORTH || face == EnumFacing.SOUTH) {
+            for (int v = 0; v < 4; v++) {
+                float x = Float.intBitsToFloat(vertexData[v * 7]);
+                if (x < axisMin) axisMin = x;
+                if (x > axisMax) axisMax = x;
+            }
+        }
+        float axisSpan = (axisMax > axisMin) ? (axisMax - axisMin) : 1f;
+
         for (int v = 0; v < 4; v++) {
             int offset = v * 7;
-            float u = Float.intBitsToFloat(vertexData[offset + 4]);
-            float vCoord = Float.intBitsToFloat(vertexData[offset + 5]);
+            float x = Float.intBitsToFloat(vertexData[offset]);
+            float y = Float.intBitsToFloat(vertexData[offset + 1]);
+            float z = Float.intBitsToFloat(vertexData[offset + 2]);
 
-            float unmappedU = oldSprite.getUnInterpolatedU(u);
-            float unmappedV = oldSprite.getUnInterpolatedV(vCoord);
+            float newU, newV;
+            if (face == null) {
+                // Unknown face: fall back to original sprite UV remapping
+                float origU = Float.intBitsToFloat(vertexData[offset + 4]);
+                float origV = Float.intBitsToFloat(vertexData[offset + 5]);
+                newU = original.getSprite().getUnInterpolatedU(origU);
+                newV = original.getSprite().getUnInterpolatedV(origV);
+            } else {
+                // V is always absolute Y position (no stretch across height)
+                newV = (1f - y) * 16f;
 
-            vertexData[offset + 4] = Float.floatToRawIntBits(
-                newSprite.getInterpolatedU(unmappedU));
-            vertexData[offset + 5] = Float.floatToRawIntBits(
-                newSprite.getInterpolatedV(unmappedV));
+                switch (face) {
+                    // EAST/WEST: U varies along Z, stretched to quad Z extent.
+                    // EAST looks toward -X; "right" = North (-Z) so U increases as z decreases.
+                    case EAST:
+                        newU = (1f - (z - axisMin) / axisSpan) * 16f;
+                        break;
+                    // WEST looks toward +X; "right" = South (+Z) so U increases as z increases.
+                    case WEST:
+                        newU = ((z - axisMin) / axisSpan) * 16f;
+                        break;
+                    // NORTH/SOUTH: U varies along X, stretched to quad X extent.
+                    // NORTH looks toward +Z; "right" = East (+X) so U increases as x increases.
+                    case NORTH:
+                        newU = ((x - axisMin) / axisSpan) * 16f;
+                        break;
+                    // SOUTH looks toward -Z; "right" = West (-X) so U increases as x decreases.
+                    case SOUTH:
+                        newU = (1f - (x - axisMin) / axisSpan) * 16f;
+                        break;
+                    // UP/DOWN: use absolute X/Z (tiles already span the full block face).
+                    case UP:
+                        newU = x * 16f;
+                        newV = z * 16f;
+                        break;
+                    case DOWN:
+                        newU = x * 16f;
+                        newV = (1f - z) * 16f;
+                        break;
+                    default:
+                        float origU = Float.intBitsToFloat(vertexData[offset + 4]);
+                        float origV = Float.intBitsToFloat(vertexData[offset + 5]);
+                        newU = original.getSprite().getUnInterpolatedU(origU);
+                        newV = original.getSprite().getUnInterpolatedV(origV);
+                }
+            }
+
+            vertexData[offset + 4] = Float.floatToRawIntBits(newSprite.getInterpolatedU(newU));
+            vertexData[offset + 5] = Float.floatToRawIntBits(newSprite.getInterpolatedV(newV));
         }
 
         return new BakedQuad(vertexData, original.getTintIndex(), original.getFace(),
