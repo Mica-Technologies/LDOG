@@ -15,12 +15,13 @@ import java.util.List;
  * Renders emissive (fullbright) overlay quads for blocks that have
  * emissive texture overlays (*_e.png files).
  *
- * Emissive quads are rendered directly to the BufferBuilder with
- * fullbright lightmap (sky=15, block=15), bypassing the vanilla
- * AO/smooth lighting pipeline so the glow is always at max brightness.
+ * Emissive quads are rendered in the CUTOUT_MIPPED layer (which has
+ * alpha testing enabled) so transparent pixels are discarded. Quads
+ * are written directly to the BufferBuilder with fullbright lightmap
+ * (sky=15, block=15), bypassing vanilla AO/smooth lighting.
  *
  * A small position offset along the face normal prevents z-fighting
- * with the base block texture.
+ * with the base block texture rendered in the SOLID layer.
  */
 public final class EmissiveRenderHandler {
 
@@ -31,7 +32,7 @@ public final class EmissiveRenderHandler {
 
     /**
      * Render emissive overlay quads for a block model.
-     * Called after the normal block rendering pass completes.
+     * Called from the CUTOUT_MIPPED render pass.
      */
     public static void renderEmissiveOverlay(IBakedModel model, IBlockState state,
                                               IBlockAccess world, BlockPos pos,

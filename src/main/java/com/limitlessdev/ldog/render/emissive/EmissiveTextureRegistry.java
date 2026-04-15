@@ -3,13 +3,20 @@ package com.limitlessdev.ldog.render.emissive;
 import com.limitlessdev.ldog.LDOGMod;
 import com.limitlessdev.ldog.Tags;
 import com.limitlessdev.ldog.config.LDOGConfig;
+import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.block.model.IBakedModel;
+import net.minecraft.client.renderer.block.model.ModelResourceLocation;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.renderer.texture.TextureMap;
 import net.minecraft.client.resources.IResource;
+import net.minecraft.util.EnumFacing;
 import net.minecraft.util.ResourceLocation;
+import net.minecraftforge.client.event.ModelBakeEvent;
 import net.minecraftforge.client.event.TextureStitchEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.relauncher.Side;
 
@@ -24,6 +31,9 @@ import java.util.zip.ZipFile;
  *
  * Scanning happens at TextureStitchEvent.Pre so emissive sprites get
  * registered with the atlas before stitching.
+ *
+ * At ModelBakeEvent, identifies which blocks use emissive textures so
+ * they can be rendered in the CUTOUT_MIPPED layer (for alpha testing).
  */
 @Mod.EventBusSubscriber(modid = Tags.MODID, value = Side.CLIENT)
 public class EmissiveTextureRegistry {
@@ -32,13 +42,15 @@ public class EmissiveTextureRegistry {
 
     private static final Map<String, TextureAtlasSprite> emissiveSprites = new HashMap<>();
     private static final Map<String, String> emissiveNames = new HashMap<>();
+    private static final Set<Block> emissiveBlocks = new HashSet<>();
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.LOW)
     public static void onTextureStitchPre(TextureStitchEvent.Pre event) {
         if (!LDOGConfig.enableEmissiveTextures) return;
 
         emissiveSprites.clear();
         emissiveNames.clear();
+        emissiveBlocks.clear();
         loadEmissiveProperties();
 
         TextureMap map = event.getMap();
@@ -74,6 +86,59 @@ public class EmissiveTextureRegistry {
         }
     }
 
+    @SubscribeEvent
+    public static void onModelBake(ModelBakeEvent event) {
+        if (!LDOGConfig.enableEmissiveTextures) return;
+        if (emissiveSprites.isEmpty()) return;
+
+        emissiveBlocks.clear();
+
+        // Check each block's model to see if its textures have emissive overlays
+        for (Block block : Block.REGISTRY) {
+            ResourceLocation regName = block.getRegistryName();
+            if (regName == null) continue;
+
+            // Check the default model variant
+            for (Object key : event.getModelRegistry().getKeys()) {
+                if (key instanceof ModelResourceLocation) {
+                    ModelResourceLocation mrl = (ModelResourceLocation) key;
+                    if (mrl.getPath().equals(regName.getPath()) &&
+                        mrl.getNamespace().equals(regName.getNamespace())) {
+                        IBakedModel model = event.getModelRegistry().getObject(mrl);
+                        if (model != null && modelHasEmissive(model, block)) {
+                            emissiveBlocks.add(block);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!emissiveBlocks.isEmpty()) {
+            LDOGMod.LOGGER.info("LDOG: {} blocks have emissive textures", emissiveBlocks.size());
+        }
+    }
+
+    private static boolean modelHasEmissive(IBakedModel model, Block block) {
+        try {
+            for (EnumFacing face : EnumFacing.values()) {
+                for (BakedQuad quad : model.getQuads(block.getDefaultState(), face, 0L)) {
+                    if (emissiveSprites.containsKey(quad.getSprite().getIconName())) {
+                        return true;
+                    }
+                }
+            }
+            for (BakedQuad quad : model.getQuads(block.getDefaultState(), null, 0L)) {
+                if (emissiveSprites.containsKey(quad.getSprite().getIconName())) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {
+            // Some models may throw when getQuads is called outside rendering context
+        }
+        return false;
+    }
+
     public static TextureAtlasSprite getEmissiveSprite(TextureAtlasSprite baseSprite) {
         if (baseSprite == null) return null;
         return emissiveSprites.get(baseSprite.getIconName());
@@ -81,6 +146,10 @@ public class EmissiveTextureRegistry {
 
     public static int getEmissiveSpriteCount() {
         return emissiveSprites.size();
+    }
+
+    public static boolean isEmissiveBlock(Block block) {
+        return emissiveBlocks.contains(block);
     }
 
     /**
