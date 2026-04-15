@@ -13,25 +13,36 @@ import net.minecraftforge.client.model.BakedModelWrapper;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Wraps a baked block model to provide connected textures.
  * Reads neighbor data from CTMRenderContext (set via ThreadLocal
  * by MixinBlockRendererDispatcher during chunk rebuilds) and swaps
  * texture sprites based on connection patterns.
+ *
+ * targetSpriteNames: if non-null, only quads using one of these sprites
+ * are retextured. This prevents accidentally CTM-ing secondary textures
+ * (e.g. glass_pane_top edge-cap faces on glass pane arms).
+ * If null, all side-face quads are eligible (used for full-block models
+ * where all quads are the primary texture).
  */
 public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
 
     private final Block targetBlock;
     private final CTMProperties properties;
     private final List<TextureAtlasSprite> tileSprites;
+    @Nullable
+    private final Set<String> targetSpriteNames;
 
     public CTMBakedModel(IBakedModel original, Block targetBlock,
-                          CTMProperties properties, List<TextureAtlasSprite> tileSprites) {
+                          CTMProperties properties, List<TextureAtlasSprite> tileSprites,
+                          @Nullable Set<String> targetSpriteNames) {
         super(original);
         this.targetBlock = targetBlock;
         this.properties = properties;
         this.tileSprites = tileSprites;
+        this.targetSpriteNames = targetSpriteNames;
     }
 
     @Override
@@ -82,6 +93,16 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
 
             // Check face restriction from properties
             if (!properties.appliesToFace(faceName(face))) {
+                result.add(quad);
+                continue;
+            }
+
+            // Only retexture quads using the primary glass/block sprite.
+            // Pane models have secondary textures (e.g. glass_pane_top on arm
+            // end-cap faces with cullface) that must not be overwritten with
+            // glass CTM tiles — those end-caps provide the visible border strip.
+            if (targetSpriteNames != null
+                    && !targetSpriteNames.contains(quad.getSprite().getIconName())) {
                 result.add(quad);
                 continue;
             }

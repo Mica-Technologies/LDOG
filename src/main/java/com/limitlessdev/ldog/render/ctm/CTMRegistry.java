@@ -12,6 +12,7 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.renderer.texture.TextureMap;
 import net.minecraft.client.resources.IResource;
 import net.minecraft.client.resources.IResourceManager;
+import net.minecraft.util.EnumFacing;
 import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.client.event.ModelBakeEvent;
 import net.minecraftforge.client.event.TextureStitchEvent;
@@ -19,6 +20,8 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.relauncher.Side;
+
+import javax.annotation.Nullable;
 
 import java.io.*;
 import java.nio.file.*;
@@ -114,9 +117,11 @@ public class CTMRegistry {
                         mrl.getNamespace().equals(blockRegName.getNamespace())) {
                         IBakedModel original = event.getModelRegistry().getObject(mrl);
                         if (original != null && !(original instanceof CTMBakedModel)) {
+                            Set<String> targetSprites = resolveTargetSprites(
+                                original, block, ctmEntry.properties);
                             event.getModelRegistry().putObject(mrl,
                                 new CTMBakedModel(original, block,
-                                    ctmEntry.properties, ctmEntry.tileSprites));
+                                    ctmEntry.properties, ctmEntry.tileSprites, targetSprites));
                             wrapped++;
                         }
                     }
@@ -127,6 +132,51 @@ public class CTMRegistry {
         if (wrapped > 0) {
             LDOGMod.LOGGER.info("LDOG: Wrapped {} models with CTM", wrapped);
         }
+    }
+
+    /**
+     * Determines which sprite names CTM should actually retexture for this model.
+     *
+     * For blocks with multiple textures (e.g. glass pane: blocks/glass + blocks/glass_pane_top),
+     * CTM must only replace the primary glass texture. The secondary textures (edge-cap strips)
+     * provide the visible border at arm tips and must not be overwritten.
+     *
+     * Strategy: collect sprites used by null-side quads that face a side direction (N/S/E/W).
+     * These are the actual glass-surface quads without cullface. If none are found (e.g. for
+     * full-block models where all quads have cullface), return null meaning "apply to all."
+     */
+    @Nullable
+    private static Set<String> resolveTargetSprites(IBakedModel model, Block block,
+                                                      CTMProperties props) {
+        // If the resource pack explicitly lists matchTiles, respect those
+        if (!props.getMatchTiles().isEmpty()) {
+            Set<String> result = new HashSet<>();
+            for (String t : props.getMatchTiles()) {
+                result.add("minecraft:" + t);
+                result.add(t);  // also try without namespace prefix
+            }
+            return result;
+        }
+
+        // Otherwise scan null-side quads for the block's default state to find
+        // which sprites appear on side-facing surfaces (not UP/DOWN).
+        Set<String> sideSprites = new HashSet<>();
+        try {
+            for (net.minecraft.client.renderer.block.model.BakedQuad q :
+                    model.getQuads(block.getDefaultState(), null, 0L)) {
+                EnumFacing qf = q.getFace();
+                // Only count quads that face a horizontal direction
+                if (qf != null && qf != EnumFacing.UP && qf != EnumFacing.DOWN
+                        && q.getSprite() != null
+                        && !"missingno".equals(q.getSprite().getIconName())) {
+                    sideSprites.add(q.getSprite().getIconName());
+                }
+            }
+        } catch (Exception ignored) {}
+
+        // null = no restriction (apply to all sprites); used for full-block models
+        // where the glass surface quads all have cullface and don't appear here.
+        return sideSprites.isEmpty() ? null : sideSprites;
     }
 
     private static void scanResourcePacks(Minecraft mc, TextureMap map) {
