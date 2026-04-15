@@ -1,21 +1,19 @@
 package com.limitlessdev.ldog.render.ctm;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.renderer.texture.TextureUtil;
 import net.minecraft.client.resources.IResourceManager;
 import net.minecraft.util.ResourceLocation;
 
-import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.function.Function;
 
 /**
  * Custom TextureAtlasSprite that loads its PNG from a non-standard path.
  * MCPatcher/OptiFine CTM tiles live at "mcpatcher/ctm/..." not "textures/...",
  * so the standard sprite loading (which prepends "textures/") can't find them.
- *
- * This sprite overrides hasCustomLoader to load from the actual file path.
  */
 public class CTMSprite extends TextureAtlasSprite {
 
@@ -35,38 +33,28 @@ public class CTMSprite extends TextureAtlasSprite {
     public boolean load(IResourceManager manager, ResourceLocation location,
                         Function<ResourceLocation, TextureAtlasSprite> textureGetter) {
         try {
-            InputStream stream = manager.getResource(actualPngLocation).getInputStream();
-            BufferedImage image = ImageIO.read(stream);
-            stream.close();
+            BufferedImage image = TextureUtil.readBufferedImage(
+                manager.getResource(actualPngLocation).getInputStream());
 
-            if (image == null) return true; // true = error, use missing texture
+            if (image == null) return true;
 
-            int width = image.getWidth();
-            int height = image.getHeight();
+            this.width = image.getWidth();
+            this.height = image.getHeight();
 
-            this.width = width;
-            this.height = height;
+            // Match vanilla's frame data format exactly (TextureAtlasSprite.loadSpriteFrames):
+            // Array size = mipmapLevels + 1, with only [0] populated.
+            // generateMipmapData() fills the rest and handles any size.
+            int mipmapLevels = Minecraft.getMinecraft().gameSettings.mipmapLevels;
+            int[][] frameData = new int[mipmapLevels + 1][];
+            frameData[0] = new int[this.width * this.height];
+            image.getRGB(0, 0, this.width, this.height, frameData[0], 0, this.width);
 
-            int[] pixels = new int[width * height];
-            image.getRGB(0, 0, width, height, pixels, 0, width);
-
-            // Convert ARGB to ABGR (Minecraft's internal format)
-            for (int i = 0; i < pixels.length; i++) {
-                int a = (pixels[i] >> 24) & 0xFF;
-                int r = (pixels[i] >> 16) & 0xFF;
-                int g = (pixels[i] >> 8) & 0xFF;
-                int b = pixels[i] & 0xFF;
-                pixels[i] = (a << 24) | (b << 16) | (g << 8) | r;
-            }
-
-            int[][] frameData = new int[1][];
-            frameData[0] = pixels;
             this.framesTextureData.clear();
             this.framesTextureData.add(frameData);
 
-            return false; // false = success
+            return false;
         } catch (IOException e) {
-            return true; // true = error
+            return true;
         }
     }
 }
