@@ -1,10 +1,12 @@
 package com.limitlessdev.ldog.render.ctm;
 
 import net.minecraft.block.Block;
+import net.minecraft.block.BlockPane;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.block.model.IBakedModel;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.IBlockAccess;
@@ -26,8 +28,21 @@ import java.util.Set;
  * (e.g. glass_pane_top edge-cap faces on glass pane arms).
  * If null, all side-face quads are eligible (used for full-block models
  * where all quads are the primary texture).
+ *
+ * For glass panes: pane arms only cover half the block face width (7 of
+ * 16 pixels each side), so each arm shows only half the CTM tile. When
+ * an arm is absent (no neighbor in that direction), synthetic quads are
+ * added for the missing arm area so that CTM borders appear at the correct
+ * outer face edges rather than being invisible.
  */
 public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
+
+    /** Local block coordinate of pane glass surfaces (east/west sides of 2px pane). */
+    private static final float PANE_X_WEST = 7f / 16f;
+    private static final float PANE_X_EAST = 9f / 16f;
+    /** Local block z of the center post's north/south faces (junction between post and arms). */
+    private static final float PANE_Z_NORTH_JUNCTION = 7f / 16f;
+    private static final float PANE_Z_SOUTH_JUNCTION = 9f / 16f;
 
     private final Block targetBlock;
     private final CTMProperties properties;
@@ -54,7 +69,6 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
             return originalQuads;
         }
 
-        // Get world context from ThreadLocal (set by MixinBlockRendererDispatcher)
         IBlockAccess world = CTMRenderContext.getWorld();
         BlockPos pos = CTMRenderContext.getPos();
 
@@ -62,36 +76,28 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
             return originalQuads;
         }
 
-        // --- TEMPORARY DEBUG: log null-side quad info to diagnose vertical CTM seam ---
-        // For null side (general quads), retexture using the quad's own face.
-        // For specific sides, use that side for neighbor calculation.
-        // Glass pane surfaces are null-face quads (they're not at the block boundary),
-        // so we infer the facing from the quad's normal vector when getFace() is null.
         List<BakedQuad> result = new ArrayList<>(originalQuads.size());
         for (BakedQuad quad : originalQuads) {
             EnumFacing face = side != null ? side : quad.getFace();
 
-            // For null-face quads, infer direction from geometry so that
-            // pane/thin-block surfaces still get CTM (vertical glass pane connections).
+            // For null-face quads (e.g. glass pane arms without cullface), infer
+            // the facing direction from vertex geometry so CTM can be applied.
             if (face == null) {
                 face = inferFace(quad);
             }
 
             // Glass-pane edge fix: pane_side.json has UP/DOWN faces (glass_pane_top border
-            // texture) with no cullface. FaceBakery sets getFace()=UP/DOWN so they come
-            // through the null-side call. When panes are stacked both rows render their
-            // border strip at the same Y, creating a visible seam. Since faces=sides
-            // excludes top/bottom, CTM never replaces them. Suppress them instead when
-            // the adjacent block is the same type, which removes the seam entirely.
-            // Guard on side==null so we never suppress quads from the explicit side call.
+            // texture) with no cullface. When panes are stacked, both rows render their
+            // border strip at the same Y, creating a visible seam. Suppress them when the
+            // adjacent block is the same type to remove the seam.
             if (side == null
                     && (face == EnumFacing.UP || face == EnumFacing.DOWN)
                     && !properties.appliesToFace(faceName(face))
                     && world.getBlockState(pos.offset(face)).getBlock() == targetBlock) {
-                continue; // suppress edge-strip face to eliminate vertical seam
+                continue;
             }
 
-            // Check face restriction from properties
+            // Check face restriction from CTM properties
             if (!properties.appliesToFace(faceName(face))) {
                 result.add(quad);
                 continue;
@@ -100,7 +106,7 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
             // Only retexture quads using the primary glass/block sprite.
             // Pane models have secondary textures (e.g. glass_pane_top on arm
             // end-cap faces with cullface) that must not be overwritten with
-            // glass CTM tiles — those end-caps provide the visible border strip.
+            // glass CTM tiles.
             if (targetSpriteNames != null
                     && !targetSpriteNames.contains(quad.getSprite().getIconName())) {
                 result.add(quad);
@@ -112,12 +118,21 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
             if (tileIndex >= 0 && tileIndex < tileSprites.size()) {
                 TextureAtlasSprite tileSprite = tileSprites.get(tileIndex);
                 if (tileSprite != null && !"missingno".equals(tileSprite.getIconName())) {
-                    result.add(retextureQuad(quad, tileSprite, face));
+                    result.add(retextureQuad(quad, tileSprite));
                     continue;
                 }
             }
-            result.add(quad); // Fallback to original
+            result.add(quad);
         }
+
+        // For glass panes, add synthetic quads covering absent arm areas so that
+        // CTM borders appear at the correct outer face edges. Without this, a pane
+        // with north=false would have no geometry at z=[0,7/16] and the CTM tile's
+        // north border would be invisible.
+        if (side == null && targetBlock instanceof BlockPane) {
+            addSyntheticPaneQuads(result, state, world, pos);
+        }
+
         return result;
     }
 
@@ -137,102 +152,187 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
     }
 
     /**
-     * Retexture a quad with a different sprite using geometry-based UV mapping.
+     * Adds synthetic BakedQuads for absent pane arm areas.
      *
-     * Instead of preserving the original sprite's UV offsets (which are wrong for
-     * partial-face quads like glass pane arms — each arm only covers half the block
-     * face width and therefore only samples half the CTM tile), this method computes
-     * UV from vertex world-space positions and the face direction.
+     * A glass pane arm (e.g. north arm) covers z=[0,7/16] and provides EAST/WEST
+     * face quads that show U=[9,16] of the CTM tile (with the CTM border at U=16
+     * appearing at z=0, the outer north edge). When the arm is absent (north=false),
+     * there is no geometry in z=[0,7/16], so the CTM border at the outer edge is
+     * invisible. Synthetic quads fill in this missing geometry so borders render
+     * correctly at block face edges.
      *
-     * For horizontal faces (EAST/WEST/NORTH/SOUTH):
-     *   - U is derived from the position along the face-perpendicular axis (Z for E/W,
-     *     X for N/S), STRETCHED to span [0,16] across the quad's actual extent.
-     *     This ensures pane arms and other sub-face quads always show the full CTM
-     *     tile, so borders appear at the quad's edges rather than outside it.
-     *   - V is derived from absolute Y position (no stretch), so slabs/stairs still
-     *     show the proportional vertical slice of the tile.
-     *
-     * For horizontal-face quads (UP/DOWN), absolute X and Z are used (no stretch).
+     * Synthetic quads are not added for fully isolated panes (no connections).
      */
-    public static BakedQuad retextureQuad(BakedQuad original, TextureAtlasSprite newSprite,
-                                           @Nullable EnumFacing face) {
-        if (original.getSprite() == newSprite) return original;
+    private void addSyntheticPaneQuads(List<BakedQuad> result, IBlockState state,
+                                        IBlockAccess world, BlockPos pos) {
+        boolean north = state.getValue(BlockPane.NORTH);
+        boolean south = state.getValue(BlockPane.SOUTH);
+        boolean east  = state.getValue(BlockPane.EAST);
+        boolean west  = state.getValue(BlockPane.WEST);
+
+        // No synthetic quads for fully isolated panes — they have no arm geometry
+        // at all and the CTM tile selection would be standalone anyway.
+        if (!north && !south && !east && !west) return;
+
+        // North arm absent: add EAST + WEST quads covering z=[0, PANE_Z_NORTH_JUNCTION]
+        if (!north) {
+            addSyntheticEWQuad(result, world, pos, EnumFacing.EAST,
+                PANE_X_EAST, 0f, PANE_Z_NORTH_JUNCTION);
+            addSyntheticEWQuad(result, world, pos, EnumFacing.WEST,
+                PANE_X_WEST, 0f, PANE_Z_NORTH_JUNCTION);
+        }
+        // South arm absent: add EAST + WEST quads covering z=[PANE_Z_SOUTH_JUNCTION, 1]
+        if (!south) {
+            addSyntheticEWQuad(result, world, pos, EnumFacing.EAST,
+                PANE_X_EAST, PANE_Z_SOUTH_JUNCTION, 1f);
+            addSyntheticEWQuad(result, world, pos, EnumFacing.WEST,
+                PANE_X_WEST, PANE_Z_SOUTH_JUNCTION, 1f);
+        }
+        // East arm absent: add NORTH + SOUTH quads covering x=[PANE_X_EAST, 1]
+        if (!east) {
+            addSyntheticNSQuad(result, world, pos, EnumFacing.NORTH,
+                PANE_Z_NORTH_JUNCTION, PANE_X_EAST, 1f);
+            addSyntheticNSQuad(result, world, pos, EnumFacing.SOUTH,
+                PANE_Z_SOUTH_JUNCTION, PANE_X_EAST, 1f);
+        }
+        // West arm absent: add NORTH + SOUTH quads covering x=[0, PANE_X_WEST]
+        if (!west) {
+            addSyntheticNSQuad(result, world, pos, EnumFacing.NORTH,
+                PANE_Z_NORTH_JUNCTION, 0f, PANE_X_WEST);
+            addSyntheticNSQuad(result, world, pos, EnumFacing.SOUTH,
+                PANE_Z_SOUTH_JUNCTION, 0f, PANE_X_WEST);
+        }
+    }
+
+    /**
+     * Adds a synthetic EAST or WEST face quad covering x=xPos, z=[zMin, zMax], y=[0,1].
+     *
+     * UV uses absolute world-position convention from FaceBakery (matching full-block models):
+     *   EAST face: U = (1 - z) * 16  →  U=16 at z=0 (outer north edge), U=0 at z=1 (outer south)
+     *   WEST face: U = z * 16         →  U=0 at z=0 (outer north edge), U=16 at z=1 (outer south)
+     * V = (1 - y) * 16 for both.
+     *
+     * Vertex order follows EnumFaceDirection:
+     *   EAST: [0]=(xPos,UP,zMax), [1]=(xPos,DOWN,zMax), [2]=(xPos,DOWN,zMin), [3]=(xPos,UP,zMin)
+     *   WEST: [0]=(xPos,UP,zMin), [1]=(xPos,DOWN,zMin), [2]=(xPos,DOWN,zMax), [3]=(xPos,UP,zMax)
+     */
+    private void addSyntheticEWQuad(List<BakedQuad> result, IBlockAccess world, BlockPos pos,
+                                     EnumFacing face, float xPos, float zMin, float zMax) {
+        if (!properties.appliesToFace(faceName(face))) return;
+
+        int tileIndex = calculateTileIndex(world, pos, face);
+        if (tileIndex < 0 || tileIndex >= tileSprites.size()) return;
+        TextureAtlasSprite tile = tileSprites.get(tileIndex);
+        if (tile == null || "missingno".equals(tile.getIconName())) return;
+
+        boolean isEast = face == EnumFacing.EAST;
+        // U at the "south" z end and at the "north" z end
+        float uAtZMin = isEast ? (1f - zMin) * 16f : zMin * 16f;
+        float uAtZMax = isEast ? (1f - zMax) * 16f : zMax * 16f;
+
+        // For EAST: V0,V1 are at zMax (south/inner), V2,V3 are at zMin (north/outer)
+        // For WEST: V0,V1 are at zMin (north/outer), V2,V3 are at zMax (south/inner)
+        float u01, u23, z01, z23;
+        if (isEast) {
+            u01 = uAtZMax; z01 = zMax;
+            u23 = uAtZMin; z23 = zMin;
+        } else {
+            u01 = uAtZMin; z01 = zMin;
+            u23 = uAtZMax; z23 = zMax;
+        }
+
+        int[] vd = new int[28];
+        writeVertex(vd, 0, xPos, 1f, z01, u01, 0f,  tile);
+        writeVertex(vd, 1, xPos, 0f, z01, u01, 16f, tile);
+        writeVertex(vd, 2, xPos, 0f, z23, u23, 16f, tile);
+        writeVertex(vd, 3, xPos, 1f, z23, u23, 0f,  tile);
+
+        result.add(new BakedQuad(vd, -1, null, tile, true, DefaultVertexFormats.ITEM));
+    }
+
+    /**
+     * Adds a synthetic NORTH or SOUTH face quad covering z=zPos, x=[xMin, xMax], y=[0,1].
+     *
+     * UV uses absolute world-position convention from FaceBakery:
+     *   NORTH face: U = (1 - x) * 16  →  U=0 at x=1 (outer east edge), U=16 at x=0 (outer west)
+     *   SOUTH face: U = x * 16         →  U=0 at x=0 (outer west edge), U=16 at x=1 (outer east)
+     * V = (1 - y) * 16 for both.
+     *
+     * Vertex order follows EnumFaceDirection:
+     *   NORTH: [0]=(xMax,UP,zPos), [1]=(xMax,DOWN,zPos), [2]=(xMin,DOWN,zPos), [3]=(xMin,UP,zPos)
+     *   SOUTH: [0]=(xMin,UP,zPos), [1]=(xMin,DOWN,zPos), [2]=(xMax,DOWN,zPos), [3]=(xMax,UP,zPos)
+     */
+    private void addSyntheticNSQuad(List<BakedQuad> result, IBlockAccess world, BlockPos pos,
+                                     EnumFacing face, float zPos, float xMin, float xMax) {
+        if (!properties.appliesToFace(faceName(face))) return;
+
+        int tileIndex = calculateTileIndex(world, pos, face);
+        if (tileIndex < 0 || tileIndex >= tileSprites.size()) return;
+        TextureAtlasSprite tile = tileSprites.get(tileIndex);
+        if (tile == null || "missingno".equals(tile.getIconName())) return;
+
+        boolean isNorth = face == EnumFacing.NORTH;
+        float uAtXMin = isNorth ? (1f - xMin) * 16f : xMin * 16f;
+        float uAtXMax = isNorth ? (1f - xMax) * 16f : xMax * 16f;
+
+        // For NORTH: V0,V1 at xMax (east), V2,V3 at xMin (west)
+        // For SOUTH: V0,V1 at xMin (west), V2,V3 at xMax (east)
+        float u01, u23, x01, x23;
+        if (isNorth) {
+            u01 = uAtXMax; x01 = xMax;
+            u23 = uAtXMin; x23 = xMin;
+        } else {
+            u01 = uAtXMin; x01 = xMin;
+            u23 = uAtXMax; x23 = xMax;
+        }
+
+        int[] vd = new int[28];
+        writeVertex(vd, 0, x01, 1f, zPos, u01, 0f,  tile);
+        writeVertex(vd, 1, x01, 0f, zPos, u01, 16f, tile);
+        writeVertex(vd, 2, x23, 0f, zPos, u23, 16f, tile);
+        writeVertex(vd, 3, x23, 1f, zPos, u23, 0f,  tile);
+
+        result.add(new BakedQuad(vd, -1, null, tile, true, DefaultVertexFormats.ITEM));
+    }
+
+    /** Writes one vertex (7 ints) into the vertex data array at slot idx. */
+    private static void writeVertex(int[] vd, int idx, float x, float y, float z,
+                                     float u, float v, TextureAtlasSprite sprite) {
+        int off = idx * 7;
+        vd[off]     = Float.floatToRawIntBits(x);
+        vd[off + 1] = Float.floatToRawIntBits(y);
+        vd[off + 2] = Float.floatToRawIntBits(z);
+        vd[off + 3] = 0xFFFFFFFF; // white; diffuse lighting applied by renderer
+        vd[off + 4] = Float.floatToRawIntBits(sprite.getInterpolatedU(u));
+        vd[off + 5] = Float.floatToRawIntBits(sprite.getInterpolatedV(v));
+        vd[off + 6] = 0;          // lightmap (overwritten by chunk builder)
+    }
+
+    /**
+     * Retexture a quad by remapping its UV coordinates from the original sprite
+     * to the new sprite. Uses getUnInterpolatedU/V to convert atlas coords back
+     * to 0-16 texture space, then getInterpolatedU/V to convert to the new atlas.
+     *
+     * This preserves the original model's UV layout (which is correct for pane arms
+     * as the model JSON places U=[9,16] on the north arm and U=[0,7] on the south arm,
+     * so CTM tile borders naturally land at the physical outer edges).
+     */
+    public static BakedQuad retextureQuad(BakedQuad original, TextureAtlasSprite newSprite) {
+        TextureAtlasSprite oldSprite = original.getSprite();
+        if (oldSprite == newSprite) return original;
 
         int[] vertexData = original.getVertexData().clone();
 
-        // Pre-scan vertices to find the extent along the face-perpendicular axis.
-        // This is only needed for vertical faces (E/W/N/S) to enable U-stretching.
-        float axisMin = Float.MAX_VALUE, axisMax = -Float.MAX_VALUE;
-        if (face == EnumFacing.EAST || face == EnumFacing.WEST) {
-            for (int v = 0; v < 4; v++) {
-                float z = Float.intBitsToFloat(vertexData[v * 7 + 2]);
-                if (z < axisMin) axisMin = z;
-                if (z > axisMax) axisMax = z;
-            }
-        } else if (face == EnumFacing.NORTH || face == EnumFacing.SOUTH) {
-            for (int v = 0; v < 4; v++) {
-                float x = Float.intBitsToFloat(vertexData[v * 7]);
-                if (x < axisMin) axisMin = x;
-                if (x > axisMax) axisMax = x;
-            }
-        }
-        float axisSpan = (axisMax > axisMin) ? (axisMax - axisMin) : 1f;
-
         for (int v = 0; v < 4; v++) {
             int offset = v * 7;
-            float x = Float.intBitsToFloat(vertexData[offset]);
-            float y = Float.intBitsToFloat(vertexData[offset + 1]);
-            float z = Float.intBitsToFloat(vertexData[offset + 2]);
+            float u = Float.intBitsToFloat(vertexData[offset + 4]);
+            float vCoord = Float.intBitsToFloat(vertexData[offset + 5]);
 
-            float newU, newV;
-            if (face == null) {
-                // Unknown face: fall back to original sprite UV remapping
-                float origU = Float.intBitsToFloat(vertexData[offset + 4]);
-                float origV = Float.intBitsToFloat(vertexData[offset + 5]);
-                newU = original.getSprite().getUnInterpolatedU(origU);
-                newV = original.getSprite().getUnInterpolatedV(origV);
-            } else {
-                // V is always absolute Y position (no stretch across height)
-                newV = (1f - y) * 16f;
+            float unmappedU = oldSprite.getUnInterpolatedU(u);
+            float unmappedV = oldSprite.getUnInterpolatedV(vCoord);
 
-                switch (face) {
-                    // EAST/WEST: U varies along Z, stretched to quad Z extent.
-                    // EAST looks toward -X; "right" = North (-Z) so U increases as z decreases.
-                    case EAST:
-                        newU = (1f - (z - axisMin) / axisSpan) * 16f;
-                        break;
-                    // WEST looks toward +X; "right" = South (+Z) so U increases as z increases.
-                    case WEST:
-                        newU = ((z - axisMin) / axisSpan) * 16f;
-                        break;
-                    // NORTH/SOUTH: U varies along X, stretched to quad X extent.
-                    // NORTH looks toward +Z; "right" = East (+X) so U increases as x increases.
-                    case NORTH:
-                        newU = ((x - axisMin) / axisSpan) * 16f;
-                        break;
-                    // SOUTH looks toward -Z; "right" = West (-X) so U increases as x decreases.
-                    case SOUTH:
-                        newU = (1f - (x - axisMin) / axisSpan) * 16f;
-                        break;
-                    // UP/DOWN: use absolute X/Z (tiles already span the full block face).
-                    case UP:
-                        newU = x * 16f;
-                        newV = z * 16f;
-                        break;
-                    case DOWN:
-                        newU = x * 16f;
-                        newV = (1f - z) * 16f;
-                        break;
-                    default:
-                        float origU = Float.intBitsToFloat(vertexData[offset + 4]);
-                        float origV = Float.intBitsToFloat(vertexData[offset + 5]);
-                        newU = original.getSprite().getUnInterpolatedU(origU);
-                        newV = original.getSprite().getUnInterpolatedV(origV);
-                }
-            }
-
-            vertexData[offset + 4] = Float.floatToRawIntBits(newSprite.getInterpolatedU(newU));
-            vertexData[offset + 5] = Float.floatToRawIntBits(newSprite.getInterpolatedV(newV));
+            vertexData[offset + 4] = Float.floatToRawIntBits(newSprite.getInterpolatedU(unmappedU));
+            vertexData[offset + 5] = Float.floatToRawIntBits(newSprite.getInterpolatedV(unmappedV));
         }
 
         return new BakedQuad(vertexData, original.getTintIndex(), original.getFace(),
