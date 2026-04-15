@@ -93,8 +93,8 @@ public class LDOGConfig {
     @Config.Comment("Enable clear water rendering (removes murky underwater overlay).")
     public static boolean enableClearWater = true;
 
-    @Config.Comment("Water opacity multiplier. 0.0 = fully transparent, 1.0 = vanilla opacity, >1.0 = murkier than vanilla.")
-    @Config.RangeDouble(min = 0.0, max = 3.0)
+    @Config.Comment("Water opacity multiplier. 0.0 = fully transparent, 1.0 = vanilla opacity, >1.0 = murkier than vanilla (quadratic scale).")
+    @Config.RangeDouble(min = 0.0, max = 10.0)
     public static double waterOpacity = 0.4;
 
     @Config.Comment({

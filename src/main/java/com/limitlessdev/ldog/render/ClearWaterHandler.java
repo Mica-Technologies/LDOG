@@ -21,7 +21,10 @@ public class ClearWaterHandler {
         if (!LDOGConfig.enableClearWater) return;
 
         if (event.getState().getMaterial() == Material.WATER) {
-            float density = 0.005F + (float) LDOGConfig.waterOpacity * 0.095F;
+            // Quadratic curve: keeps opacity=1.0 calibrated to vanilla (~0.1),
+            // but ramps steeply at higher values for genuinely murky water.
+            double o = LDOGConfig.waterOpacity;
+            float density = 0.005F + (float)(o * o) * 0.095F;
             event.setDensity(density);
             event.setCanceled(true);
         }
