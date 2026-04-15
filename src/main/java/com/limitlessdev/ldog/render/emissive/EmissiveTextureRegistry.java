@@ -234,6 +234,17 @@ public class EmissiveTextureRegistry {
     private static void registerEmissive(TextureMap map, String basePath, String emissivePath) {
         // basePath = "blocks/diamond_ore"
         // emissivePath = "blocks/diamond_ore_e"
+
+        // Only register if the file exists in an *active* resource pack.
+        // We scan all packs on disk (including inactive ones) to discover names,
+        // so we must guard here to avoid atlas-stitch failures for inactive packs.
+        ResourceLocation pngLoc = new ResourceLocation("minecraft", "textures/" + emissivePath + ".png");
+        try {
+            Minecraft.getMinecraft().getResourceManager().getResource(pngLoc).close();
+        } catch (Exception e) {
+            return; // texture not available in any active resource pack
+        }
+
         String baseName = "minecraft:" + basePath;
         String emissiveName = "minecraft:" + emissivePath;
 

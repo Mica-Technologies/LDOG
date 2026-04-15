@@ -51,6 +51,7 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
             return originalQuads;
         }
 
+        // --- TEMPORARY DEBUG: log null-side quad info to diagnose vertical CTM seam ---
         // For null side (general quads), retexture using the quad's own face.
         // For specific sides, use that side for neighbor calculation.
         // Glass pane surfaces are null-face quads (they're not at the block boundary),
@@ -61,24 +62,22 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
 
             // For null-face quads, infer direction from geometry so that
             // pane/thin-block surfaces still get CTM (vertical glass pane connections).
-            boolean faceWasInferred = false;
             if (face == null) {
                 face = inferFace(quad);
-                faceWasInferred = true;
             }
 
-            // Glass-pane edge fix: the pane_side model has UP/DOWN edge-strip faces
-            // (glass_pane_top border texture) with no cullface, so they appear in the
-            // null-side call. When panes are stacked, both rows render their border strip
-            // at the same Y coordinate, creating a visible seam. When faces=sides the CTM
-            // doesn't replace those faces. Instead, suppress them entirely so they don't
-            // create a seam.  Only applies to inferred UP/DOWN faces that are excluded from
-            // the faces restriction and whose adjacent neighbour is the same block.
-            if (faceWasInferred
+            // Glass-pane edge fix: pane_side.json has UP/DOWN faces (glass_pane_top border
+            // texture) with no cullface. FaceBakery sets getFace()=UP/DOWN so they come
+            // through the null-side call. When panes are stacked both rows render their
+            // border strip at the same Y, creating a visible seam. Since faces=sides
+            // excludes top/bottom, CTM never replaces them. Suppress them instead when
+            // the adjacent block is the same type, which removes the seam entirely.
+            // Guard on side==null so we never suppress quads from the explicit side call.
+            if (side == null
                     && (face == EnumFacing.UP || face == EnumFacing.DOWN)
                     && !properties.appliesToFace(faceName(face))
                     && world.getBlockState(pos.offset(face)).getBlock() == targetBlock) {
-                continue; // suppress this edge-strip face to eliminate vertical seam
+                continue; // suppress edge-strip face to eliminate vertical seam
             }
 
             // Check face restriction from properties
