@@ -39,7 +39,7 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
                                      long rand) {
         List<BakedQuad> originalQuads = originalModel.getQuads(state, side, rand);
 
-        if (state == null || side == null || tileSprites.isEmpty()) {
+        if (state == null || tileSprites.isEmpty()) {
             return originalQuads;
         }
 
@@ -51,21 +51,21 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
             return originalQuads;
         }
 
-        // Calculate the tile index based on neighbor connections
-        int tileIndex = calculateTileIndex(world, pos, side);
-        if (tileIndex < 0 || tileIndex >= tileSprites.size()) {
-            return originalQuads;
-        }
-
-        TextureAtlasSprite tileSprite = tileSprites.get(tileIndex);
-        if (tileSprite == null) {
-            return originalQuads;
-        }
-
-        // Retexture all quads on this face with the connected texture
+        // For null side (general quads), retexture using the quad's own face
+        // For specific sides, use that side for neighbor calculation
         List<BakedQuad> result = new ArrayList<>(originalQuads.size());
         for (BakedQuad quad : originalQuads) {
-            result.add(retextureQuad(quad, tileSprite));
+            EnumFacing face = side != null ? side : quad.getFace();
+            int tileIndex = calculateTileIndex(world, pos, face);
+
+            if (tileIndex >= 0 && tileIndex < tileSprites.size()) {
+                TextureAtlasSprite tileSprite = tileSprites.get(tileIndex);
+                if (tileSprite != null && !"missingno".equals(tileSprite.getIconName())) {
+                    result.add(retextureQuad(quad, tileSprite));
+                    continue;
+                }
+            }
+            result.add(quad); // Fallback to original
         }
         return result;
     }

@@ -10,15 +10,20 @@ import net.minecraft.client.resources.IResource;
 import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.client.event.TextureStitchEvent;
 import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.relauncher.Side;
 
-import java.lang.reflect.Field;
+import java.io.File;
 import java.util.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 /**
- * Discovers and registers emissive texture overlays (_e suffix).
+ * Discovers emissive texture overlays by scanning resource packs directly
+ * for files ending with the emissive suffix (default "_e.png").
+ *
+ * Scanning happens at TextureStitchEvent.Pre so emissive sprites get
+ * registered with the atlas before stitching.
  */
 @Mod.EventBusSubscriber(modid = Tags.MODID, value = Side.CLIENT)
 public class EmissiveTextureRegistry {
@@ -28,10 +33,7 @@ public class EmissiveTextureRegistry {
     private static final Map<String, TextureAtlasSprite> emissiveSprites = new HashMap<>();
     private static final Map<String, String> emissiveNames = new HashMap<>();
 
-    // Cached field reference for mapRegisteredSprites
-    private static Field registeredSpritesField = null;
-
-    @SubscribeEvent(priority = EventPriority.LOW)
+    @SubscribeEvent
     public static void onTextureStitchPre(TextureStitchEvent.Pre event) {
         if (!LDOGConfig.enableEmissiveTextures) return;
 
@@ -41,38 +43,10 @@ public class EmissiveTextureRegistry {
 
         TextureMap map = event.getMap();
         Minecraft mc = Minecraft.getMinecraft();
-        if (mc.getResourceManager() == null) return;
 
-        // Get registered sprites via reflection (works in both dev and prod)
-        Map<String, TextureAtlasSprite> registeredMap = getRegisteredSprites(map);
-        if (registeredMap == null || registeredMap.isEmpty()) {
-            LDOGMod.LOGGER.warn("LDOG: Could not access registered sprites map - emissive textures disabled");
-            return;
-        }
-
-        LDOGMod.LOGGER.info("LDOG: Scanning {} registered sprites for emissive variants",
-            registeredMap.size());
-
-        Set<String> spriteNames = new HashSet<>(registeredMap.keySet());
-        int found = 0;
-
-        for (String spriteName : spriteNames) {
-            if (spriteName.endsWith(emissiveSuffix)) continue;
-
-            String emissiveName = spriteName + emissiveSuffix;
-            ResourceLocation emissivePngLoc = spriteNameToPngLocation(emissiveName);
-            if (emissivePngLoc == null) continue;
-
-            if (resourceExists(mc, emissivePngLoc)) {
-                ResourceLocation emissiveSpriteLoc = spriteNameToSpriteLocation(emissiveName);
-                if (emissiveSpriteLoc != null) {
-                    map.registerSprite(emissiveSpriteLoc);
-                    emissiveNames.put(spriteName, emissiveName);
-                    found++;
-                    LDOGMod.LOGGER.info("LDOG: Found emissive: {} -> {}", spriteName, emissivePngLoc);
-                }
-            }
-        }
+        // Scan resource packs directly for _e.png files
+        // (can't enumerate registered sprites -- map is cleared before this event)
+        int found = scanResourcePacksForEmissives(mc, map);
 
         LDOGMod.LOGGER.info("LDOG: Registered {} emissive texture overlays (suffix='{}')",
             found, emissiveSuffix);
@@ -109,34 +83,95 @@ public class EmissiveTextureRegistry {
         return emissiveSprites.size();
     }
 
-    private static ResourceLocation spriteNameToPngLocation(String spriteName) {
-        String domain = "minecraft";
-        String path = spriteName;
-        int colonIdx = spriteName.indexOf(':');
-        if (colonIdx >= 0) {
-            domain = spriteName.substring(0, colonIdx);
-            path = spriteName.substring(colonIdx + 1);
+    /**
+     * Scan resource packs for texture files ending with the emissive suffix.
+     * For each "textures/blocks/foo_e.png" found, register "blocks/foo_e" as a sprite
+     * and map "blocks/foo" -> "blocks/foo_e".
+     */
+    private static int scanResourcePacksForEmissives(Minecraft mc, TextureMap map) {
+        File resourcePacksDir = new File(mc.gameDir, "resourcepacks");
+        if (!resourcePacksDir.exists()) return 0;
+
+        int found = 0;
+        File[] packs = resourcePacksDir.listFiles();
+        if (packs == null) return 0;
+
+        for (File packFile : packs) {
+            if (packFile.isDirectory()) {
+                found += scanDirectoryForEmissives(packFile, map);
+            } else if (packFile.getName().endsWith(".zip")) {
+                found += scanZipForEmissives(packFile, map);
+            }
         }
-        return new ResourceLocation(domain, "textures/" + path + ".png");
+        return found;
     }
 
-    private static ResourceLocation spriteNameToSpriteLocation(String spriteName) {
-        int colonIdx = spriteName.indexOf(':');
-        if (colonIdx >= 0) {
-            return new ResourceLocation(spriteName.substring(0, colonIdx),
-                spriteName.substring(colonIdx + 1));
+    private static int scanDirectoryForEmissives(File packDir, TextureMap map) {
+        // Look for textures/blocks/*_e.png and textures/items/*_e.png
+        int found = 0;
+        for (String subDir : new String[]{"textures/blocks", "textures/items"}) {
+            File texDir = new File(packDir, "assets/minecraft/" + subDir);
+            if (!texDir.exists() || !texDir.isDirectory()) continue;
+
+            File[] files = texDir.listFiles();
+            if (files == null) continue;
+
+            for (File f : files) {
+                if (f.isFile() && f.getName().endsWith(emissiveSuffix + ".png")) {
+                    String fileName = f.getName();
+                    // e.g., "diamond_ore_e.png" -> sprite name "blocks/diamond_ore_e"
+                    String spritePath = subDir.substring("textures/".length()) + "/"
+                        + fileName.substring(0, fileName.length() - 4); // remove .png
+                    String basePath = spritePath.substring(0, spritePath.length() - emissiveSuffix.length());
+
+                    registerEmissive(map, basePath, spritePath);
+                    found++;
+                }
+            }
         }
-        return new ResourceLocation(spriteName);
+        return found;
     }
 
-    private static boolean resourceExists(Minecraft mc, ResourceLocation loc) {
-        try {
-            IResource resource = mc.getResourceManager().getResource(loc);
-            resource.close();
-            return true;
+    private static int scanZipForEmissives(File zipFile, TextureMap map) {
+        int found = 0;
+        try (ZipFile zip = new ZipFile(zipFile)) {
+            Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                String name = entry.getName();
+
+                // Look for assets/minecraft/textures/blocks/*_e.png
+                if (name.endsWith(emissiveSuffix + ".png") &&
+                    name.startsWith("assets/minecraft/textures/") &&
+                    (name.contains("/blocks/") || name.contains("/items/"))) {
+
+                    // Extract sprite path from full zip path
+                    // "assets/minecraft/textures/blocks/diamond_ore_e.png"
+                    // -> "blocks/diamond_ore_e"
+                    String afterTextures = name.substring("assets/minecraft/textures/".length());
+                    String spritePath = afterTextures.substring(0, afterTextures.length() - 4); // remove .png
+                    String basePath = spritePath.substring(0, spritePath.length() - emissiveSuffix.length());
+
+                    registerEmissive(map, basePath, spritePath);
+                    found++;
+                }
+            }
         } catch (Exception e) {
-            return false;
+            LDOGMod.LOGGER.debug("LDOG: Failed to scan zip for emissives: {}", zipFile, e);
         }
+        return found;
+    }
+
+    private static void registerEmissive(TextureMap map, String basePath, String emissivePath) {
+        // basePath = "blocks/diamond_ore"
+        // emissivePath = "blocks/diamond_ore_e"
+        String baseName = "minecraft:" + basePath;
+        String emissiveName = "minecraft:" + emissivePath;
+
+        map.registerSprite(new ResourceLocation("minecraft", emissivePath));
+        emissiveNames.put(baseName, emissiveName);
+
+        LDOGMod.LOGGER.info("LDOG: Found emissive: {} -> {}", baseName, emissiveName);
     }
 
     private static void loadEmissiveProperties() {
@@ -162,54 +197,5 @@ public class EmissiveTextureRegistry {
                 }
             }
         } catch (Exception ignored) {}
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, TextureAtlasSprite> getRegisteredSprites(TextureMap map) {
-        if (registeredSpritesField == null) {
-            // Try both dev name and possible SRG names
-            for (String fieldName : new String[]{
-                "mapRegisteredSprites",  // dev name
-                "field_110574_e",        // SRG name
-            }) {
-                try {
-                    registeredSpritesField = TextureMap.class.getDeclaredField(fieldName);
-                    registeredSpritesField.setAccessible(true);
-                    LDOGMod.LOGGER.info("LDOG: Found sprites field as '{}'", fieldName);
-                    break;
-                } catch (NoSuchFieldException ignored) {}
-            }
-
-            // Fallback: search all fields
-            if (registeredSpritesField == null) {
-                for (Field field : TextureMap.class.getDeclaredFields()) {
-                    if (Map.class.isAssignableFrom(field.getType())) {
-                        try {
-                            field.setAccessible(true);
-                            Map<?, ?> m = (Map<?, ?>) field.get(map);
-                            if (m != null && m.size() > 10) {
-                                // Likely the registered sprites map (has many entries)
-                                Object firstVal = m.values().iterator().next();
-                                if (firstVal instanceof TextureAtlasSprite) {
-                                    registeredSpritesField = field;
-                                    LDOGMod.LOGGER.info("LDOG: Found sprites field by search: '{}'",
-                                        field.getName());
-                                    break;
-                                }
-                            }
-                        } catch (Exception ignored) {}
-                    }
-                }
-            }
-        }
-
-        if (registeredSpritesField != null) {
-            try {
-                return (Map<String, TextureAtlasSprite>) registeredSpritesField.get(map);
-            } catch (Exception e) {
-                LDOGMod.LOGGER.warn("LDOG: Failed to read sprites field", e);
-            }
-        }
-        return null;
     }
 }
