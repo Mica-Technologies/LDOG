@@ -51,11 +51,19 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
             return originalQuads;
         }
 
-        // For null side (general quads), retexture using the quad's own face
-        // For specific sides, use that side for neighbor calculation
+        // For null side (general quads), retexture using the quad's own face.
+        // For specific sides, use that side for neighbor calculation.
+        // Glass pane surfaces are null-face quads (they're not at the block boundary),
+        // so we infer the facing from the quad's normal vector when getFace() is null.
         List<BakedQuad> result = new ArrayList<>(originalQuads.size());
         for (BakedQuad quad : originalQuads) {
             EnumFacing face = side != null ? side : quad.getFace();
+
+            // For null-face quads, infer direction from geometry so that
+            // pane/thin-block surfaces still get CTM (vertical glass pane connections).
+            if (face == null) {
+                face = inferFace(quad);
+            }
 
             // Check face restriction from properties
             if (!properties.appliesToFace(faceName(face))) {
@@ -127,5 +135,37 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
             case DOWN:  return "bottom";
             default:    return face.getName();
         }
+    }
+
+    /**
+     * Infer the outward-facing direction of a quad from its vertex normal.
+     * Used for null-face quads (e.g. glass pane surfaces) that aren't registered
+     * as block-boundary faces but still need CTM applied.
+     *
+     * Vertex format: 7 ints/vertex — pos(3f), color(1i), tex(2f), lightmap(1i).
+     * Winding is CCW when viewed from outside, so (v1−v0)×(v2−v0) points outward.
+     */
+    private static EnumFacing inferFace(BakedQuad quad) {
+        int[] vd = quad.getVertexData();
+        float x0 = Float.intBitsToFloat(vd[0]);
+        float y0 = Float.intBitsToFloat(vd[1]);
+        float z0 = Float.intBitsToFloat(vd[2]);
+        float x1 = Float.intBitsToFloat(vd[7]);
+        float y1 = Float.intBitsToFloat(vd[8]);
+        float z1 = Float.intBitsToFloat(vd[9]);
+        float x2 = Float.intBitsToFloat(vd[14]);
+        float y2 = Float.intBitsToFloat(vd[15]);
+        float z2 = Float.intBitsToFloat(vd[16]);
+
+        float ax = x1 - x0, ay = y1 - y0, az = z1 - z0;
+        float bx = x2 - x0, by = y2 - y0, bz = z2 - z0;
+        float nx = ay * bz - az * by;
+        float ny = az * bx - ax * bz;
+        float nz = ax * by - ay * bx;
+
+        float absX = Math.abs(nx), absY = Math.abs(ny), absZ = Math.abs(nz);
+        if (absY >= absX && absY >= absZ) return ny > 0 ? EnumFacing.UP    : EnumFacing.DOWN;
+        if (absX >= absZ)                 return nx > 0 ? EnumFacing.EAST  : EnumFacing.WEST;
+        return                                   nz > 0 ? EnumFacing.SOUTH : EnumFacing.NORTH;
     }
 }

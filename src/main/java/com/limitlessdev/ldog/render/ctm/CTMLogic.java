@@ -99,9 +99,12 @@ public final class CTMLogic {
         boolean l = connects(world, pos, left, targetBlock);
         boolean r = connects(world, pos, right, targetBlock);
 
+        // MCPatcher/OptiFine tile convention:
+        //   tile 2 = left-end piece (border on LEFT,  seamless RIGHT)  → block connects right only
+        //   tile 3 = right-end piece (seamless LEFT,  border on RIGHT) → block connects left only
         if (l && r) return 1;
-        if (l) return 2;
-        if (r) return 3;
+        if (r)      return 2;   // right neighbor → left end piece
+        if (l)      return 3;   // left  neighbor → right end piece
         return 0;
     }
 
