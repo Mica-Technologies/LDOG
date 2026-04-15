@@ -14,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Hooks into chunk rebuild to:
- * 1. Store per-thread references to chunk buffers (for emissive rendering)
+ * 1. Store per-thread reference to the chunk compile generator (for emissive rendering)
  * 2. Finalize the CUTOUT_MIPPED buffer after block rendering if we added
  *    emissive quads to it (vanilla only finalizes layers that had blocks)
  */
@@ -22,21 +22,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class MixinRenderChunk {
 
     @Inject(method = "rebuildChunk", at = @At("HEAD"))
-    private void ldog$captureBuffers(float x, float y, float z,
-                                      ChunkCompileTaskGenerator generator,
-                                      CallbackInfo ci) {
-        EmissiveRenderLayer.set(
-            generator.getRegionRenderCacheBuilder(),
-            generator.getCompiledChunk());
+    private void ldog$captureGenerator(float x, float y, float z,
+                                        ChunkCompileTaskGenerator generator,
+                                        CallbackInfo ci) {
+        EmissiveRenderLayer.set(generator);
     }
 
     @Inject(method = "rebuildChunk", at = @At("RETURN"))
     private void ldog$finalizeEmissiveBuffer(float x, float y, float z,
                                               ChunkCompileTaskGenerator generator,
                                               CallbackInfo ci) {
-        // If we started the CUTOUT_MIPPED buffer for emissive quads, we need to
-        // finalize it ourselves. Vanilla only finalizes layers where renderBlock
-        // returned true via canRenderInLayer, which doesn't include our injected quads.
         if (EmissiveRenderLayer.wasEmissiveBufferStarted()) {
             RegionRenderCacheBuilder cacheBuilder = EmissiveRenderLayer.getCacheBuilder();
             CompiledChunk compiledChunk = EmissiveRenderLayer.getCompiledChunk();
