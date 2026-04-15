@@ -3,6 +3,7 @@ package com.limitlessdev.ldog.render.emissive;
 import com.limitlessdev.ldog.LDOGMod;
 import com.limitlessdev.ldog.Tags;
 import com.limitlessdev.ldog.config.LDOGConfig;
+import com.limitlessdev.ldog.mixin.AccessorTextureMap;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.renderer.texture.TextureMap;
@@ -43,8 +44,10 @@ public class EmissiveTextureRegistry {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.getResourceManager() == null) return;
 
-        // Get all currently registered sprite names
-        Set<String> registeredNames = getRegisteredSpriteNames(map);
+        // Get all currently registered sprite names via accessor mixin
+        Map<String, TextureAtlasSprite> registeredMap =
+            ((AccessorTextureMap) map).ldog$getMapRegisteredSprites();
+        Set<String> registeredNames = new java.util.HashSet<>(registeredMap.keySet());
         int found = 0;
 
         for (String spriteName : registeredNames) {
@@ -175,25 +178,5 @@ public class EmissiveTextureRegistry {
         } catch (Exception ignored) {}
     }
 
-    @SuppressWarnings("unchecked")
-    private static Set<String> getRegisteredSpriteNames(TextureMap map) {
-        try {
-            for (java.lang.reflect.Field field : TextureMap.class.getDeclaredFields()) {
-                if (java.util.Map.class.isAssignableFrom(field.getType())) {
-                    field.setAccessible(true);
-                    Map<?, ?> m = (Map<?, ?>) field.get(map);
-                    if (m != null && !m.isEmpty()) {
-                        Object firstKey = m.keySet().iterator().next();
-                        Object firstVal = m.values().iterator().next();
-                        if (firstKey instanceof String && firstVal instanceof TextureAtlasSprite) {
-                            return ((Map<String, TextureAtlasSprite>) m).keySet();
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            LDOGMod.LOGGER.warn("LDOG: Failed to access registered sprites", e);
-        }
-        return java.util.Collections.emptySet();
-    }
+    // Sprite map access is now handled by AccessorTextureMap mixin
 }

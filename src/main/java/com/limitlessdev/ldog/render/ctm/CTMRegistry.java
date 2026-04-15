@@ -3,6 +3,7 @@ package com.limitlessdev.ldog.render.ctm;
 import com.limitlessdev.ldog.LDOGMod;
 import com.limitlessdev.ldog.Tags;
 import com.limitlessdev.ldog.config.LDOGConfig;
+import com.limitlessdev.ldog.mixin.AccessorTextureMap;
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.block.model.IBakedModel;
@@ -227,28 +228,34 @@ public class CTMRegistry {
             List<Integer> tileIndices = props.parseTileIndices();
             List<ResourceLocation> tileLocations = new ArrayList<>();
 
+            Map<String, TextureAtlasSprite> registeredSprites =
+                ((AccessorTextureMap) map).ldog$getMapRegisteredSprites();
+
             for (int tileIdx : tileIndices) {
-                // Tile texture path: mcpatcher/ctm/glass/glass/0
-                // Register as: minecraft:mcpatcher/ctm/glass/glass/0
-                ResourceLocation tileLoc = new ResourceLocation("minecraft",
-                    ctmSubPath + "/" + tileIdx);
+                // Sprite name: minecraft:ldog_ctm/<ctmSubPath>/<tileIdx>
+                String spriteName = "ldog_ctm/" + ctmSubPath + "/" + tileIdx;
+                ResourceLocation tileLoc = new ResourceLocation("minecraft", spriteName);
 
-                // Check if the PNG exists
+                // Actual PNG location in the resource pack
+                // MCPatcher tiles are at: assets/minecraft/<ctmSubPath>/<tileIdx>.png
+                // NOT at: assets/minecraft/textures/<ctmSubPath>/<tileIdx>.png
                 ResourceLocation pngLoc = new ResourceLocation("minecraft",
-                    "textures/" + ctmSubPath + "/" + tileIdx + ".png");
+                    ctmSubPath + "/" + tileIdx + ".png");
 
-                // For mcpatcher/optifine paths, the textures are at the mcpatcher path directly
-                // not under textures/. Try both.
-                boolean exists = resourceExists(mc, pngLoc);
-                if (!exists) {
-                    pngLoc = new ResourceLocation("minecraft",
-                        ctmSubPath + "/" + tileIdx + ".png");
-                    // MCPatcher tiles aren't in the textures/ folder, they need to be
-                    // registered as custom sprites. We'll use the ctm path as sprite name.
+                if (resourceExists(mc, pngLoc)) {
+                    // Create a custom sprite that knows where its PNG actually lives
+                    CTMSprite sprite = new CTMSprite(tileLoc.toString(), pngLoc);
+                    registeredSprites.put(tileLoc.toString(), sprite);
+                    tileLocations.add(tileLoc);
+                } else {
+                    // Try the standard textures/ path as fallback
+                    ResourceLocation stdPngLoc = new ResourceLocation("minecraft",
+                        "textures/" + ctmSubPath + "/" + tileIdx + ".png");
+                    if (resourceExists(mc, stdPngLoc)) {
+                        map.registerSprite(tileLoc);
+                        tileLocations.add(tileLoc);
+                    }
                 }
-
-                map.registerSprite(tileLoc);
-                tileLocations.add(tileLoc);
             }
 
             ctmByBlockId.put(blockId, new CTMEntry(props, tileLocations));
