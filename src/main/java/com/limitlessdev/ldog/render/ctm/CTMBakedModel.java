@@ -221,9 +221,11 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
     /**
      * Adds a synthetic EAST or WEST face quad covering x=xPos, z=[zMin, zMax], y=[0,1].
      *
-     * UV uses absolute world-position convention from FaceBakery (matching full-block models):
-     *   EAST face: U = (1 - z) * 16  →  U=16 at z=0 (outer north edge), U=0 at z=1 (outer south)
-     *   WEST face: U = z * 16         →  U=0 at z=0 (outer north edge), U=16 at z=1 (outer south)
+     * UV convention matches the vanilla pane model (verified from pane_side.json):
+     *   pane_side EAST face: UV=[9,0,16,16]   → U=(1-z)*16 (U=16 at outer north edge z=0)
+     *   pane_side WEST face: UV=[16,0,9,16]    → also U=(1-z)*16 (model mirrors WEST to match EAST)
+     * Both faces of a N/S arm intentionally use the same formula so the same CTM tile
+     * region appears at the same world position when viewed from either side.
      * V = (1 - y) * 16 for both.
      *
      * Vertex order follows EnumFaceDirection:
@@ -239,15 +241,14 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
         TextureAtlasSprite tile = tileSprites.get(tileIndex);
         if (tile == null || "missingno".equals(tile.getIconName())) return;
 
-        boolean isEast = face == EnumFacing.EAST;
-        // U at the "south" z end and at the "north" z end
-        float uAtZMin = isEast ? (1f - zMin) * 16f : zMin * 16f;
-        float uAtZMax = isEast ? (1f - zMax) * 16f : zMax * 16f;
+        // Both EAST and WEST faces use U=(1-z)*16 to match the pane model's UV convention.
+        float uAtZMin = (1f - zMin) * 16f;
+        float uAtZMax = (1f - zMax) * 16f;
 
-        // For EAST: V0,V1 are at zMax (south/inner), V2,V3 are at zMin (north/outer)
-        // For WEST: V0,V1 are at zMin (north/outer), V2,V3 are at zMax (south/inner)
+        // EAST: V0,V1 at zMax (SOUTH_Z), V2,V3 at zMin (NORTH_Z)
+        // WEST: V0,V1 at zMin (NORTH_Z), V2,V3 at zMax (SOUTH_Z)
         float u01, u23, z01, z23;
-        if (isEast) {
+        if (face == EnumFacing.EAST) {
             u01 = uAtZMax; z01 = zMax;
             u23 = uAtZMin; z23 = zMin;
         } else {
@@ -267,9 +268,12 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
     /**
      * Adds a synthetic NORTH or SOUTH face quad covering z=zPos, x=[xMin, xMax], y=[0,1].
      *
-     * UV uses absolute world-position convention from FaceBakery:
-     *   NORTH face: U = (1 - x) * 16  →  U=0 at x=1 (outer east edge), U=16 at x=0 (outer west)
-     *   SOUTH face: U = x * 16         →  U=0 at x=0 (outer west edge), U=16 at x=1 (outer east)
+     * UV convention matches the vanilla pane model after Y=90 rotation (verified from pane_side.json
+     * rotated into east/west arm positions):
+     *   east arm SOUTH face (rotated from pane_side EAST): UV → U=x*16 (U=16 at outer east edge x=1)
+     *   east arm NORTH face (rotated from pane_side WEST): UV → also U=x*16 (model mirrors NORTH)
+     * Both faces of an E/W arm use the same formula so the same CTM region appears at the same
+     * world position from either side.
      * V = (1 - y) * 16 for both.
      *
      * Vertex order follows EnumFaceDirection:
@@ -285,14 +289,14 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
         TextureAtlasSprite tile = tileSprites.get(tileIndex);
         if (tile == null || "missingno".equals(tile.getIconName())) return;
 
-        boolean isNorth = face == EnumFacing.NORTH;
-        float uAtXMin = isNorth ? (1f - xMin) * 16f : xMin * 16f;
-        float uAtXMax = isNorth ? (1f - xMax) * 16f : xMax * 16f;
+        // Both NORTH and SOUTH faces use U=x*16 to match the pane model's UV convention.
+        float uAtXMin = xMin * 16f;
+        float uAtXMax = xMax * 16f;
 
-        // For NORTH: V0,V1 at xMax (east), V2,V3 at xMin (west)
-        // For SOUTH: V0,V1 at xMin (west), V2,V3 at xMax (east)
+        // NORTH: V0,V1 at xMax (EAST_X), V2,V3 at xMin (WEST_X)
+        // SOUTH: V0,V1 at xMin (WEST_X), V2,V3 at xMax (EAST_X)
         float u01, u23, x01, x23;
-        if (isNorth) {
+        if (face == EnumFacing.NORTH) {
             u01 = uAtXMax; x01 = xMax;
             u23 = uAtXMin; x23 = xMin;
         } else {
