@@ -61,8 +61,24 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
 
             // For null-face quads, infer direction from geometry so that
             // pane/thin-block surfaces still get CTM (vertical glass pane connections).
+            boolean faceWasInferred = false;
             if (face == null) {
                 face = inferFace(quad);
+                faceWasInferred = true;
+            }
+
+            // Glass-pane edge fix: the pane_side model has UP/DOWN edge-strip faces
+            // (glass_pane_top border texture) with no cullface, so they appear in the
+            // null-side call. When panes are stacked, both rows render their border strip
+            // at the same Y coordinate, creating a visible seam. When faces=sides the CTM
+            // doesn't replace those faces. Instead, suppress them entirely so they don't
+            // create a seam.  Only applies to inferred UP/DOWN faces that are excluded from
+            // the faces restriction and whose adjacent neighbour is the same block.
+            if (faceWasInferred
+                    && (face == EnumFacing.UP || face == EnumFacing.DOWN)
+                    && !properties.appliesToFace(faceName(face))
+                    && world.getBlockState(pos.offset(face)).getBlock() == targetBlock) {
+                continue; // suppress this edge-strip face to eliminate vertical seam
             }
 
             // Check face restriction from properties
