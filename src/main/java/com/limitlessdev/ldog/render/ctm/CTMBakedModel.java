@@ -262,7 +262,7 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
         writeVertex(vd, 2, xPos, 0f, z23, u23, 16f, tile);
         writeVertex(vd, 3, xPos, 1f, z23, u23, 0f,  tile);
 
-        result.add(new BakedQuad(vd, -1, null, tile, true, DefaultVertexFormats.ITEM));
+        result.add(new BakedQuad(vd, -1, face, tile, true, DefaultVertexFormats.BLOCK));
     }
 
     /**
@@ -310,7 +310,7 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
         writeVertex(vd, 2, x23, 0f, zPos, u23, 16f, tile);
         writeVertex(vd, 3, x23, 1f, zPos, u23, 0f,  tile);
 
-        result.add(new BakedQuad(vd, -1, null, tile, true, DefaultVertexFormats.ITEM));
+        result.add(new BakedQuad(vd, -1, face, tile, true, DefaultVertexFormats.BLOCK));
     }
 
     /** Writes one vertex (7 ints) into the vertex data array at slot idx. */
