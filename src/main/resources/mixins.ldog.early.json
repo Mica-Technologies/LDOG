@@ -6,6 +6,8 @@
   "compatibilityLevel": "JAVA_8",
   "mixins": [],
   "client": [
+    "AccessorBufferBuilder",
+    "AccessorCompiledChunk",
     "AccessorTextureMap",
     "MixinBlockFluidRenderer",
     "MixinTextureAtlasSprite"

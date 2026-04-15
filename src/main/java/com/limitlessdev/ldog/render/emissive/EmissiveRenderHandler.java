@@ -49,6 +49,7 @@ public final class EmissiveRenderHandler {
         // Translation must match RenderChunk.preRenderBlocks: negative of chunk base position
         if (!compiledChunk.isLayerStarted(BlockRenderLayer.CUTOUT_MIPPED)) {
             compiledChunk.setLayerStarted(BlockRenderLayer.CUTOUT_MIPPED);
+            EmissiveRenderLayer.markEmissiveBufferStarted();
             buffer.begin(7, DefaultVertexFormats.BLOCK);
             buffer.setTranslation(
                 -(double)(pos.getX() & ~15),

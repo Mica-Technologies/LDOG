@@ -1,19 +1,22 @@
 package com.limitlessdev.ldog.mixin;
 
 import com.limitlessdev.ldog.render.emissive.EmissiveRenderLayer;
+import net.minecraft.client.renderer.BufferBuilder;
+import net.minecraft.client.renderer.RegionRenderCacheBuilder;
 import net.minecraft.client.renderer.chunk.ChunkCompileTaskGenerator;
 import net.minecraft.client.renderer.chunk.CompiledChunk;
 import net.minecraft.client.renderer.chunk.RenderChunk;
+import net.minecraft.util.BlockRenderLayer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Hooks into chunk rebuild to store per-thread references to the
- * chunk buffer builders. This allows emissive rendering to write
- * quads into the CUTOUT_MIPPED buffer (for alpha testing) even when
- * the current block is rendered in the SOLID layer.
+ * Hooks into chunk rebuild to:
+ * 1. Store per-thread references to chunk buffers (for emissive rendering)
+ * 2. Finalize the CUTOUT_MIPPED buffer after block rendering if we added
+ *    emissive quads to it (vanilla only finalizes layers that had blocks)
  */
 @Mixin(RenderChunk.class)
 public abstract class MixinRenderChunk {
@@ -28,9 +31,28 @@ public abstract class MixinRenderChunk {
     }
 
     @Inject(method = "rebuildChunk", at = @At("RETURN"))
-    private void ldog$clearBuffers(float x, float y, float z,
-                                    ChunkCompileTaskGenerator generator,
-                                    CallbackInfo ci) {
+    private void ldog$finalizeEmissiveBuffer(float x, float y, float z,
+                                              ChunkCompileTaskGenerator generator,
+                                              CallbackInfo ci) {
+        // If we started the CUTOUT_MIPPED buffer for emissive quads, we need to
+        // finalize it ourselves. Vanilla only finalizes layers where renderBlock
+        // returned true via canRenderInLayer, which doesn't include our injected quads.
+        if (EmissiveRenderLayer.wasEmissiveBufferStarted()) {
+            RegionRenderCacheBuilder cacheBuilder = EmissiveRenderLayer.getCacheBuilder();
+            CompiledChunk compiledChunk = EmissiveRenderLayer.getCompiledChunk();
+
+            if (cacheBuilder != null && compiledChunk != null) {
+                BufferBuilder buffer = cacheBuilder.getWorldRendererByLayer(BlockRenderLayer.CUTOUT_MIPPED);
+
+                // Only finalize if the buffer is still in drawing mode
+                // (vanilla may have already finalized it if the chunk has native CUTOUT_MIPPED blocks)
+                if (((AccessorBufferBuilder) buffer).ldog$isDrawing()) {
+                    ((AccessorCompiledChunk) compiledChunk).ldog$setLayerUsed(BlockRenderLayer.CUTOUT_MIPPED);
+                    buffer.finishDrawing();
+                }
+            }
+        }
+
         EmissiveRenderLayer.clear();
     }
 }

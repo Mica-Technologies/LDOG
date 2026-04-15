@@ -13,12 +13,14 @@ public final class EmissiveRenderLayer {
 
     private static final ThreadLocal<RegionRenderCacheBuilder> CACHE_BUILDER = new ThreadLocal<>();
     private static final ThreadLocal<CompiledChunk> COMPILED_CHUNK = new ThreadLocal<>();
+    private static final ThreadLocal<Boolean> EMISSIVE_BUFFER_STARTED = ThreadLocal.withInitial(() -> false);
 
     private EmissiveRenderLayer() {}
 
     public static void set(RegionRenderCacheBuilder builder, CompiledChunk compiled) {
         CACHE_BUILDER.set(builder);
         COMPILED_CHUNK.set(compiled);
+        EMISSIVE_BUFFER_STARTED.set(false);
     }
 
     public static RegionRenderCacheBuilder getCacheBuilder() {
@@ -29,8 +31,17 @@ public final class EmissiveRenderLayer {
         return COMPILED_CHUNK.get();
     }
 
+    public static void markEmissiveBufferStarted() {
+        EMISSIVE_BUFFER_STARTED.set(true);
+    }
+
+    public static boolean wasEmissiveBufferStarted() {
+        return EMISSIVE_BUFFER_STARTED.get();
+    }
+
     public static void clear() {
         CACHE_BUILDER.remove();
         COMPILED_CHUNK.remove();
+        EMISSIVE_BUFFER_STARTED.remove();
     }
 }
