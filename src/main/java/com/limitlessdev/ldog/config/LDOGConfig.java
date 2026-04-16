@@ -34,26 +34,14 @@ public class LDOGConfig {
     @Config.RangeInt(min = 0, max = 20)
     public static int dynamicLightsUpdateInterval = 1;
 
-    @Config.Comment("Enable global light color temperature tinting (warm/cool shift without shaders).")
+    @Config.Comment("Enable lighting customization (color temperature, brightness, night darkness, HDR).")
     public static boolean enableLightTemperature = false;
 
     @Config.Comment({
-        "Light temperature preset. Overrides RGB multipliers below.",
-        "Values: neutral, warm_white, candlelight, sunlight, fluorescent, moonlight, overcast, purple_haze, neon_blue, red_alert"
+        "Lighting preset. Controls block/sky light colors, brightness, night darkness, and HDR.",
+        "Values: neutral, warm_torches, cinematic, candlelight, moonlit, dark_nights, horror, bright_caves, vivid, fluorescent, purple_haze, neon_blue, red_alert"
     })
-    public static String lightTemperaturePreset = "warm_white";
-
-    @Config.Comment("Red channel multiplier for light tinting. 1.0 = unchanged.")
-    @Config.RangeDouble(min = 0.5, max = 1.5)
-    public static double lightTintRed = 1.0;
-
-    @Config.Comment("Green channel multiplier for light tinting. 1.0 = unchanged.")
-    @Config.RangeDouble(min = 0.5, max = 1.5)
-    public static double lightTintGreen = 1.0;
-
-    @Config.Comment("Blue channel multiplier for light tinting. 1.0 = unchanged.")
-    @Config.RangeDouble(min = 0.5, max = 1.5)
-    public static double lightTintBlue = 1.0;
+    public static String lightTemperaturePreset = "cinematic";
 
     @Config.Comment({
         "Enable shader support (stretch goal).",

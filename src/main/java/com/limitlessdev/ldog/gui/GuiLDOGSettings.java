@@ -71,8 +71,9 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final double[] TINT_VALUES = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0};
     private static final int[] DYN_LIGHT_INTERVAL_VALUES = {0, 1, 2, 5, 10, 20};
     private static final String[] LIGHT_TEMP_PRESETS = {
-        "neutral", "warm_white", "candlelight", "sunlight", "fluorescent",
-        "moonlight", "overcast", "purple_haze", "neon_blue", "red_alert"
+        "neutral", "warm_torches", "cinematic", "candlelight", "moonlit",
+        "dark_nights", "horror", "bright_caves", "vivid",
+        "fluorescent", "purple_haze", "neon_blue", "red_alert"
     };
 
     public GuiLDOGSettings(GuiScreen parentScreen) {
