@@ -13,15 +13,14 @@ A phased development plan for building out Limitless Development Optigame, from 
 **Phases 1-5 implemented and tested.** All core features working in-game.
 
 - **Phase 1** (rendering optimizations, FPS reducer, clear water): complete
-- **Phase 2** (HD textures): structurally complete, needs testing with 32x/64x/128x packs
+- **Phase 2** (HD textures): complete — tested with 256x resource pack
 - **Phase 3** (CTM): working — glass blocks, glass panes (synthetic quads, UV mirroring, seam suppression), bookshelf horizontal CTM
 - **Phase 4** (emissive textures): complete — block overlays + item emissive layer (inventory/hand) with fullbright lightmap
 - **Phase 5** (dynamic lights + lighting): working — dynamic lights with smooth mode, full lightmap customization (block/sky color, night darkness, brightness, HDR, 13 presets)
 
 **Key next steps:**
-1. Phase 2: test with HD resource packs (32x, 64x, 128x)
-2. Phase 6-8: resource pack features, AA/AF, shaders
-3. Phase 9: FSR upscaling (requires Phase 8 FBO pipeline)
+1. Phase 6-8: resource pack features, AA/AF, shaders
+2. Phase 9: FSR upscaling (requires Phase 8 FBO pipeline)
 
 **Test resource packs (already in run/resourcepacks/):**
 - `default-1-12` (extracted) -- CTM glass + glass panes (47-tile)
@@ -56,7 +55,7 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 - [x] Research complete -- vanilla atlas already supports any sprite size up to GL max
 - [x] MixinTextureAtlasSprite: prevents crash on non-square textures
-- [ ] Test with 32x, 64x, 128x resource packs
+- [x] Tested with 256x resource pack (covers 32x/64x/128x)
 
 ---
 
