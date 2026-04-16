@@ -184,13 +184,14 @@ public class CustomSkyRenderer {
 
         GlStateManager.pushMatrix();
 
-        // Save and set GL state for sky rendering
+        // Set GL state for sky rendering
         GlStateManager.enableTexture2D();
         GlStateManager.enableBlend();
         GlStateManager.disableAlpha();
         GlStateManager.depthMask(false);
         GlStateManager.disableFog();
         GlStateManager.disableLighting();
+        GlStateManager.disableCull(); // Ensure both faces visible
 
         // Set blend mode
         switch (layer.blend) {
@@ -215,10 +216,11 @@ public class CustomSkyRenderer {
         GlStateManager.color(1.0f, 1.0f, 1.0f, alpha);
         mc.getTextureManager().bindTexture(layer.texture);
 
-        // Render textured full sphere covering the sky
-        renderSkySphere();
+        // Render as a textured skybox (6 cube faces viewed from inside)
+        renderSkybox();
 
         // Restore state
+        GlStateManager.enableCull();
         GlStateManager.depthMask(true);
         GlStateManager.enableAlpha();
         GlStateManager.disableBlend();
@@ -227,51 +229,57 @@ public class CustomSkyRenderer {
     }
 
     /**
-     * Renders a textured sphere covering the entire sky dome.
-     * Uses latitude/longitude bands: 16 longitude segments, latitude from
-     * zenith (top) down to -20 degrees below the horizon.
+     * Renders a textured skybox (6 faces of a cube) viewed from inside.
+     * Each face maps the full texture. The cube is large enough to fill
+     * the sky at any FOV.
      *
-     * The sphere is rendered inside-out (vertices wound so the inside face
-     * is visible) since the camera is at the center.
+     * This is the standard approach used by OptiFine and most custom sky
+     * implementations — simpler and more reliable than sphere geometry.
      */
-    private static void renderSkySphere() {
+    private static void renderSkybox() {
         Tessellator tessellator = Tessellator.getInstance();
         BufferBuilder buffer = tessellator.getBuffer();
+        float s = SKY_RADIUS;
 
-        int lonSegments = 16;
-        int latBands = 10; // from zenith to slightly below horizon
+        buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_TEX);
 
-        for (int lat = 0; lat < latBands; lat++) {
-            // Latitude from 0 (zenith) to ~110 degrees (below horizon)
-            float theta0 = (float) (lat * Math.PI / latBands) * 0.6f;        // scale to cover 0-108°
-            float theta1 = (float) ((lat + 1) * Math.PI / latBands) * 0.6f;
+        // Top face (Y+) — looking up
+        buffer.pos(-s, s, -s).tex(0.0, 0.0).endVertex();
+        buffer.pos(-s, s,  s).tex(0.0, 1.0).endVertex();
+        buffer.pos( s, s,  s).tex(1.0, 1.0).endVertex();
+        buffer.pos( s, s, -s).tex(1.0, 0.0).endVertex();
 
-            float y0 = (float) Math.cos(theta0) * SKY_RADIUS;
-            float r0 = (float) Math.sin(theta0) * SKY_RADIUS;
-            float y1 = (float) Math.cos(theta1) * SKY_RADIUS;
-            float r1 = (float) Math.sin(theta1) * SKY_RADIUS;
+        // Bottom face (Y-) — looking down
+        buffer.pos(-s, -s,  s).tex(0.0, 0.0).endVertex();
+        buffer.pos(-s, -s, -s).tex(0.0, 1.0).endVertex();
+        buffer.pos( s, -s, -s).tex(1.0, 1.0).endVertex();
+        buffer.pos( s, -s,  s).tex(1.0, 0.0).endVertex();
 
-            float v0 = (float) lat / latBands;
-            float v1 = (float) (lat + 1) / latBands;
+        // North face (Z-)
+        buffer.pos( s, s, -s).tex(0.0, 0.0).endVertex();
+        buffer.pos( s,-s, -s).tex(0.0, 1.0).endVertex();
+        buffer.pos(-s,-s, -s).tex(1.0, 1.0).endVertex();
+        buffer.pos(-s, s, -s).tex(1.0, 0.0).endVertex();
 
-            buffer.begin(GL11.GL_QUAD_STRIP, DefaultVertexFormats.POSITION_TEX);
+        // South face (Z+)
+        buffer.pos(-s, s,  s).tex(0.0, 0.0).endVertex();
+        buffer.pos(-s,-s,  s).tex(0.0, 1.0).endVertex();
+        buffer.pos( s,-s,  s).tex(1.0, 1.0).endVertex();
+        buffer.pos( s, s,  s).tex(1.0, 0.0).endVertex();
 
-            for (int lon = 0; lon <= lonSegments; lon++) {
-                float phi = (float) (lon * 2.0 * Math.PI / lonSegments);
-                float u = (float) lon / lonSegments;
+        // East face (X+)
+        buffer.pos( s, s,  s).tex(0.0, 0.0).endVertex();
+        buffer.pos( s,-s,  s).tex(0.0, 1.0).endVertex();
+        buffer.pos( s,-s, -s).tex(1.0, 1.0).endVertex();
+        buffer.pos( s, s, -s).tex(1.0, 0.0).endVertex();
 
-                float x0 = (float) Math.cos(phi) * r0;
-                float z0 = (float) Math.sin(phi) * r0;
-                float x1 = (float) Math.cos(phi) * r1;
-                float z1 = (float) Math.sin(phi) * r1;
+        // West face (X-)
+        buffer.pos(-s, s, -s).tex(0.0, 0.0).endVertex();
+        buffer.pos(-s,-s, -s).tex(0.0, 1.0).endVertex();
+        buffer.pos(-s,-s,  s).tex(1.0, 1.0).endVertex();
+        buffer.pos(-s, s,  s).tex(1.0, 0.0).endVertex();
 
-                // Reversed winding: lower latitude vertex first so inside face is visible
-                buffer.pos(x1, y1, z1).tex(u, v1).endVertex();
-                buffer.pos(x0, y0, z0).tex(u, v0).endVertex();
-            }
-
-            tessellator.draw();
-        }
+        tessellator.draw();
     }
 
     /**
