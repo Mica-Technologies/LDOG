@@ -81,6 +81,9 @@ public class LDOGConfig {
     @Config.Comment("Enable Better Snow (snow-textured sides on blocks with snow layers on top).")
     public static boolean enableBetterSnow = true;
 
+    @Config.Comment("Show performance metrics overlay in the upper-left corner (FPS, frame time, memory, culling stats).")
+    public static boolean enablePerformanceOverlay = false;
+
     @Config.Comment({
         "Enable shader support (stretch goal).",
         "Auto-disabled when OptiFine is detected."
