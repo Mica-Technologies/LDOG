@@ -27,7 +27,8 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 **Key next steps:**
 1. **Phase 7c** (extended border mipmaps) — fixes the AF atlas bleed properly. Mixin on TextureAtlasSprite.generateMipmaps (or TextureMap) to pad each mip level's sprite with N extra pixels of the sprite's own edge color.
-2. **Phase 8** (Shaders) + **Phase 9** (FSR): stretch goals, see Super Resolution + Radiance mods for reference.
+2. **Phase C3** (Smooth Font absorption) — antialiased TrueType text rendering with lazy + disk-cached glyph atlas. Target: drop Smooth Font from the modpack without paying its ~doubled-launch-time cost.
+3. **Phase 8** (Shaders) + **Phase 9** (FSR): stretch goals, see Super Resolution + Radiance mods for reference.
 
 **Test resource packs (already in run/resourcepacks/):**
 - `default-1-12` (extracted) -- CTM glass + glass panes (47-tile)
@@ -215,6 +216,25 @@ A phased development plan for building out Limitless Development Optigame, from 
 ## Phase C2: Memory Optimization Absorption
 
 - [ ] Not started (deferred until Phases 2-4 are stable)
+
+---
+
+## Phase C3: Smooth Font Absorption
+
+Replaces the Smooth Font mod's functionality: antialiased TrueType font rendering instead of MC's default bitmap font. Target slot: after Phase 7c, before Phase 8 (the user's modpack relies on Smooth Font, and Phase 8 shader work is much larger scope — shipping C3 earlier unblocks dropping another mod from the pack).
+
+**Pain point driving this:** Smooth Font roughly doubles launch time because it rasterizes the entire Unicode glyph range (or the full font atlas) synchronously at startup. LDOG's implementation must not repeat that.
+
+- [ ] Research: locate MC's FontRenderer hook points (`net.minecraft.client.gui.FontRenderer` glyph-lookup path; `renderUnicodeChar` is the bitmap-font entry point; `getCharWidth` is width lookup)
+- [ ] Replace glyph source: swap MC's 256×256 bitmap pages for Java AWT `Font` + `Graphics2D` antialiased rasterization
+- [ ] **Lazy glyph rasterization**: render glyphs on first use into a dynamic atlas; keep vanilla fallback while the glyph is being rasterized (avoids stutter). Contrast with Smooth Font's upfront-everything approach.
+- [ ] **Persistent disk cache**: serialize the rasterized glyph atlas to `config/ldog/font-cache/<font-hash>/<size>.png` so subsequent launches skip rasterization entirely. Invalidate on font file change (hash-based).
+- [ ] **Multithreaded warm-up**: for ASCII + common symbols, rasterize in a background thread at startup so the first frame of text doesn't stutter, but without blocking the main thread.
+- [ ] Config: `enableSmoothFont`, `fontFamily` (system font or bundled), `fontStyle` (plain/bold/italic), `antialiasMode` (none/grayscale/subpixel), `fontSize` multiplier.
+- [ ] GUI section: "Font Rendering".
+- [ ] OptiFine conflict check: OptiFine has its own font rendering option ("Font Antialiasing"); auto-disable LDOG's version when OptiFine is detected (consistent with other Phase features).
+
+**Why the load-time budget matters:** Smooth Font takes ~5-10s extra on first launch because it synchronously rasterizes all 256 glyph pages × multiple sizes. Lazy + cached + threaded should put first launch at ~1s overhead and subsequent launches at near-zero.
 
 ---
 
