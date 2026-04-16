@@ -15,6 +15,7 @@
     "MixinTileEntityRendererDispatcher",
     "MixinParticleManager",
     "MixinRenderItem",
+    "MixinRenderLivingBase",
     "MixinWorldDynamicLights",
     "MixinEntityRendererLightmap"
   ],

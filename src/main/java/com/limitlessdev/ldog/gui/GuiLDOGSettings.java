@@ -76,6 +76,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_PERF_OVERLAY = 72;
     private static final int BTN_NATURAL_TEXTURES = 73;
     private static final int BTN_CUSTOM_COLORS = 74;
+    private static final int BTN_RANDOM_MOBS = 75;
 
     private static final String[] BETTER_GRASS_MODES = {"off", "fast", "fancy"};
 
@@ -174,6 +175,10 @@ public class GuiLDOGSettings extends GuiScreen {
                 toggleLabel("Natural Textures", LDOGConfig.enableNaturalTextures)),
             new GuiButton(BTN_CUSTOM_COLORS, 0, 0, w, h,
                 toggleLabel("Custom Colors", LDOGConfig.enableCustomColors)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_RANDOM_MOBS, 0, 0, w, h,
+                toggleLabel("Random Mobs", LDOGConfig.enableRandomEntityTextures)),
+            null);
 
         // -- Lighting --
         settingsList.addHeaderRow("Dynamic Lights");
@@ -463,6 +468,10 @@ public class GuiLDOGSettings extends GuiScreen {
             case BTN_CUSTOM_COLORS:
                 LDOGConfig.enableCustomColors = !LDOGConfig.enableCustomColors;
                 button.displayString = toggleLabel("Custom Colors", LDOGConfig.enableCustomColors);
+                break;
+            case BTN_RANDOM_MOBS:
+                LDOGConfig.enableRandomEntityTextures = !LDOGConfig.enableRandomEntityTextures;
+                button.displayString = toggleLabel("Random Mobs", LDOGConfig.enableRandomEntityTextures);
                 break;
         }
     }

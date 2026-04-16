@@ -87,6 +87,9 @@ public class LDOGConfig {
     @Config.Comment("Enable custom colors from resource packs (custom grass/foliage colormaps, redstone wire colors, etc.).")
     public static boolean enableCustomColors = true;
 
+    @Config.Comment("Enable random entity textures from resource packs (multiple texture variants per mob type).")
+    public static boolean enableRandomEntityTextures = true;
+
     @Config.Comment("Show performance metrics overlay in the upper-left corner (FPS, frame time, memory, culling stats).")
     public static boolean enablePerformanceOverlay = false;
 
