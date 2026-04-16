@@ -115,10 +115,11 @@ A phased development plan for building out Limitless Development Optigame, from 
 ## Phase 6: Resource Pack Features
 
 ### 6a: Better Grass / Better Snow
-- [ ] BetterGrassHandler: detect grass/snowy-grass blocks, replace side quads with biome-tinted top texture
-- [ ] MixinBlockModelRenderer (extend): intercept grass block quad rendering
-- [ ] Config toggle: enableBetterGrass (Off / Fast / Fancy)
-- [ ] Better Snow: snow-covered blocks show snow side texture
+- [x] BetterGrassBakedModel: wraps grass/mycelium models, replaces side quads with biome-tinted top texture
+- [x] BetterGrassHandler: captures sprites at TextureStitchEvent.Post, wraps models at ModelBakeEvent
+- [x] Config toggle: betterGrass = "off" / "fast" / "fancy" (default: fancy)
+- [x] BetterSnowHandler: renders snow-textured side quads on any opaque block with snow above
+- [x] Flat lighting + directional shading + Z-offset for snow quads
 
 ### 6b: Natural Textures
 - [ ] NaturalTextureHandler: random rotation (0/90/180/270) and flip of block face textures
