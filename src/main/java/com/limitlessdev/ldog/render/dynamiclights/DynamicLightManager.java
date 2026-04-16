@@ -26,7 +26,7 @@ public final class DynamicLightManager {
     private static final DynamicLightManager INSTANCE = new DynamicLightManager();
 
     private final Map<Integer, DynamicLightSource> activeLights = new HashMap<>();
-    private long lastUpdateTick = -1;
+    private long lastScanTick = -1;
 
     private DynamicLightManager() {}
 
@@ -35,10 +35,10 @@ public final class DynamicLightManager {
     }
 
     /**
-     * Called once per client tick. Scans nearby entities for light-emitting
-     * items and updates the active light source map.
+     * Full update: scans entities for light-emitting items and updates positions.
+     * Called once per client tick from the tick handler.
      */
-    public void update() {
+    public void tickUpdate() {
         Minecraft mc = Minecraft.getMinecraft();
         World world = mc.world;
         if (world == null || mc.player == null) {
@@ -48,9 +48,9 @@ public final class DynamicLightManager {
 
         long tick = world.getTotalWorldTime();
         int interval = LDOGConfig.dynamicLightsUpdateInterval;
-        if (interval > 1 && tick == lastUpdateTick) return;
+        if (interval > 0 && tick == lastScanTick) return;
         if (interval > 1 && tick % interval != 0) return;
-        lastUpdateTick = tick;
+        lastScanTick = tick;
 
         // Mark all sources for potential removal
         for (DynamicLightSource source : activeLights.values()) {
@@ -71,22 +71,34 @@ public final class DynamicLightManager {
             }
         }
 
-        // Remove dead sources, trigger re-renders for moved sources
+        // Remove dead sources
         Iterator<Map.Entry<Integer, DynamicLightSource>> it = activeLights.entrySet().iterator();
         while (it.hasNext()) {
-            Map.Entry<Integer, DynamicLightSource> entry = it.next();
-            DynamicLightSource source = entry.getValue();
-
+            DynamicLightSource source = it.next().getValue();
             if (source.lightLevel <= 0 || source.entity.isDead) {
-                // Source removed - mark old area for re-render
                 markForRerender(source.lastPos, 15);
                 it.remove();
-                continue;
             }
+        }
 
+        // Update positions and trigger re-renders
+        updatePositions();
+    }
+
+    /**
+     * Lightweight position-only update: checks if any light source has moved
+     * and triggers chunk re-renders. Called every render frame in smooth mode
+     * for fluid light movement without rescanning all entities.
+     */
+    public void frameUpdate() {
+        if (activeLights.isEmpty()) return;
+        updatePositions();
+    }
+
+    private void updatePositions() {
+        for (DynamicLightSource source : activeLights.values()) {
             BlockPos newPos = source.currentPos();
             if (!newPos.equals(source.lastPos)) {
-                // Source moved - mark both old and new areas
                 markForRerender(source.lastPos, source.lightLevel);
                 markForRerender(newPos, source.lightLevel);
                 source.lastPos = newPos;

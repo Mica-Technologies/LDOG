@@ -30,8 +30,8 @@ public class LDOGConfig {
     })
     public static boolean enableDynamicLights = true;
 
-    @Config.Comment("Update interval for dynamic lights in ticks (1 = every tick, 5 = every 5 ticks). Higher = better performance.")
-    @Config.RangeInt(min = 1, max = 20)
+    @Config.Comment("Update interval for dynamic lights. 0 = Smooth (every frame, best quality), 1 = every tick, 2+ = every N ticks (better performance).")
+    @Config.RangeInt(min = 0, max = 20)
     public static int dynamicLightsUpdateInterval = 1;
 
     @Config.Comment("Enable global light color temperature tinting (warm/cool shift without shaders).")

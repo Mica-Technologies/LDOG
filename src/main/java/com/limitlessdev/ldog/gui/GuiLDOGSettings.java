@@ -69,7 +69,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int[] AFK_FPS_VALUES = {1, 2, 5, 10, 15, 30, 60};
     private static final double[] WATER_OPACITY_VALUES = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.5, 2.0, 3.0, 5.0, 7.0, 10.0};
     private static final double[] TINT_VALUES = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0};
-    private static final int[] DYN_LIGHT_INTERVAL_VALUES = {1, 2, 3, 5, 10, 20};
+    private static final int[] DYN_LIGHT_INTERVAL_VALUES = {0, 1, 2, 5, 10, 20};
     private static final String[] LIGHT_TEMP_PRESETS = {
         "neutral", "warm_white", "candlelight", "sunlight", "fluorescent",
         "moonlight", "overcast", "purple_haze", "neon_blue", "red_alert"
@@ -148,7 +148,7 @@ public class GuiLDOGSettings extends GuiScreen {
             makeFeatureButton(BTN_DYNAMIC_LIGHTS, w, h, "Dynamic Lights",
                 LDOGConfig.enableDynamicLights, OptiFineCompat.shouldHandleDynamicLights()),
             new GuiButton(BTN_DYN_LIGHT_INTERVAL, 0, 0, w, h,
-                valLabel("Update Interval", LDOGConfig.dynamicLightsUpdateInterval)));
+                dynLightIntervalLabel(LDOGConfig.dynamicLightsUpdateInterval)));
         settingsList.addButtonRow(
             new GuiButton(BTN_LIGHT_TEMP, 0, 0, w, h,
                 toggleLabel("Light Temperature", LDOGConfig.enableLightTemperature)),
@@ -318,7 +318,7 @@ public class GuiLDOGSettings extends GuiScreen {
                 break;
             case BTN_DYN_LIGHT_INTERVAL:
                 LDOGConfig.dynamicLightsUpdateInterval = cycleValue(DYN_LIGHT_INTERVAL_VALUES, LDOGConfig.dynamicLightsUpdateInterval);
-                button.displayString = valLabel("Update Interval", LDOGConfig.dynamicLightsUpdateInterval);
+                button.displayString = dynLightIntervalLabel(LDOGConfig.dynamicLightsUpdateInterval);
                 break;
             case BTN_LIGHT_TEMP:
                 LDOGConfig.enableLightTemperature = !LDOGConfig.enableLightTemperature;
@@ -386,6 +386,12 @@ public class GuiLDOGSettings extends GuiScreen {
 
     static String tintLabel(String channel, double value, String colorCode) {
         return channel + ": " + colorCode + String.format("%.1f", value);
+    }
+
+    static String dynLightIntervalLabel(int value) {
+        if (value == 0) return "Speed: \u00a7aSmooth (per frame)";
+        if (value == 1) return "Speed: \u00a7aFast (every tick)";
+        return "Speed: \u00a7e" + value + " ticks";
     }
 
     static String featureLabel(String name, boolean enabled, boolean ldogHandles) {
