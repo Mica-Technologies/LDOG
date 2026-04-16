@@ -19,8 +19,13 @@ A phased development plan for building out Limitless Development Optigame, from 
 - **Phase 5** (dynamic lights + lighting): working — dynamic lights with smooth mode, full lightmap customization (block/sky color, night darkness, brightness, HDR, 13 presets)
 
 **Key next steps:**
-1. Phase 6-8: resource pack features, AA/AF, shaders
-2. Phase 9: FSR upscaling (requires Phase 8 FBO pipeline)
+1. Phase 6a: Better Grass / Better Snow
+2. Phase 6b: Natural Textures
+3. Phase 6c: Custom Colors
+4. Phase 6d: Custom Sky
+5. Phase 6e: Random Entity Textures
+6. Phase 7: AA/AF (discuss options with user first)
+7. Phase 8-9: Shaders + FSR (stretch goals)
 
 **Test resource packs (already in run/resourcepacks/):**
 - `default-1-12` (extracted) -- CTM glass + glass panes (47-tile)
@@ -107,9 +112,53 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 ---
 
-## Phase 6-8: Resource Pack Features, AA/AF, Shaders
+## Phase 6: Resource Pack Features
 
-- [ ] Not started
+### 6a: Better Grass / Better Snow
+- [ ] BetterGrassHandler: detect grass/snowy-grass blocks, replace side quads with biome-tinted top texture
+- [ ] MixinBlockModelRenderer (extend): intercept grass block quad rendering
+- [ ] Config toggle: enableBetterGrass (Off / Fast / Fancy)
+- [ ] Better Snow: snow-covered blocks show snow side texture
+
+### 6b: Natural Textures
+- [ ] NaturalTextureHandler: random rotation (0/90/180/270) and flip of block face textures
+- [ ] Parse optifine/natural.properties for per-block configuration
+- [ ] Position-based deterministic randomness (same block always gets same rotation)
+- [ ] Config toggle: enableNaturalTextures
+
+### 6c: Custom Colors
+- [ ] CustomColorProperties: parse optifine/color.properties + colormap PNGs
+- [ ] Biome foliage/grass color overrides (custom colormap PNGs)
+- [ ] Water color overrides (per-biome)
+- [ ] Redstone wire color by power level
+- [ ] Potion / map / dye color overrides
+- [ ] Sky / fog color overrides
+- [ ] Config toggle: enableCustomColors
+
+### 6d: Custom Sky
+- [ ] CustomSkyRenderer: replace RenderGlobal.renderSky() when custom sky properties exist
+- [ ] Parse optifine/sky/world0/*.properties (texture, fade, rotate, blend, speed)
+- [ ] Sky layer rendering with configurable blending and rotation
+- [ ] Custom sun/moon textures
+- [ ] Config toggle: enableCustomSky
+
+### 6e: Random Entity Textures
+- [ ] RandomEntityTextureHandler: load texture variants from optifine/random/ paths
+- [ ] Parse .properties files for weights, biome filters, name patterns
+- [ ] UUID-based deterministic texture selection per entity
+- [ ] Config toggle: enableRandomEntityTextures
+
+---
+
+## Phase 7: Anti-aliasing / Anisotropic Filtering
+
+- [ ] Not started (will discuss AA algorithm options with user before implementing)
+
+---
+
+## Phase 8: Shader Pipeline
+
+- [ ] Not started (stretch goal — requires deep OpenGL expertise, multi-month effort)
 
 ---
 
