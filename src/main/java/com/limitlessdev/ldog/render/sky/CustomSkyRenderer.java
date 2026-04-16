@@ -84,21 +84,32 @@ public class CustomSkyRenderer {
         String source = props.getProperty("source");
         if (source == null || source.isEmpty()) return null;
 
-        // Resolve texture path relative to the sky directory
+        // Resolve texture path:
+        // "skybox:stars.png" → ResourceLocation("skybox", "stars.png")
+        // "./texture.png" → relative to properties file directory
+        // "mcpatcher/sky/world0/stars.png" → absolute within minecraft namespace
+        // "stars.png" → relative to properties file directory
         ResourceLocation texture;
-        if (source.startsWith("./")) {
-            texture = new ResourceLocation("minecraft", basePath + "/" + source.substring(2));
-        } else if (source.contains(":")) {
+        if (source.contains(":")) {
             texture = new ResourceLocation(source);
+        } else if (source.startsWith("./")) {
+            texture = new ResourceLocation("minecraft", basePath + "/" + source.substring(2));
+        } else if (source.contains("/")) {
+            // Absolute path within minecraft namespace (e.g., mcpatcher/sky/world0/stars.png)
+            texture = new ResourceLocation("minecraft", source);
         } else {
+            // Simple filename, relative to properties file directory
             texture = new ResourceLocation("minecraft", basePath + "/" + source);
         }
 
-        int startFadeIn = parseInt(props, "startFadeIn", 0);
-        int endFadeIn = parseInt(props, "endFadeIn", 0);
-        int startFadeOut = parseInt(props, "startFadeOut", 12000);
-        int endFadeOut = parseInt(props, "endFadeOut", 12000);
+        // Parse fade times. If startFadeOut is missing, default to endFadeOut (instant fade-out).
+        int endFadeOut = parseTime(props, "endFadeOut", 12000);
+        int startFadeOut = parseTime(props, "startFadeOut", endFadeOut);
+        int startFadeIn = parseTime(props, "startFadeIn", 0);
+        int endFadeIn = parseTime(props, "endFadeIn", startFadeIn);
         String blend = props.getProperty("blend", "add").trim().toLowerCase();
+        // Normalize blend mode names
+        if ("alpha".equals(blend)) blend = "overlay";
         boolean rotate = Boolean.parseBoolean(props.getProperty("rotate", "true"));
         float speed = parseFloat(props, "speed", 1.0f);
 
@@ -218,6 +229,32 @@ public class CustomSkyRenderer {
 
             tessellator.draw();
         }
+    }
+
+    /**
+     * Parse a time value from properties. Supports both raw tick values (0-24000)
+     * and HH:MM format (e.g., "19:20", "4:40").
+     *
+     * MC time mapping: 6:00 = 0 ticks, 12:00 = 6000, 18:00 = 12000, 0:00 = 18000.
+     */
+    private static int parseTime(Properties props, String key, int defaultValue) {
+        String val = props.getProperty(key);
+        if (val == null) return defaultValue;
+        val = val.trim();
+
+        if (val.contains(":")) {
+            // HH:MM format → convert to MC ticks
+            String[] parts = val.split(":");
+            try {
+                int hours = Integer.parseInt(parts[0]);
+                int minutes = parts.length > 1 ? Integer.parseInt(parts[1]) : 0;
+                // MC time: 6:00 = tick 0, wraps at 24000
+                int ticks = ((hours - 6) * 1000 + minutes * 1000 / 60 + 24000) % 24000;
+                return ticks;
+            } catch (NumberFormatException e) { return defaultValue; }
+        }
+
+        try { return Integer.parseInt(val); } catch (NumberFormatException e) { return defaultValue; }
     }
 
     private static int parseInt(Properties props, String key, int defaultValue) {
