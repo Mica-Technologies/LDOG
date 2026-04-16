@@ -175,6 +175,7 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 ### 7c: Extended border mipmaps (AF bleed fix)
 - [ ] Not started. Target: mixin on `TextureAtlasSprite.generateMipmaps` (or `TextureMap.loadTextureAtlas`) to extend each sprite's mip level with N pixels of its own edge color (N >= 2^mipLevel), so AF anisotropic samples never cross into neighboring sprites. OptiFine/MCPatcher reference pattern.
+- **Tried and reverted (2026-04-16)**: simpler mitigation — clamp `GL_TEXTURE_MAX_LOD` to `mipmapLevels - 2` on the block atlas when AF is on, to keep the sampler off the worst-bleed mip levels. Didn't visibly reduce the distant-block edge lines and added mild quality regression, so reverted uncommitted. The proper fix really does need extended borders — no GL-param shortcut exists. Likely structure when tackled: subclass/replace `Stitcher` to allocate `2^mipmapLevels` pixels of inter-sprite padding, then hook the atlas upload path to fill the padding area with each sprite's edge-extended pixel data. Post-upload, mipmaps downsample the halo correctly at every level.
 
 ### 7d: FXAA post-process
 - [x] Config: `enableFXAA`
@@ -225,14 +226,13 @@ Replaces the Smooth Font mod's functionality: antialiased TrueType font renderin
 
 **Pain point driving this:** Smooth Font roughly doubles launch time because it rasterizes the entire Unicode glyph range (or the full font atlas) synchronously at startup. LDOG's implementation must not repeat that.
 
-- [ ] Research: locate MC's FontRenderer hook points (`net.minecraft.client.gui.FontRenderer` glyph-lookup path; `renderUnicodeChar` is the bitmap-font entry point; `getCharWidth` is width lookup)
-- [ ] Replace glyph source: swap MC's 256×256 bitmap pages for Java AWT `Font` + `Graphics2D` antialiased rasterization
-- [ ] **Lazy glyph rasterization**: render glyphs on first use into a dynamic atlas; keep vanilla fallback while the glyph is being rasterized (avoids stutter). Contrast with Smooth Font's upfront-everything approach.
-- [ ] **Persistent disk cache**: serialize the rasterized glyph atlas to `config/ldog/font-cache/<font-hash>/<size>.png` so subsequent launches skip rasterization entirely. Invalidate on font file change (hash-based).
-- [ ] **Multithreaded warm-up**: for ASCII + common symbols, rasterize in a background thread at startup so the first frame of text doesn't stutter, but without blocking the main thread.
-- [ ] Config: `enableSmoothFont`, `fontFamily` (system font or bundled), `fontStyle` (plain/bold/italic), `antialiasMode` (none/grayscale/subpixel), `fontSize` multiplier.
+**Shortcut discovered (2026-04-16)**: the alto resource pack already ships an HD 4096×4096 ASCII font PNG at `assets/minecraft/optifine/font/ascii.png` (and the MCPatcher-path equivalent at `assets/minecraft/mcpatcher/font/ascii.png`). Glyphs are pre-rasterized with clean spacing — no TTF rasterization needed if packs provide this file. First implementation pass should just support this "HD font texture swap" path; true runtime TTF rendering can come later if users want non-pack-provided fonts.
+
+- [ ] **Easy path (do first)**: at texture load time, detect HD font PNGs at the mcpatcher/optifine paths. When found, intercept FontRenderer's ResourceLocation for `textures/font/ascii.png` and related `glyph_XX.png` to substitute the HD variants. Flip `GL_TEXTURE_MIN/MAG_FILTER` to `GL_LINEAR` on the font texture for antialiased sampling. Needs checking whether the HD glyph spacing actually tolerates LINEAR filtering without inter-glyph bleed — probably fine at 16× resolution given visible padding in alto's pack.
+- [ ] **Full path (later)**: research MC's FontRenderer hook points (`renderUnicodeChar`, `getCharWidth`); replace glyph source with Java AWT `Font` + `Graphics2D` antialiased rasterization; lazy glyph rasterization; persistent disk cache at `config/ldog/font-cache/<font-hash>/<size>.png`; multithreaded warm-up.
+- [ ] Config: `enableSmoothFont` (toggle), `useHDFontWhenAvailable` (HD path toggle), `fontFamily` (TTF path — later), `antialiasMode` (none/grayscale/subpixel — later).
 - [ ] GUI section: "Font Rendering".
-- [ ] OptiFine conflict check: OptiFine has its own font rendering option ("Font Antialiasing"); auto-disable LDOG's version when OptiFine is detected (consistent with other Phase features).
+- [ ] OptiFine conflict check: OptiFine has its own font rendering option; auto-disable LDOG's version when OptiFine is detected.
 
 **Why the load-time budget matters:** Smooth Font takes ~5-10s extra on first launch because it synchronously rasterizes all 256 glyph pages × multiple sizes. Lazy + cached + threaded should put first launch at ~1s overhead and subsequent launches at near-zero.
 
