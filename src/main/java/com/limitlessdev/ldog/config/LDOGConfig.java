@@ -93,6 +93,25 @@ public class LDOGConfig {
     @Config.Comment("Show performance metrics overlay in the upper-left corner (FPS, frame time, memory, culling stats).")
     public static boolean enablePerformanceOverlay = false;
 
+    // ---- Visual: Anti-aliasing / Texture filtering ----
+
+    @Config.Comment("Enable anisotropic filtering (sharpens textures viewed at glancing angles).")
+    public static boolean enableAnisotropicFiltering = false;
+
+    @Config.Comment("Anisotropic filtering level. Clamped to the GPU's reported maximum if higher.")
+    @Config.RangeInt(min = 2, max = 16)
+    public static int anisotropicLevel = 4;
+
+    @Config.Comment({
+        "Enable multi-sample anti-aliasing (MSAA) for world geometry.",
+        "Requires a GPU that supports multisampled framebuffers."
+    })
+    public static boolean enableMSAA = false;
+
+    @Config.Comment("MSAA sample count. Clamped to the GPU's reported maximum if higher.")
+    @Config.RangeInt(min = 2, max = 8)
+    public static int msaaSamples = 4;
+
     @Config.Comment({
         "Enable shader support (stretch goal).",
         "Auto-disabled when OptiFine is detected."

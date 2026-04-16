@@ -77,6 +77,13 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_NATURAL_TEXTURES = 73;
     private static final int BTN_CUSTOM_COLORS = 74;
     private static final int BTN_RANDOM_MOBS = 75;
+    private static final int BTN_ANISOTROPIC = 80;
+    private static final int BTN_ANISOTROPIC_LEVEL = 81;
+    private static final int BTN_MSAA = 82;
+    private static final int BTN_MSAA_SAMPLES = 83;
+
+    private static final int[] ANISOTROPIC_VALUES = {2, 4, 8, 16};
+    private static final int[] MSAA_VALUES = {2, 4, 8};
 
     private static final String[] BETTER_GRASS_MODES = {"off", "fast", "fancy"};
 
@@ -142,6 +149,22 @@ public class GuiLDOGSettings extends GuiScreen {
                 afkTimeoutLabel(LDOGConfig.afkTimeoutSeconds)),
             new GuiButton(BTN_AFK_FPS, 0, 0, w, h,
                 valLabel("AFK FPS", LDOGConfig.afkFpsLimit)));
+
+        // -- Anti-aliasing / Filtering --
+        // AF can show faint block-edge bleed at distance (atlas sampling across tile borders
+        // at high mip levels — fixed by extended-border mipmaps, tracked as Phase 7c).
+        // MSAA can show faint rasterization edge lines on distant chunk seams.
+        settingsList.addHeaderRow("Anti-aliasing (Experimental)");
+        settingsList.addButtonRow(
+            new GuiButton(BTN_ANISOTROPIC, 0, 0, w, h,
+                toggleLabel("Anisotropic", LDOGConfig.enableAnisotropicFiltering)),
+            new GuiButton(BTN_ANISOTROPIC_LEVEL, 0, 0, w, h,
+                afLabel(LDOGConfig.anisotropicLevel)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_MSAA, 0, 0, w, h,
+                toggleLabel("MSAA", LDOGConfig.enableMSAA)),
+            new GuiButton(BTN_MSAA_SAMPLES, 0, 0, w, h,
+                msaaLabel(LDOGConfig.msaaSamples)));
 
         // -- Visual --
         currentPresetIndex = detectCurrentPreset();
@@ -473,8 +496,28 @@ public class GuiLDOGSettings extends GuiScreen {
                 LDOGConfig.enableRandomEntityTextures = !LDOGConfig.enableRandomEntityTextures;
                 button.displayString = toggleLabel("Random Mobs", LDOGConfig.enableRandomEntityTextures);
                 break;
+            case BTN_ANISOTROPIC:
+                LDOGConfig.enableAnisotropicFiltering = !LDOGConfig.enableAnisotropicFiltering;
+                button.displayString = toggleLabel("Anisotropic", LDOGConfig.enableAnisotropicFiltering);
+                aaSettingsChanged = true;
+                break;
+            case BTN_ANISOTROPIC_LEVEL:
+                LDOGConfig.anisotropicLevel = cycleValue(ANISOTROPIC_VALUES, LDOGConfig.anisotropicLevel);
+                button.displayString = afLabel(LDOGConfig.anisotropicLevel);
+                aaSettingsChanged = true;
+                break;
+            case BTN_MSAA:
+                LDOGConfig.enableMSAA = !LDOGConfig.enableMSAA;
+                button.displayString = toggleLabel("MSAA", LDOGConfig.enableMSAA);
+                break;
+            case BTN_MSAA_SAMPLES:
+                LDOGConfig.msaaSamples = cycleValue(MSAA_VALUES, LDOGConfig.msaaSamples);
+                button.displayString = msaaLabel(LDOGConfig.msaaSamples);
+                break;
         }
     }
+
+    private boolean aaSettingsChanged = false;
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
@@ -489,6 +532,9 @@ public class GuiLDOGSettings extends GuiScreen {
         if (waterSettingsChanged && this.mc.renderGlobal != null) {
             // Water opacity/tint is baked into chunk vertex data — must rebuild.
             this.mc.renderGlobal.loadRenderers();
+        }
+        if (aaSettingsChanged) {
+            com.limitlessdev.ldog.texture.AnisotropicFilteringHandler.refreshMainAtlas();
         }
         this.mc.displayGuiScreen(this.parentScreen);
     }
@@ -566,6 +612,14 @@ public class GuiLDOGSettings extends GuiScreen {
             }
         }
         return values[0];
+    }
+
+    static String afLabel(int level) {
+        return "AF Level: \u00a7a" + level + "x";
+    }
+
+    static String msaaLabel(int samples) {
+        return "Samples: \u00a7a" + samples + "x";
     }
 
     static String betterGrassLabel(String mode) {
