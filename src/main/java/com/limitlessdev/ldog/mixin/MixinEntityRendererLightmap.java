@@ -75,24 +75,38 @@ public abstract class MixinEntityRendererLightmap {
                 b *= tintB;
             }
 
-            // 2. Night darkness — darken entries with low sky light.
-            // At skyLevel=0 (full darkness), apply full multiplier.
-            // At skyLevel=15 (full daylight), no effect.
-            if (nightDark != 1.0f && skyLevel < 15) {
-                float skyFactor = skyLevel / 15f;
-                // Interpolate between darkened and normal based on sky level
-                float darkMul = 1.0f / (1.0f + (nightDark - 1.0f) * (1.0f - skyFactor));
-                r *= darkMul;
-                g *= darkMul;
-                b *= darkMul;
-            }
-
-            // 3. Brightness boost — shift all values up or down.
-            // Positive = brighter (lifts shadows), negative = darker.
+            // 2. Brightness boost — shift all values up or down.
+            // Applied BEFORE night darkness so darkness isn't undone by brightness.
             if (brightness != 0f) {
                 r += brightness * 0.3f;
                 g += brightness * 0.3f;
                 b += brightness * 0.3f;
+            }
+
+            // 3. Night darkness — darken entries with low sky light.
+            // Uses exponential curve: pow(skyFactor, nightDark-1) so high values
+            // produce truly pitch-black results. Applied AFTER brightness so it
+            // always wins — even with brightness boost, night stays dark.
+            // Block-lit areas (torches) are protected from darkening.
+            if (nightDark != 1.0f && skyLevel < 15) {
+                float skyFactor = Math.max(skyLevel / 15f, 0.001f);
+
+                if (nightDark > 1.0f) {
+                    // Block light protection: torches shouldn't be darkened.
+                    // Full protection at blockLevel >= 8.
+                    float blockProtection = Math.min(1.0f, blockLevel / 8.0f);
+                    float rawDark = (float) Math.pow(skyFactor, nightDark - 1.0f);
+                    float darkMul = blockProtection + (1.0f - blockProtection) * rawDark;
+                    r *= darkMul;
+                    g *= darkMul;
+                    b *= darkMul;
+                } else {
+                    // Brighter nights (nightDark < 1): boost low-sky-light entries
+                    float brightMul = 1.0f + (1.0f - nightDark) * (1.0f - skyFactor) * 2.0f;
+                    r *= brightMul;
+                    g *= brightMul;
+                    b *= brightMul;
+                }
             }
 
             // 4. Pseudo-HDR tonemapping (simplified ACES)
