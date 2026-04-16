@@ -6,7 +6,6 @@ import net.minecraft.client.renderer.EntityRenderer;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
-import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -30,11 +29,6 @@ public abstract class MixinEntityRendererLightmap {
 
     @Shadow @Final private int[] lightmapColors;
 
-    @Unique private String ldog$lastPresetName = "";
-    @Unique private float ldog$cachedR = 1f;
-    @Unique private float ldog$cachedG = 1f;
-    @Unique private float ldog$cachedB = 1f;
-
     @Inject(
         method = "updateLightmap",
         at = @At(
@@ -46,24 +40,18 @@ public abstract class MixinEntityRendererLightmap {
         if (!LDOGConfig.enableLightTemperature) return;
 
         // Resolve RGB multipliers from preset or custom config
+        float rMul, gMul, bMul;
         String presetName = LDOGConfig.lightTemperaturePreset;
-        if (!presetName.equals(ldog$lastPresetName)) {
-            ldog$lastPresetName = presetName;
-            if ("custom".equalsIgnoreCase(presetName)) {
-                ldog$cachedR = (float) LDOGConfig.lightTintRed;
-                ldog$cachedG = (float) LDOGConfig.lightTintGreen;
-                ldog$cachedB = (float) LDOGConfig.lightTintBlue;
-            } else {
-                LightTemperaturePreset preset = LightTemperaturePreset.fromConfig(presetName);
-                ldog$cachedR = preset.red;
-                ldog$cachedG = preset.green;
-                ldog$cachedB = preset.blue;
-            }
+        if ("custom".equalsIgnoreCase(presetName)) {
+            rMul = (float) LDOGConfig.lightTintRed;
+            gMul = (float) LDOGConfig.lightTintGreen;
+            bMul = (float) LDOGConfig.lightTintBlue;
+        } else {
+            LightTemperaturePreset preset = LightTemperaturePreset.fromConfig(presetName);
+            rMul = preset.red;
+            gMul = preset.green;
+            bMul = preset.blue;
         }
-
-        float rMul = ldog$cachedR;
-        float gMul = ldog$cachedG;
-        float bMul = ldog$cachedB;
         if (rMul == 1f && gMul == 1f && bMul == 1f) return;
 
         for (int i = 0; i < 256; i++) {
