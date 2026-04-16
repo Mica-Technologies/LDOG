@@ -105,9 +105,11 @@ public abstract class MixinRenderGlobal {
         }
     }
 
+    // pass semantics (EntityRenderer.renderWorld):
+    //   0 = anaglyph red pass, 1 = anaglyph cyan pass, 2 = normal (non-anaglyph)
+    // We want to render in every pass the vanilla sky renders in — no skip.
     @Inject(method = "renderSky(FI)V", at = @At("RETURN"))
     private void ldog$renderCustomSkyPost(float partialTicks, int pass, CallbackInfo ci) {
-        if (pass == 2) return;
         if (LDOGConfig.enableCustomSky) {
             CustomSkyRenderer.renderCustomSky(partialTicks);
         }

@@ -231,56 +231,63 @@ public class CustomSkyRenderer {
     }
 
     /**
-     * Renders a textured skybox (6 faces of a cube) viewed from inside.
-     * Each face maps the full texture. The cube is large enough to fill
-     * the sky at any FOV.
+     * Renders a textured skybox using the MCPatcher/OptiFine 3×2 cubemap layout.
      *
-     * This is the standard approach used by OptiFine and most custom sky
-     * implementations — simpler and more reliable than sphere geometry.
+     * Tile index → (col, row) = (tile%3, tile/3). Face assignment:
+     *   +---------+---------+---------+
+     *   | BOTTOM  |  TOP    |  SOUTH  |   row 0  (tiles 0, 1, 2)
+     *   +---------+---------+---------+
+     *   |  EAST   |  NORTH  |  WEST   |   row 1  (tiles 3, 4, 5)
+     *   +---------+---------+---------+
+     *
+     * Each face is drawn from a single template (a quad at y=-s with its UV
+     * cell applied) and rotated into place with GL matrix transforms — the
+     * same sequence MCPatcher's SkyRenderer.java uses. This preserves the
+     * artist's edge alignment across cube seams.
      */
     private static void renderSkybox() {
         Tessellator tessellator = Tessellator.getInstance();
         BufferBuilder buffer = tessellator.getBuffer();
+
+        // north (also establishes the base rotation reused for W/S/E below)
+        GlStateManager.rotate(90.0f, 1.0f, 0.0f, 0.0f);
+        GlStateManager.rotate(-90.0f, 0.0f, 0.0f, 1.0f);
+        drawTile(tessellator, buffer, 4);
+
+        // top
+        GlStateManager.pushMatrix();
+        GlStateManager.rotate(90.0f, 1.0f, 0.0f, 0.0f);
+        drawTile(tessellator, buffer, 1);
+        GlStateManager.popMatrix();
+
+        // bottom
+        GlStateManager.pushMatrix();
+        GlStateManager.rotate(-90.0f, 1.0f, 0.0f, 0.0f);
+        drawTile(tessellator, buffer, 0);
+        GlStateManager.popMatrix();
+
+        // west / south / east: each adds +90° around Z from the previous state
+        GlStateManager.rotate(90.0f, 0.0f, 0.0f, 1.0f);
+        drawTile(tessellator, buffer, 5);
+
+        GlStateManager.rotate(90.0f, 0.0f, 0.0f, 1.0f);
+        drawTile(tessellator, buffer, 2);
+
+        GlStateManager.rotate(90.0f, 0.0f, 0.0f, 1.0f);
+        drawTile(tessellator, buffer, 3);
+    }
+
+    private static void drawTile(Tessellator tessellator, BufferBuilder buffer, int tile) {
+        double tileX = (tile % 3) / 3.0;
+        double tileY = (tile / 3) / 2.0;
+        double u1 = tileX + 1.0 / 3.0;
+        double v1 = tileY + 0.5;
         float s = SKY_RADIUS;
-
         buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_TEX);
-
-        // Top face (Y+) — looking up
-        buffer.pos(-s, s, -s).tex(0.0, 0.0).endVertex();
-        buffer.pos(-s, s,  s).tex(0.0, 1.0).endVertex();
-        buffer.pos( s, s,  s).tex(1.0, 1.0).endVertex();
-        buffer.pos( s, s, -s).tex(1.0, 0.0).endVertex();
-
-        // Bottom face (Y-) — looking down
-        buffer.pos(-s, -s,  s).tex(0.0, 0.0).endVertex();
-        buffer.pos(-s, -s, -s).tex(0.0, 1.0).endVertex();
-        buffer.pos( s, -s, -s).tex(1.0, 1.0).endVertex();
-        buffer.pos( s, -s,  s).tex(1.0, 0.0).endVertex();
-
-        // North face (Z-)
-        buffer.pos( s, s, -s).tex(0.0, 0.0).endVertex();
-        buffer.pos( s,-s, -s).tex(0.0, 1.0).endVertex();
-        buffer.pos(-s,-s, -s).tex(1.0, 1.0).endVertex();
-        buffer.pos(-s, s, -s).tex(1.0, 0.0).endVertex();
-
-        // South face (Z+)
-        buffer.pos(-s, s,  s).tex(0.0, 0.0).endVertex();
-        buffer.pos(-s,-s,  s).tex(0.0, 1.0).endVertex();
-        buffer.pos( s,-s,  s).tex(1.0, 1.0).endVertex();
-        buffer.pos( s, s,  s).tex(1.0, 0.0).endVertex();
-
-        // East face (X+)
-        buffer.pos( s, s,  s).tex(0.0, 0.0).endVertex();
-        buffer.pos( s,-s,  s).tex(0.0, 1.0).endVertex();
-        buffer.pos( s,-s, -s).tex(1.0, 1.0).endVertex();
-        buffer.pos( s, s, -s).tex(1.0, 0.0).endVertex();
-
-        // West face (X-)
-        buffer.pos(-s, s, -s).tex(0.0, 0.0).endVertex();
-        buffer.pos(-s,-s, -s).tex(0.0, 1.0).endVertex();
-        buffer.pos(-s,-s,  s).tex(1.0, 1.0).endVertex();
-        buffer.pos(-s, s,  s).tex(1.0, 0.0).endVertex();
-
+        buffer.pos(-s, -s, -s).tex(tileX, tileY).endVertex();
+        buffer.pos(-s, -s,  s).tex(tileX, v1).endVertex();
+        buffer.pos( s, -s,  s).tex(u1,    v1).endVertex();
+        buffer.pos( s, -s, -s).tex(u1,    tileY).endVertex();
         tessellator.draw();
     }
 
