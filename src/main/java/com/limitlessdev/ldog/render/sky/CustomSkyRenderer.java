@@ -30,7 +30,7 @@ import java.util.Properties;
  * timing, blend mode, and optional rotation.
  *
  * Layers are rendered after vanilla sky (injected at RETURN of
- * RenderGlobal.renderSky via MixinRenderGlobal) as textured sky domes
+ * RenderGlobal.renderSky via MixinRenderGlobal) as textured spheres
  * with time-based alpha fading.
  */
 @Mod.EventBusSubscriber(modid = Tags.MODID, value = Side.CLIENT)
@@ -38,11 +38,13 @@ public class CustomSkyRenderer {
 
     private static final List<CustomSkyLayer> layers = new ArrayList<>();
     private static final float SKY_RADIUS = 100.0f;
+    private static boolean loggedOnce = false;
 
     @SubscribeEvent
     public static void onTextureStitchPre(TextureStitchEvent.Pre event) {
         if (!LDOGConfig.enableCustomSky) return;
         layers.clear();
+        loggedOnce = false;
         loadSkyLayers();
     }
 
@@ -67,16 +69,23 @@ public class CustomSkyRenderer {
                     if (layer != null) {
                         layers.add(layer);
                         found = true;
+                        LDOGMod.LOGGER.info("LDOG: Loaded sky layer sky{} from {} (texture={}, fadeIn={}-{}, fadeOut={}-{})",
+                            i, basePath, layer.texture, layer.startFadeIn, layer.endFadeIn,
+                            layer.startFadeOut, layer.endFadeOut);
                     }
                 } catch (IOException ignored) {
-                    // No more sky files at this index
+                    // File not found at this index, continue checking
                 }
             }
 
             if (found) {
-                LDOGMod.LOGGER.info("LDOG: Loaded {} custom sky layers from {}", layers.size(), basePath);
+                LDOGMod.LOGGER.info("LDOG: Loaded {} custom sky layers total from {}", layers.size(), basePath);
                 break;
             }
+        }
+
+        if (layers.isEmpty()) {
+            LDOGMod.LOGGER.info("LDOG: No custom sky layers found in resource packs");
         }
     }
 
@@ -95,7 +104,7 @@ public class CustomSkyRenderer {
         } else if (source.startsWith("./")) {
             texture = new ResourceLocation("minecraft", basePath + "/" + source.substring(2));
         } else if (source.contains("/")) {
-            // Absolute path within minecraft namespace (e.g., mcpatcher/sky/world0/stars.png)
+            // Absolute path within minecraft namespace
             texture = new ResourceLocation("minecraft", source);
         } else {
             // Simple filename, relative to properties file directory
@@ -142,6 +151,17 @@ public class CustomSkyRenderer {
 
         long worldTime = world.getWorldTime();
 
+        // One-time debug log with alpha values
+        if (!loggedOnce) {
+            LDOGMod.LOGGER.info("LDOG: Custom sky rendering with {} layers, worldTime={}",
+                layers.size(), worldTime);
+            for (int i = 0; i < layers.size(); i++) {
+                CustomSkyLayer l = layers.get(i);
+                LDOGMod.LOGGER.info("LDOG:   Layer {}: alpha={}, texture={}", i, l.getAlpha(worldTime), l.texture);
+            }
+            loggedOnce = true;
+        }
+
         for (CustomSkyLayer layer : layers) {
             float alpha = layer.getAlpha(worldTime);
             if (alpha <= 0.0f) continue;
@@ -155,9 +175,14 @@ public class CustomSkyRenderer {
         Minecraft mc = Minecraft.getMinecraft();
 
         GlStateManager.pushMatrix();
+
+        // Save and set GL state for sky rendering
         GlStateManager.enableTexture2D();
         GlStateManager.enableBlend();
+        GlStateManager.disableAlpha();
         GlStateManager.depthMask(false);
+        GlStateManager.disableFog();
+        GlStateManager.disableLighting();
 
         // Set blend mode
         switch (layer.blend) {
@@ -172,7 +197,7 @@ public class CustomSkyRenderer {
                 break;
         }
 
-        // Apply rotation
+        // Apply rotation (celestial angle based)
         if (layer.rotate) {
             float celestialAngle = world.getCelestialAngle(partialTicks);
             float rotation = celestialAngle * 360.0f * layer.speed;
@@ -182,49 +207,59 @@ public class CustomSkyRenderer {
         GlStateManager.color(1.0f, 1.0f, 1.0f, alpha);
         mc.getTextureManager().bindTexture(layer.texture);
 
-        // Render textured sky dome (hemisphere of quads)
-        renderSkyDome();
+        // Render textured full sphere covering the sky
+        renderSkySphere();
 
+        // Restore state
         GlStateManager.depthMask(true);
+        GlStateManager.enableAlpha();
         GlStateManager.disableBlend();
+        GlStateManager.enableFog();
         GlStateManager.popMatrix();
     }
 
     /**
-     * Renders a textured hemisphere (upper half of a sphere) covering the sky.
-     * Uses latitude/longitude bands with 16 segments each.
+     * Renders a textured sphere covering the entire sky dome.
+     * Uses latitude/longitude bands: 16 longitude segments, latitude from
+     * zenith (top) down to -20 degrees below the horizon.
+     *
+     * The sphere is rendered inside-out (vertices wound so the inside face
+     * is visible) since the camera is at the center.
      */
-    private static void renderSkyDome() {
+    private static void renderSkySphere() {
         Tessellator tessellator = Tessellator.getInstance();
         BufferBuilder buffer = tessellator.getBuffer();
 
-        int segments = 16;
+        int lonSegments = 16;
+        int latBands = 10; // from zenith to slightly below horizon
 
-        for (int lat = 0; lat < segments / 2; lat++) {
-            float theta0 = (float) (lat * Math.PI / segments);       // 0 to π/2
-            float theta1 = (float) ((lat + 1) * Math.PI / segments); // next latitude
+        for (int lat = 0; lat < latBands; lat++) {
+            // Latitude from 0 (zenith) to ~110 degrees (below horizon)
+            float theta0 = (float) (lat * Math.PI / latBands) * 0.6f;        // scale to cover 0-108°
+            float theta1 = (float) ((lat + 1) * Math.PI / latBands) * 0.6f;
 
             float y0 = (float) Math.cos(theta0) * SKY_RADIUS;
             float r0 = (float) Math.sin(theta0) * SKY_RADIUS;
             float y1 = (float) Math.cos(theta1) * SKY_RADIUS;
             float r1 = (float) Math.sin(theta1) * SKY_RADIUS;
 
-            float v0 = (float) lat / (segments / 2.0f);
-            float v1 = (float) (lat + 1) / (segments / 2.0f);
+            float v0 = (float) lat / latBands;
+            float v1 = (float) (lat + 1) / latBands;
 
             buffer.begin(GL11.GL_QUAD_STRIP, DefaultVertexFormats.POSITION_TEX);
 
-            for (int lon = 0; lon <= segments; lon++) {
-                float phi = (float) (lon * 2.0 * Math.PI / segments);
-                float u = (float) lon / segments;
+            for (int lon = 0; lon <= lonSegments; lon++) {
+                float phi = (float) (lon * 2.0 * Math.PI / lonSegments);
+                float u = (float) lon / lonSegments;
 
                 float x0 = (float) Math.cos(phi) * r0;
                 float z0 = (float) Math.sin(phi) * r0;
                 float x1 = (float) Math.cos(phi) * r1;
                 float z1 = (float) Math.sin(phi) * r1;
 
-                buffer.pos(x0, y0, z0).tex(u, v0).endVertex();
+                // Reversed winding: lower latitude vertex first so inside face is visible
                 buffer.pos(x1, y1, z1).tex(u, v1).endVertex();
+                buffer.pos(x0, y0, z0).tex(u, v0).endVertex();
             }
 
             tessellator.draw();
