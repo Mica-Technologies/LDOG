@@ -15,18 +15,25 @@ A phased development plan for building out Limitless Development Optigame, from 
 - **Phase 1** (rendering optimizations, FPS reducer, clear water): complete
 - **Phase 2** (HD textures): complete — tested with 256x resource pack
 - **Phase 3** (CTM): complete — glass blocks, glass panes, bookshelf horizontal CTM
-- **Phase 4** (emissive textures): complete — block overlays + item emissive layer with fullbright lightmap
-- **Phase 5** (dynamic lights + lighting): complete — dynamic lights with smooth mode, full lightmap customization
+- **Phase 4** (emissive textures): complete — block + item emissive with fullbright lightmap
+- **Phase 5** (dynamic lights + lighting): complete — dynamic lights, full lightmap customization (13 presets)
 - **Phase 6** (resource pack features): complete — better grass/snow, natural textures, custom colors, custom sky, random entity textures
 
+**Known issue — Custom Sky rendering:**
+The renderSky mixin had a refmap ambiguity bug (two methods both named `renderSky` in MCP). Fixed by using explicit descriptor `(FI)V` and regenerating the refmap. Diagnostic logging is in place — after launching, check `run/logs/latest.log` for `"LDOG: renderSky mixin CONFIRMED"` to verify the injection fires. If it does fire but sky layers still don't render, the issue is in the skybox rendering code (GL state, texture loading, or geometry). Test packs: Dramatic Skys Demo, Affinity HD Bundle.
+
 **Key next steps:**
-1. Phase 7: AA/AF (discuss options with user first)
-2. Phase 8-9: Shaders + FSR (stretch goals)
+1. Verify custom sky mixin fires (check diagnostic logs), then debug rendering if needed
+2. Phase 7: AA/AF (discuss options with user first)
+3. Phase 8-9: Shaders + FSR (stretch goals, see Super Resolution + Radiance mods for reference)
 
 **Test resource packs (already in run/resourcepacks/):**
 - `default-1-12` (extracted) -- CTM glass + glass panes (47-tile)
-- `Faithful 32x - 1.12.2` (extracted) -- CTM glass + bookshelf
+- `Faithful 32x - 1.12.2` (extracted) -- CTM glass + bookshelf + custom sun/moon
 - `emissive-ores-1-12-2` (extracted) -- emissive ore textures
+- `Dramatic Skys Demo 1.5.3.36.3.zip` -- custom sky layers (optifine + mcpatcher paths)
+- `Affinity-HD-Bundle-x256.zip` -- custom sky + random mob textures + colormaps
+- `alto-resource-pack.zip` -- modpack resource pack
 
 ---
 
@@ -131,14 +138,15 @@ A phased development plan for building out Limitless Development Optigame, from 
 - [ ] Potion / map / dye color overrides (future enhancement)
 
 ### 6d: Custom Sky
-- [x] CustomSkyRenderer: renders sky layers after vanilla sky via MixinRenderGlobal
-- [x] Parse optifine/sky/world0/skyN.properties (texture, fade, rotate, blend, speed, axis)
-- [x] CustomSkyLayer: time-based alpha fade with wrap-around, textured hemisphere rendering
+- [x] CustomSkyRenderer: parses skyN.properties, lazy-loads on first render
+- [x] Parse optifine/sky/world0/skyN.properties (texture, HH:MM fade times, rotate, blend, speed, axis)
+- [x] CustomSkyLayer: time-based alpha fade with wrap-around, skybox cube rendering
 - [x] Custom sun/moon already supported by vanilla resource pack system
+- [ ] **BUG**: renderSky mixin had refmap ambiguity (two `renderSky` overloads). Fixed descriptor, regenerated refmap. Diagnostic logging added — needs in-game verification that mixin fires. If it does, may still need GL state or rendering fixes.
 
 ### 6e: Random Entity Textures
 - [x] RandomEntityTextureHandler: scans optifine/random/entity/ for numbered variants
-- [x] MixinRenderLivingBase: intercepts getEntityTexture() for all living entities
+- [x] MixinRender: intercepts bindEntityTexture() for living entities (targets Render.class, not abstract method)
 - [x] UUID-based deterministic selection with optional weighted .properties
 - [x] Config + GUI: enableRandomEntityTextures
 
