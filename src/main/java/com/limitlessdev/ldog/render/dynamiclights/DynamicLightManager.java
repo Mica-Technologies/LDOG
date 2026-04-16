@@ -9,23 +9,25 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Manages dynamic light sources from entities holding light-emitting items.
  * Tracks active sources, updates positions each tick, and provides light
  * level queries for the world mixin.
  *
- * Client-side only. Thread-safe for the render thread (all access is on
- * the client thread).
+ * Mutation happens on the client thread (tickUpdate/frameUpdate). Reads via
+ * getDynamicLightLevel can happen on ChunkRenderWorker threads during chunk
+ * rebuilds — ConcurrentHashMap's weakly-consistent iteration is required to
+ * avoid ConcurrentModificationException.
  */
 public final class DynamicLightManager {
 
     private static final DynamicLightManager INSTANCE = new DynamicLightManager();
 
-    private final Map<Integer, DynamicLightSource> activeLights = new HashMap<>();
+    private final Map<Integer, DynamicLightSource> activeLights = new ConcurrentHashMap<>();
     private long lastScanTick = -1;
 
     private DynamicLightManager() {}
