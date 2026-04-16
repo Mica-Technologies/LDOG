@@ -10,7 +10,8 @@
     "AccessorCompiledChunk",
     "AccessorTextureMap",
     "MixinBlockFluidRenderer",
-    "MixinTextureAtlasSprite"
+    "MixinTextureAtlasSprite",
+    "MixinWorldDynamicLights"
   ],
   "server": []
 }

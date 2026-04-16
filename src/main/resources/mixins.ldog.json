@@ -14,7 +14,6 @@
     "MixinRenderGlobal",
     "MixinTileEntityRendererDispatcher",
     "MixinParticleManager",
-    "MixinWorldDynamicLights",
     "MixinEntityRendererLightmap"
   ],
   "server": []

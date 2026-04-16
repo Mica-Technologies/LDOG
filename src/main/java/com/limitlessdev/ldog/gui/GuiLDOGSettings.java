@@ -55,9 +55,12 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_CTM = 40;
     private static final int BTN_EMISSIVE = 41;
     private static final int BTN_DYNAMIC_LIGHTS = 42;
+    private static final int BTN_DYN_LIGHT_INTERVAL = 46;
     private static final int BTN_CUSTOM_SKY = 43;
     private static final int BTN_HD_TEXTURES = 44;
     private static final int BTN_SHADERS = 45;
+    private static final int BTN_LIGHT_TEMP = 50;
+    private static final int BTN_LIGHT_TEMP_PRESET = 51;
 
     private static final int[] ENTITY_DIST_VALUES = {0, 32, 48, 64, 96, 128, 192, 256, 512};
     private static final int[] TE_DIST_VALUES = {0, 16, 32, 48, 64, 96, 128, 256};
@@ -66,6 +69,11 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int[] AFK_FPS_VALUES = {1, 2, 5, 10, 15, 30, 60};
     private static final double[] WATER_OPACITY_VALUES = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.5, 2.0, 3.0, 5.0, 7.0, 10.0};
     private static final double[] TINT_VALUES = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0};
+    private static final int[] DYN_LIGHT_INTERVAL_VALUES = {1, 2, 3, 5, 10, 20};
+    private static final String[] LIGHT_TEMP_PRESETS = {
+        "neutral", "warm_white", "candlelight", "sunlight", "fluorescent",
+        "moonlight", "overcast", "purple_haze", "neon_blue", "red_alert"
+    };
 
     public GuiLDOGSettings(GuiScreen parentScreen) {
         this.parentScreen = parentScreen;
@@ -134,10 +142,23 @@ public class GuiLDOGSettings extends GuiScreen {
                 tintLabel("Blue", LDOGConfig.waterTintBlue, "\u00a79")),
             null);
 
+        // -- Lighting --
+        settingsList.addHeaderRow("Lighting");
+        settingsList.addButtonRow(
+            makeFeatureButton(BTN_DYNAMIC_LIGHTS, w, h, "Dynamic Lights",
+                LDOGConfig.enableDynamicLights, OptiFineCompat.shouldHandleDynamicLights()),
+            new GuiButton(BTN_DYN_LIGHT_INTERVAL, 0, 0, w, h,
+                valLabel("Update Interval", LDOGConfig.dynamicLightsUpdateInterval)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_LIGHT_TEMP, 0, 0, w, h,
+                toggleLabel("Light Temperature", LDOGConfig.enableLightTemperature)),
+            new GuiButton(BTN_LIGHT_TEMP_PRESET, 0, 0, w, h,
+                lightTempPresetLabel()));
+
         // -- Features --
         String featureNote = OptiFineCompat.isOptiFineLoaded()
             ? "Features (OptiFine handles these)"
-            : "Features (coming soon)";
+            : "Features";
         settingsList.addHeaderRow(featureNote);
         settingsList.addButtonRow(
             makeFeatureButton(BTN_CTM, w, h, "Connected Textures",
@@ -145,10 +166,9 @@ public class GuiLDOGSettings extends GuiScreen {
             makeFeatureButton(BTN_EMISSIVE, w, h, "Emissive Textures",
                 LDOGConfig.enableEmissiveTextures, OptiFineCompat.shouldHandleEmissive()));
         settingsList.addButtonRow(
-            makeFeatureButton(BTN_DYNAMIC_LIGHTS, w, h, "Dynamic Lights",
-                LDOGConfig.enableDynamicLights, OptiFineCompat.shouldHandleDynamicLights()),
             makeFeatureButton(BTN_CUSTOM_SKY, w, h, "Custom Sky",
-                LDOGConfig.enableCustomSky, OptiFineCompat.shouldHandleCustomSky()));
+                LDOGConfig.enableCustomSky, OptiFineCompat.shouldHandleCustomSky()),
+            null);
         settingsList.addButtonRow(
             makeFeatureButton(BTN_HD_TEXTURES, w, h, "HD Textures",
                 LDOGConfig.enableHDTextures, OptiFineCompat.shouldHandleHDTextures()),
@@ -296,6 +316,18 @@ public class GuiLDOGSettings extends GuiScreen {
                 LDOGConfig.enableDynamicLights = !LDOGConfig.enableDynamicLights;
                 button.displayString = featureLabel("Dynamic Lights", LDOGConfig.enableDynamicLights, OptiFineCompat.shouldHandleDynamicLights());
                 break;
+            case BTN_DYN_LIGHT_INTERVAL:
+                LDOGConfig.dynamicLightsUpdateInterval = cycleValue(DYN_LIGHT_INTERVAL_VALUES, LDOGConfig.dynamicLightsUpdateInterval);
+                button.displayString = valLabel("Update Interval", LDOGConfig.dynamicLightsUpdateInterval);
+                break;
+            case BTN_LIGHT_TEMP:
+                LDOGConfig.enableLightTemperature = !LDOGConfig.enableLightTemperature;
+                button.displayString = toggleLabel("Light Temperature", LDOGConfig.enableLightTemperature);
+                break;
+            case BTN_LIGHT_TEMP_PRESET:
+                cycleLightTempPreset();
+                button.displayString = lightTempPresetLabel();
+                break;
             case BTN_CUSTOM_SKY:
                 LDOGConfig.enableCustomSky = !LDOGConfig.enableCustomSky;
                 button.displayString = featureLabel("Custom Sky", LDOGConfig.enableCustomSky, OptiFineCompat.shouldHandleCustomSky());
@@ -432,6 +464,26 @@ public class GuiLDOGSettings extends GuiScreen {
             refreshButton(row.getLeftButton());
             refreshButton(row.getRightButton());
         }
+    }
+
+    // ---- Light temperature preset helpers ----
+
+    private String lightTempPresetLabel() {
+        String preset = LDOGConfig.lightTemperaturePreset;
+        String display = preset.substring(0, 1).toUpperCase() + preset.substring(1).replace('_', ' ');
+        return "Preset: \u00a7a" + display;
+    }
+
+    private void cycleLightTempPreset() {
+        String current = LDOGConfig.lightTemperaturePreset;
+        int idx = 0;
+        for (int i = 0; i < LIGHT_TEMP_PRESETS.length; i++) {
+            if (LIGHT_TEMP_PRESETS[i].equalsIgnoreCase(current)) {
+                idx = (i + 1) % LIGHT_TEMP_PRESETS.length;
+                break;
+            }
+        }
+        LDOGConfig.lightTemperaturePreset = LIGHT_TEMP_PRESETS[idx];
     }
 
     private void refreshButton(GuiButton btn) {
