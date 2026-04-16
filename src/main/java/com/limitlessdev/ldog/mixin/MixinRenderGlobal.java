@@ -2,6 +2,7 @@ package com.limitlessdev.ldog.mixin;
 
 import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.LDOGStats;
+import com.limitlessdev.ldog.render.sky.CustomSkyRenderer;
 import net.minecraft.client.renderer.RenderGlobal;
 import net.minecraft.client.renderer.culling.ICamera;
 import net.minecraft.entity.Entity;
@@ -86,5 +87,16 @@ public abstract class MixinRenderGlobal {
             LDOGStats.entitiesRendered++;
         }
         return result;
+    }
+
+    /**
+     * Render custom sky layers after vanilla sky rendering.
+     */
+    @Inject(method = "renderSky(FI)V", at = @At("RETURN"))
+    private void ldog$renderCustomSky(float partialTicks, int pass, CallbackInfo ci) {
+        if (pass == 2) return; // Skip pass 2 (end sky)
+        if (LDOGConfig.enableCustomSky) {
+            CustomSkyRenderer.renderCustomSky(partialTicks);
+        }
     }
 }
