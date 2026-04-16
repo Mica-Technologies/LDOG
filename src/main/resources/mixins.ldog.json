@@ -18,7 +18,8 @@
     "MixinRenderLivingBase",
     "MixinWorldDynamicLights",
     "MixinEntityRendererLightmap",
-    "MixinEntityRendererMSAA"
+    "MixinEntityRendererMSAA",
+    "AccessorEntityRenderer"
   ],
   "server": []
 }

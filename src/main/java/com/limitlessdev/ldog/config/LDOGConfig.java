@@ -113,6 +113,13 @@ public class LDOGConfig {
     public static int msaaSamples = 4;
 
     @Config.Comment({
+        "Enable FXAA post-process anti-aliasing.",
+        "Smooths alpha-test edges (leaves, fences, grass) that MSAA can't touch.",
+        "Uses MC's built-in FXAA shader pass."
+    })
+    public static boolean enableFXAA = false;
+
+    @Config.Comment({
         "Enable shader support (stretch goal).",
         "Auto-disabled when OptiFine is detected."
     })

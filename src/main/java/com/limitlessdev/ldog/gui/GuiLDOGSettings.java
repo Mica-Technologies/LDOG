@@ -81,6 +81,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_ANISOTROPIC_LEVEL = 81;
     private static final int BTN_MSAA = 82;
     private static final int BTN_MSAA_SAMPLES = 83;
+    private static final int BTN_FXAA = 84;
 
     private static final int[] ANISOTROPIC_VALUES = {2, 4, 8, 16};
     private static final int[] MSAA_VALUES = {2, 4, 8};
@@ -165,6 +166,10 @@ public class GuiLDOGSettings extends GuiScreen {
                 toggleLabel("MSAA", LDOGConfig.enableMSAA)),
             new GuiButton(BTN_MSAA_SAMPLES, 0, 0, w, h,
                 msaaLabel(LDOGConfig.msaaSamples)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_FXAA, 0, 0, w, h,
+                toggleLabel("FXAA", LDOGConfig.enableFXAA)),
+            null);
 
         // -- Visual --
         currentPresetIndex = detectCurrentPreset();
@@ -514,10 +519,16 @@ public class GuiLDOGSettings extends GuiScreen {
                 LDOGConfig.msaaSamples = cycleValue(MSAA_VALUES, LDOGConfig.msaaSamples);
                 button.displayString = msaaLabel(LDOGConfig.msaaSamples);
                 break;
+            case BTN_FXAA:
+                LDOGConfig.enableFXAA = !LDOGConfig.enableFXAA;
+                button.displayString = toggleLabel("FXAA", LDOGConfig.enableFXAA);
+                fxaaSettingsChanged = true;
+                break;
         }
     }
 
     private boolean aaSettingsChanged = false;
+    private boolean fxaaSettingsChanged = false;
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
@@ -535,6 +546,9 @@ public class GuiLDOGSettings extends GuiScreen {
         }
         if (aaSettingsChanged) {
             com.limitlessdev.ldog.texture.AnisotropicFilteringHandler.refreshMainAtlas();
+        }
+        if (fxaaSettingsChanged) {
+            com.limitlessdev.ldog.render.fxaa.FXAAHandler.apply();
         }
         this.mc.displayGuiScreen(this.parentScreen);
     }
