@@ -19,7 +19,8 @@ import java.util.List;
 
 /**
  * Wraps grass/mycelium baked models to replace side textures with the
- * biome-tinted top texture ("Better Grass" effect).
+ * biome-tinted top texture ("Better Grass" effect) and optionally with
+ * the snow texture when the block is snowy ("Better Snow" for grass).
  *
  * In Fast mode, all horizontal side faces unconditionally show the top texture.
  * In Fancy mode, sides only show the top texture when the block diagonally
@@ -29,8 +30,10 @@ import java.util.List;
  * The model wrapper checks quad sprites by name: grass_side quads are
  * retextured with grass_top (gaining tintIndex=0 for biome color), and
  * grass_side_overlay quads are removed since the full face is now tinted.
- * Snowy variants pass through unchanged because their side sprite
- * (grass_side_snowed) doesn't match the target sprite name.
+ * When Better Snow is enabled and the block is snowy (snowed side sprite
+ * detected), side quads are replaced with the snow texture instead, so
+ * lighting is handled by the vanilla pipeline (smooth AO) rather than
+ * flat overlay quads.
  *
  * Reuses CTMRenderContext (set by MixinBlockRendererDispatcher) for
  * world access in Fancy mode.
@@ -41,13 +44,21 @@ public class BetterGrassBakedModel extends BakedModelWrapper<IBakedModel> {
     private final String sideSpriteName;
     @Nullable
     private final String overlaySpriteName;
+    @Nullable
+    private final String snowedSideSpriteName;
+    @Nullable
+    private final TextureAtlasSprite snowSprite;
 
     public BetterGrassBakedModel(IBakedModel original, TextureAtlasSprite topSprite,
-                                  String sideSpriteName, @Nullable String overlaySpriteName) {
+                                  String sideSpriteName, @Nullable String overlaySpriteName,
+                                  @Nullable String snowedSideSpriteName,
+                                  @Nullable TextureAtlasSprite snowSprite) {
         super(original);
         this.topSprite = topSprite;
         this.sideSpriteName = sideSpriteName;
         this.overlaySpriteName = overlaySpriteName;
+        this.snowedSideSpriteName = snowedSideSpriteName;
+        this.snowSprite = snowSprite;
     }
 
     @Override
@@ -63,6 +74,29 @@ public class BetterGrassBakedModel extends BakedModelWrapper<IBakedModel> {
         // Null state = inventory rendering, pass through
         if (state == null) {
             return original;
+        }
+
+        // Better Snow for grass: when snowy, replace snowed side texture with snow
+        if (LDOGConfig.enableBetterSnow && snowSprite != null && snowedSideSpriteName != null) {
+            boolean hasSnowedSide = false;
+            for (BakedQuad quad : original) {
+                if (snowedSideSpriteName.equals(quad.getSprite().getIconName())) {
+                    hasSnowedSide = true;
+                    break;
+                }
+            }
+            if (hasSnowedSide) {
+                List<BakedQuad> result = new ArrayList<>(original.size());
+                for (BakedQuad quad : original) {
+                    if (snowedSideSpriteName.equals(quad.getSprite().getIconName())) {
+                        // Replace grass_side_snowed with snow — vanilla AO handles lighting
+                        result.add(retextureWithTint(quad, snowSprite, -1));
+                    } else {
+                        result.add(quad);
+                    }
+                }
+                return result;
+            }
         }
 
         if ("off".equalsIgnoreCase(LDOGConfig.betterGrass)) {

@@ -32,31 +32,38 @@ public class BetterGrassHandler {
     private static final String GRASS_TOP = "minecraft:blocks/grass_top";
     private static final String GRASS_SIDE = "minecraft:blocks/grass_side";
     private static final String GRASS_SIDE_OVERLAY = "minecraft:blocks/grass_side_overlay";
+    private static final String GRASS_SIDE_SNOWED = "minecraft:blocks/grass_side_snowed";
     private static final String MYCELIUM_TOP = "minecraft:blocks/mycelium_top";
     private static final String MYCELIUM_SIDE = "minecraft:blocks/mycelium_side";
+    private static final String MYCELIUM_SIDE_SNOWED = "minecraft:blocks/mycelium_side_snowed";
+    private static final String SNOW_SPRITE = "minecraft:blocks/snow";
 
     private static TextureAtlasSprite grassTopSprite;
     private static TextureAtlasSprite myceliumTopSprite;
+    private static TextureAtlasSprite snowSprite;
 
     @SubscribeEvent
     public static void onTextureStitchPost(TextureStitchEvent.Post event) {
-        if ("off".equalsIgnoreCase(LDOGConfig.betterGrass)) return;
+        // Need sprites for Better Grass OR Better Snow (both use this wrapper)
+        if ("off".equalsIgnoreCase(LDOGConfig.betterGrass) && !LDOGConfig.enableBetterSnow) return;
 
         TextureMap map = event.getMap();
         grassTopSprite = map.getAtlasSprite(GRASS_TOP);
         myceliumTopSprite = map.getAtlasSprite(MYCELIUM_TOP);
+        snowSprite = map.getAtlasSprite(SNOW_SPRITE);
     }
 
     @SubscribeEvent
     public static void onModelBake(ModelBakeEvent event) {
-        if ("off".equalsIgnoreCase(LDOGConfig.betterGrass)) return;
+        // Wrap if either Better Grass or Better Snow is enabled (wrapper handles both)
+        if ("off".equalsIgnoreCase(LDOGConfig.betterGrass) && !LDOGConfig.enableBetterSnow) return;
         if (grassTopSprite == null) return;
 
         int wrapped = 0;
         wrapped += wrapBlockModels(event, Blocks.GRASS, grassTopSprite,
-            GRASS_SIDE, GRASS_SIDE_OVERLAY);
+            GRASS_SIDE, GRASS_SIDE_OVERLAY, GRASS_SIDE_SNOWED, snowSprite);
         wrapped += wrapBlockModels(event, Blocks.MYCELIUM, myceliumTopSprite,
-            MYCELIUM_SIDE, null);
+            MYCELIUM_SIDE, null, MYCELIUM_SIDE_SNOWED, snowSprite);
 
         if (wrapped > 0) {
             LDOGMod.LOGGER.info("LDOG: Better Grass wrapped {} models (mode={})",
@@ -71,7 +78,9 @@ public class BetterGrassHandler {
      */
     private static int wrapBlockModels(ModelBakeEvent event, Block block,
                                         TextureAtlasSprite topSprite,
-                                        String sideSpriteName, String overlaySpriteName) {
+                                        String sideSpriteName, String overlaySpriteName,
+                                        String snowedSideSpriteName,
+                                        TextureAtlasSprite snowSpriteRef) {
         ResourceLocation regName = block.getRegistryName();
         if (regName == null) return 0;
 
@@ -87,7 +96,8 @@ public class BetterGrassHandler {
             if (original != null) {
                 event.getModelRegistry().putObject(mrl,
                     new BetterGrassBakedModel(original, topSprite,
-                        sideSpriteName, overlaySpriteName));
+                        sideSpriteName, overlaySpriteName,
+                        snowedSideSpriteName, snowSpriteRef));
                 count++;
             }
         }

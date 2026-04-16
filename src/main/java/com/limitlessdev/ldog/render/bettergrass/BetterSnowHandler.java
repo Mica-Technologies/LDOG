@@ -51,6 +51,11 @@ public class BetterSnowHandler {
         if (snowSprite == null) return;
         if (!state.isOpaqueCube()) return;
 
+        // Grass and mycelium snow is handled by BetterGrassBakedModel (model wrapper)
+        // which replaces the snowed side texture directly, getting proper AO lighting
+        Block block = state.getBlock();
+        if (block == Blocks.GRASS || block == Blocks.MYCELIUM) return;
+
         IBlockState above = world.getBlockState(pos.up());
         Block aboveBlock = above.getBlock();
         if (aboveBlock != Blocks.SNOW_LAYER && aboveBlock != Blocks.SNOW) return;
