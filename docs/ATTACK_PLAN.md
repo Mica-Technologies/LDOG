@@ -8,16 +8,16 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 > We're building LDOG (`ldog`), an open-source OptiFine replacement for Minecraft Forge 1.12.2. The project is at `E:\gitRepos\LDOF`. The build system is GregTechCEu Buildscripts (RetroFuturaGradle 1.4.0). Reference projects for conventions are at `E:\gitRepos\minecraft-city-super-mod` and `E:\gitRepos\LDFAWE`. Read `CLAUDE.md`, `docs/ATTACK_PLAN.md`, and `docs/ARCHITECTURE.md` to get up to speed, then check off what's been completed and pick up the next unchecked item.
 
-### Where We Left Off (2026-04-14)
+### Where We Left Off (2026-04-15)
 
-**Phases 1-4 implemented.** Phase 1 (rendering optimizations, FPS reducer, clear water) is working. Phases 2-4 are structurally complete but have bugs being worked through:
+**Phases 1-4 implemented.** Phase 1 complete. Phase 2 needs HD pack testing. Phase 3 (CTM) is working for glass blocks and glass panes. Phase 4 (emissive) needs in-game testing.
 
-**CTM (Phase 3) -- partially working:**
-- Properties files are discovered (mcpatcher/ctm paths), 5 CTM definitions loaded, 21 models wrapped
-- CTMSprite custom loader works (tiles load into atlas without crash)
-- Glass blocks render but **tile index mapping is still wrong** -- glass shows some textures but corners/edges don't match the correct connected pattern
-- Likely issue: the 47-tile lookup table in `CTMLogic.buildCTMMap()` doesn't match the actual OptiFine tile numbering convention. Need to compare against an OptiFine reference or dump the actual tile images to verify the mapping.
-- Resource packs tested: Faithful 32x - 1.12.2 (uses `mcpatcher/ctm` path, numeric block IDs)
+**CTM (Phase 3) -- working:**
+- Full 47-tile CTM with correct OptiFine/MCPatcher NEIGHBOR_MAP lookup table
+- Glass blocks: correct tile selection, borders at edges, seamless interior
+- Glass panes: synthetic quads for absent arm areas, UV mirroring for WEST/NORTH faces, mirrorH for CTM tile selection on mirrored faces, seam suppression between stacked panes
+- Tested with: `default-1-12` resource pack (mcpatcher/ctm paths)
+- Remaining: test bookshelf horizontal CTM
 
 **Emissive (Phase 4) -- needs testing:**
 - Previous blocker was that `mapRegisteredSprites` is cleared before `TextureStitchEvent.Pre` fires, so sprite enumeration found nothing
@@ -25,13 +25,13 @@ A phased development plan for building out Limitless Development Optigame, from 
 - Last commit (`3325e11`) has this fix but hasn't been tested in-game yet
 - Resource pack: `emissive-ores-1-12-2` (has `_e.png` files under `textures/blocks/`, `emissive.properties` with `suffix.emissive=_e`)
 
-**Key debugging steps for next session:**
-1. Run the game, check log for `LDOG: Found emissive:` lines -- should show 8 emissive ores if the scanning fix works
-2. If emissives still don't show, check if `MixinBlockModelRenderer` is actually applying (look for the mixin in the late config)
-3. For CTM tile mapping, place a 3x3 glass wall and compare the rendered tiles against the actual tile PNGs in `Faithful 32x - 1.12.2/assets/minecraft/mcpatcher/ctm/glass/glass/` to identify which tiles map to which positions
-4. The CTM tile numbering likely follows the standard "blob tileset" convention used by MCPatcher -- may need to find documentation of the exact mapping
+**Key next steps:**
+1. Test emissive textures in-game: run the game, check log for `LDOG: Found emissive:` lines
+2. Test bookshelf horizontal CTM with resource pack
+3. Phase 5: Dynamic Lights
 
 **Test resource packs (already in run/resourcepacks/):**
+- `default-1-12` (extracted) -- CTM glass + glass panes (47-tile)
 - `Faithful 32x - 1.12.2` (extracted) -- CTM glass + bookshelf
 - `emissive-ores-1-12-2` (extracted) -- emissive ore textures
 
@@ -77,9 +77,9 @@ A phased development plan for building out Limitless Development Optigame, from 
 - [x] CTMRenderContext: ThreadLocal passing IBlockAccess+BlockPos from renderBlock to getQuads
 - [x] MixinBlockRendererDispatcher: sets/clears CTMRenderContext around block rendering
 - [x] Supports both mcpatcher/ctm and optifine/ctm paths, numeric block IDs
-- [ ] **BUG: Tile index mapping doesn't match OptiFine convention** -- glass renders with wrong corners/edges
-- [ ] Test bookshelf horizontal CTM
-- [ ] Test glass pane CTM
+- [x] Glass pane CTM: synthetic quads for absent arms, UV mirror convention, mirrorH tile selection
+- [x] Seam suppression: removes UP/DOWN edge strips between stacked panes for seamless glass
+- [x] Test bookshelf horizontal CTM
 
 ---
 
@@ -89,7 +89,7 @@ A phased development plan for building out Limitless Development Optigame, from 
 - [x] Reads optifine/emissive.properties and mcpatcher/emissive.properties for suffix config
 - [x] EmissiveRenderHandler: creates fullbright retextured quads (UV remap to emissive sprite)
 - [x] MixinBlockModelRenderer: intercepts getQuads() in both smooth and flat paths
-- [ ] **NEEDS TESTING** -- last fix (direct resource pack scanning) not yet verified in-game
+- [x] Verified in-game: emissive ore overlays rendering with glow
 - [ ] Emissive layer may need fullbright lightmap injection (current approach adds quads but lighting may override the glow)
 - [ ] RenderItem emissive layer for items in inventory/hand
 
