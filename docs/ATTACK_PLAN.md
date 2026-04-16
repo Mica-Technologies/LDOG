@@ -107,6 +107,20 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 ---
 
+## Phase 9: Upscaling (FSR)
+
+- [ ] Not started (requires Phase 8 FBO rendering pipeline)
+
+**Concept:** AMD FidelityFX Super Resolution 1.0 (spatial upscaler). Render the scene at reduced resolution to an FBO, then apply FSR's sharpening/upscale pass to output at native resolution. Works on any GPU (AMD, NVIDIA, Intel) — no vendor lock-in unlike DLSS.
+
+**Why FSR 1.0 and not DLSS:**
+- DLSS requires NVIDIA SDK (native C++ / JNI), DirectX 12 or Vulkan (not OpenGL), motion vectors, and depth buffer access. Fundamentally incompatible with MC 1.12.2's OpenGL 2.1 pipeline.
+- FSR 1.0 is a single spatial post-processing pass (EASU + RCAS). Can be implemented as a GLSL shader applied to a framebuffer texture. No temporal data or motion vectors needed.
+
+**Prerequisites:** FBO rendering pipeline from Phase 8 (shaders). FSR would be a post-processing pass applied after the scene is rendered to an FBO but before display.
+
+---
+
 ## Phase C1: Mod Absorptions -- COMPLETE
 
 - [x] FPS Reducer -> FpsReducerHandler (AFK + unfocused + mouse tracking + HUD overlay)
