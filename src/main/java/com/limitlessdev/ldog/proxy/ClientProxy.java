@@ -1,5 +1,7 @@
 package com.limitlessdev.ldog.proxy;
 
+import com.limitlessdev.ldog.render.dynamiclights.DynamicLightTickHandler;
+import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
@@ -14,6 +16,7 @@ public class ClientProxy extends CommonProxy {
     @Override
     public void init(FMLInitializationEvent event) {
         super.init(event);
+        MinecraftForge.EVENT_BUS.register(new DynamicLightTickHandler());
     }
 
     @Override

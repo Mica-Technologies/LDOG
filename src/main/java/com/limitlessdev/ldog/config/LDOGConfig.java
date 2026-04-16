@@ -30,6 +30,31 @@ public class LDOGConfig {
     })
     public static boolean enableDynamicLights = true;
 
+    @Config.Comment("Update interval for dynamic lights in ticks (1 = every tick, 5 = every 5 ticks). Higher = better performance.")
+    @Config.RangeInt(min = 1, max = 20)
+    public static int dynamicLightsUpdateInterval = 1;
+
+    @Config.Comment("Enable global light color temperature tinting (warm/cool shift without shaders).")
+    public static boolean enableLightTemperature = false;
+
+    @Config.Comment({
+        "Light temperature preset. Overrides RGB multipliers below.",
+        "Values: neutral, warm_white, candlelight, sunlight, fluorescent, moonlight, overcast, purple_haze, neon_blue, red_alert"
+    })
+    public static String lightTemperaturePreset = "warm_white";
+
+    @Config.Comment("Red channel multiplier for light tinting. 1.0 = unchanged.")
+    @Config.RangeDouble(min = 0.5, max = 1.5)
+    public static double lightTintRed = 1.0;
+
+    @Config.Comment("Green channel multiplier for light tinting. 1.0 = unchanged.")
+    @Config.RangeDouble(min = 0.5, max = 1.5)
+    public static double lightTintGreen = 1.0;
+
+    @Config.Comment("Blue channel multiplier for light tinting. 1.0 = unchanged.")
+    @Config.RangeDouble(min = 0.5, max = 1.5)
+    public static double lightTintBlue = 1.0;
+
     @Config.Comment({
         "Enable shader support (stretch goal).",
         "Auto-disabled when OptiFine is detected."

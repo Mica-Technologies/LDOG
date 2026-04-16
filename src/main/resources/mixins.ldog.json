@@ -13,7 +13,9 @@
     "MixinRenderChunk",
     "MixinRenderGlobal",
     "MixinTileEntityRendererDispatcher",
-    "MixinParticleManager"
+    "MixinParticleManager",
+    "MixinWorldDynamicLights",
+    "MixinEntityRendererLightmap"
   ],
   "server": []
 }
