@@ -73,6 +73,12 @@ public class LDOGConfig {
     public static boolean enableHDR = true;
 
     @Config.Comment({
+        "Better Grass rendering mode.",
+        "off = vanilla, fast = always show grass top on sides, fancy = only when neighbor below is also grass."
+    })
+    public static String betterGrass = "fancy";
+
+    @Config.Comment({
         "Enable shader support (stretch goal).",
         "Auto-disabled when OptiFine is detected."
     })
