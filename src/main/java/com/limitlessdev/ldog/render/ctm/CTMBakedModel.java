@@ -86,17 +86,6 @@ public class CTMBakedModel extends BakedModelWrapper<IBakedModel> {
                 face = inferFace(quad);
             }
 
-            // Glass-pane edge fix: pane_side.json has UP/DOWN faces (glass_pane_top border
-            // texture) with no cullface. When panes are stacked, both rows render their
-            // border strip at the same Y, creating a visible seam. Suppress them when the
-            // adjacent block is the same type to remove the seam.
-            if (side == null
-                    && (face == EnumFacing.UP || face == EnumFacing.DOWN)
-                    && !properties.appliesToFace(faceName(face))
-                    && world.getBlockState(pos.offset(face)).getBlock() == targetBlock) {
-                continue;
-            }
-
             // Check face restriction from CTM properties
             if (!properties.appliesToFace(faceName(face))) {
                 result.add(quad);
