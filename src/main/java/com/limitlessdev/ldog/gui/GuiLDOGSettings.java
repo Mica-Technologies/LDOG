@@ -71,6 +71,11 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_BRIGHTNESS_BOOST = 58;
     private static final int BTN_NIGHT_DARKNESS = 59;
     private static final int BTN_HDR = 60;
+    private static final int BTN_BETTER_GRASS = 70;
+    private static final int BTN_BETTER_SNOW = 71;
+    private static final int BTN_PERF_OVERLAY = 72;
+
+    private static final String[] BETTER_GRASS_MODES = {"off", "fast", "fancy"};
 
     private static final int[] ENTITY_DIST_VALUES = {0, 32, 48, 64, 96, 128, 192, 256, 512};
     private static final int[] TE_DIST_VALUES = {0, 16, 32, 48, 64, 96, 128, 256};
@@ -119,7 +124,8 @@ public class GuiLDOGSettings extends GuiScreen {
         settingsList.addButtonRow(
             new GuiButton(BTN_ENTITY_LOD, 0, 0, w, h,
                 toggleLabel("Entity LOD", LDOGConfig.enableEntityLOD)),
-            null);
+            new GuiButton(BTN_PERF_OVERLAY, 0, 0, w, h,
+                toggleLabel("Perf Overlay", LDOGConfig.enablePerformanceOverlay)));
 
         // -- FPS Management --
         settingsList.addHeaderRow("FPS Management");
@@ -156,6 +162,11 @@ public class GuiLDOGSettings extends GuiScreen {
             new GuiButton(BTN_WATER_BLUE, 0, 0, w, h,
                 tintLabel("Blue", LDOGConfig.waterTintBlue, "\u00a79")),
             null);
+        settingsList.addButtonRow(
+            new GuiButton(BTN_BETTER_GRASS, 0, 0, w, h,
+                betterGrassLabel(LDOGConfig.betterGrass)),
+            new GuiButton(BTN_BETTER_SNOW, 0, 0, w, h,
+                toggleLabel("Better Snow", LDOGConfig.enableBetterSnow)));
 
         // -- Lighting --
         settingsList.addHeaderRow("Dynamic Lights");
@@ -426,6 +437,18 @@ public class GuiLDOGSettings extends GuiScreen {
                 LDOGConfig.enableShaders = !LDOGConfig.enableShaders;
                 button.displayString = featureLabel("Shaders", LDOGConfig.enableShaders, OptiFineCompat.shouldHandleShaders());
                 break;
+            case BTN_BETTER_GRASS:
+                LDOGConfig.betterGrass = cycleStringValue(BETTER_GRASS_MODES, LDOGConfig.betterGrass);
+                button.displayString = betterGrassLabel(LDOGConfig.betterGrass);
+                break;
+            case BTN_BETTER_SNOW:
+                LDOGConfig.enableBetterSnow = !LDOGConfig.enableBetterSnow;
+                button.displayString = toggleLabel("Better Snow", LDOGConfig.enableBetterSnow);
+                break;
+            case BTN_PERF_OVERLAY:
+                LDOGConfig.enablePerformanceOverlay = !LDOGConfig.enablePerformanceOverlay;
+                button.displayString = toggleLabel("Perf Overlay", LDOGConfig.enablePerformanceOverlay);
+                break;
         }
     }
 
@@ -510,6 +533,24 @@ public class GuiLDOGSettings extends GuiScreen {
             }
         }
         return values[0];
+    }
+
+    static String cycleStringValue(String[] values, String current) {
+        for (int i = 0; i < values.length; i++) {
+            if (values[i].equalsIgnoreCase(current)) {
+                return values[(i + 1) % values.length];
+            }
+        }
+        return values[0];
+    }
+
+    static String betterGrassLabel(String mode) {
+        switch (mode.toLowerCase()) {
+            case "off":   return "Better Grass: \u00a7cOFF";
+            case "fast":  return "Better Grass: \u00a7aFast";
+            case "fancy": return "Better Grass: \u00a7aFancy";
+            default:      return "Better Grass: \u00a77" + mode;
+        }
     }
 
     // ---- Water preset helpers ----
