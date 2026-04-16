@@ -39,13 +39,15 @@ public class CustomSkyRenderer {
     private static final List<CustomSkyLayer> layers = new ArrayList<>();
     private static final float SKY_RADIUS = 100.0f;
     private static boolean loggedOnce = false;
+    private static boolean loaded = false;
 
     @SubscribeEvent
     public static void onTextureStitchPre(TextureStitchEvent.Pre event) {
-        if (!LDOGConfig.enableCustomSky) return;
+        // Mark as needing reload — actual load happens lazily on first render
+        // so resource packs are guaranteed to be available
         layers.clear();
+        loaded = false;
         loggedOnce = false;
-        loadSkyLayers();
     }
 
     private static void loadSkyLayers() {
@@ -143,6 +145,12 @@ public class CustomSkyRenderer {
      * Render all custom sky layers. Called from MixinRenderGlobal after vanilla sky.
      */
     public static void renderCustomSky(float partialTicks) {
+        // Lazy load on first render — guarantees resource packs are fully available
+        if (!loaded) {
+            loaded = true;
+            loadSkyLayers();
+        }
+
         if (layers.isEmpty()) return;
 
         WorldClient world = Minecraft.getMinecraft().world;
