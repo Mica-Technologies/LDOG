@@ -3,6 +3,7 @@ package com.limitlessdev.ldog.gui;
 import com.limitlessdev.ldog.Tags;
 import com.limitlessdev.ldog.compat.OptiFineCompat;
 import com.limitlessdev.ldog.config.LDOGConfig;
+import com.limitlessdev.ldog.render.dynamiclights.LightTemperaturePreset;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.resources.I18n;
@@ -61,6 +62,15 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_SHADERS = 45;
     private static final int BTN_LIGHT_TEMP = 50;
     private static final int BTN_LIGHT_TEMP_PRESET = 51;
+    private static final int BTN_BLOCK_LIGHT_R = 52;
+    private static final int BTN_BLOCK_LIGHT_G = 53;
+    private static final int BTN_BLOCK_LIGHT_B = 54;
+    private static final int BTN_SKY_LIGHT_R = 55;
+    private static final int BTN_SKY_LIGHT_G = 56;
+    private static final int BTN_SKY_LIGHT_B = 57;
+    private static final int BTN_BRIGHTNESS_BOOST = 58;
+    private static final int BTN_NIGHT_DARKNESS = 59;
+    private static final int BTN_HDR = 60;
 
     private static final int[] ENTITY_DIST_VALUES = {0, 32, 48, 64, 96, 128, 192, 256, 512};
     private static final int[] TE_DIST_VALUES = {0, 16, 32, 48, 64, 96, 128, 256};
@@ -70,6 +80,10 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final double[] WATER_OPACITY_VALUES = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.5, 2.0, 3.0, 5.0, 7.0, 10.0};
     private static final double[] TINT_VALUES = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0};
     private static final int[] DYN_LIGHT_INTERVAL_VALUES = {0, 1, 2, 5, 10, 20};
+    private static final double[] LIGHT_TINT_VALUES = {0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35, 1.4, 1.5};
+    private static final double[] BRIGHTNESS_VALUES = {-1.0, -0.7, -0.5, -0.3, -0.2, -0.1, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 1.0};
+    private static final double[] NIGHT_DARK_VALUES = {0.5, 0.7, 0.8, 1.0, 1.2, 1.5, 1.8, 2.0, 2.5, 3.0, 5.0, 10.0, 100.0};
+    private int currentLightPresetIndex = -1;
     private static final String[] LIGHT_TEMP_PRESETS = {
         "neutral", "warm_torches", "cinematic", "candlelight", "moonlit",
         "dark_nights", "horror", "bright_caves", "vivid",
@@ -144,17 +158,43 @@ public class GuiLDOGSettings extends GuiScreen {
             null);
 
         // -- Lighting --
-        settingsList.addHeaderRow("Lighting");
+        settingsList.addHeaderRow("Dynamic Lights");
         settingsList.addButtonRow(
             makeFeatureButton(BTN_DYNAMIC_LIGHTS, w, h, "Dynamic Lights",
                 LDOGConfig.enableDynamicLights, OptiFineCompat.shouldHandleDynamicLights()),
             new GuiButton(BTN_DYN_LIGHT_INTERVAL, 0, 0, w, h,
                 dynLightIntervalLabel(LDOGConfig.dynamicLightsUpdateInterval)));
+
+        settingsList.addHeaderRow("Light Customization");
         settingsList.addButtonRow(
             new GuiButton(BTN_LIGHT_TEMP, 0, 0, w, h,
-                toggleLabel("Light Temperature", LDOGConfig.enableLightTemperature)),
+                toggleLabel("Light Customization", LDOGConfig.enableLightTemperature)),
             new GuiButton(BTN_LIGHT_TEMP_PRESET, 0, 0, w, h,
                 lightTempPresetLabel()));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_BLOCK_LIGHT_R, 0, 0, w, h,
+                tintLabel("Block Red", LDOGConfig.blockLightRed, "\u00a7c")),
+            new GuiButton(BTN_BLOCK_LIGHT_G, 0, 0, w, h,
+                tintLabel("Block Green", LDOGConfig.blockLightGreen, "\u00a7a")));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_BLOCK_LIGHT_B, 0, 0, w, h,
+                tintLabel("Block Blue", LDOGConfig.blockLightBlue, "\u00a79")),
+            new GuiButton(BTN_SKY_LIGHT_R, 0, 0, w, h,
+                tintLabel("Sky Red", LDOGConfig.skyLightRed, "\u00a7c")));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_SKY_LIGHT_G, 0, 0, w, h,
+                tintLabel("Sky Green", LDOGConfig.skyLightGreen, "\u00a7a")),
+            new GuiButton(BTN_SKY_LIGHT_B, 0, 0, w, h,
+                tintLabel("Sky Blue", LDOGConfig.skyLightBlue, "\u00a79")));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_BRIGHTNESS_BOOST, 0, 0, w, h,
+                brightnessLabel(LDOGConfig.lightBrightnessBoost)),
+            new GuiButton(BTN_NIGHT_DARKNESS, 0, 0, w, h,
+                nightDarknessLabel(LDOGConfig.nightDarkness)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_HDR, 0, 0, w, h,
+                toggleLabel("HDR Tonemapping", LDOGConfig.enableHDR)),
+            null);
 
         // -- Features --
         String featureNote = OptiFineCompat.isOptiFineLoaded()
@@ -323,11 +363,56 @@ public class GuiLDOGSettings extends GuiScreen {
                 break;
             case BTN_LIGHT_TEMP:
                 LDOGConfig.enableLightTemperature = !LDOGConfig.enableLightTemperature;
-                button.displayString = toggleLabel("Light Temperature", LDOGConfig.enableLightTemperature);
+                button.displayString = toggleLabel("Light Customization", LDOGConfig.enableLightTemperature);
                 break;
             case BTN_LIGHT_TEMP_PRESET:
-                cycleLightTempPreset();
-                button.displayString = lightTempPresetLabel();
+                applyNextLightPreset();
+                refreshLightButtons();
+                break;
+            case BTN_BLOCK_LIGHT_R:
+                LDOGConfig.blockLightRed = cycleValue(LIGHT_TINT_VALUES, LDOGConfig.blockLightRed);
+                button.displayString = tintLabel("Block Red", LDOGConfig.blockLightRed, "\u00a7c");
+                currentLightPresetIndex = -1;
+                break;
+            case BTN_BLOCK_LIGHT_G:
+                LDOGConfig.blockLightGreen = cycleValue(LIGHT_TINT_VALUES, LDOGConfig.blockLightGreen);
+                button.displayString = tintLabel("Block Green", LDOGConfig.blockLightGreen, "\u00a7a");
+                currentLightPresetIndex = -1;
+                break;
+            case BTN_BLOCK_LIGHT_B:
+                LDOGConfig.blockLightBlue = cycleValue(LIGHT_TINT_VALUES, LDOGConfig.blockLightBlue);
+                button.displayString = tintLabel("Block Blue", LDOGConfig.blockLightBlue, "\u00a79");
+                currentLightPresetIndex = -1;
+                break;
+            case BTN_SKY_LIGHT_R:
+                LDOGConfig.skyLightRed = cycleValue(LIGHT_TINT_VALUES, LDOGConfig.skyLightRed);
+                button.displayString = tintLabel("Sky Red", LDOGConfig.skyLightRed, "\u00a7c");
+                currentLightPresetIndex = -1;
+                break;
+            case BTN_SKY_LIGHT_G:
+                LDOGConfig.skyLightGreen = cycleValue(LIGHT_TINT_VALUES, LDOGConfig.skyLightGreen);
+                button.displayString = tintLabel("Sky Green", LDOGConfig.skyLightGreen, "\u00a7a");
+                currentLightPresetIndex = -1;
+                break;
+            case BTN_SKY_LIGHT_B:
+                LDOGConfig.skyLightBlue = cycleValue(LIGHT_TINT_VALUES, LDOGConfig.skyLightBlue);
+                button.displayString = tintLabel("Sky Blue", LDOGConfig.skyLightBlue, "\u00a79");
+                currentLightPresetIndex = -1;
+                break;
+            case BTN_BRIGHTNESS_BOOST:
+                LDOGConfig.lightBrightnessBoost = cycleValue(BRIGHTNESS_VALUES, LDOGConfig.lightBrightnessBoost);
+                button.displayString = brightnessLabel(LDOGConfig.lightBrightnessBoost);
+                currentLightPresetIndex = -1;
+                break;
+            case BTN_NIGHT_DARKNESS:
+                LDOGConfig.nightDarkness = cycleValue(NIGHT_DARK_VALUES, LDOGConfig.nightDarkness);
+                button.displayString = nightDarknessLabel(LDOGConfig.nightDarkness);
+                currentLightPresetIndex = -1;
+                break;
+            case BTN_HDR:
+                LDOGConfig.enableHDR = !LDOGConfig.enableHDR;
+                button.displayString = toggleLabel("HDR Tonemapping", LDOGConfig.enableHDR);
+                currentLightPresetIndex = -1;
                 break;
             case BTN_CUSTOM_SKY:
                 LDOGConfig.enableCustomSky = !LDOGConfig.enableCustomSky;
@@ -473,24 +558,81 @@ public class GuiLDOGSettings extends GuiScreen {
         }
     }
 
-    // ---- Light temperature preset helpers ----
+    // ---- Light preset helpers ----
 
     private String lightTempPresetLabel() {
-        String preset = LDOGConfig.lightTemperaturePreset;
-        String display = preset.substring(0, 1).toUpperCase() + preset.substring(1).replace('_', ' ');
+        if (currentLightPresetIndex < 0) return "Preset: \u00a77Custom";
+        String name = LIGHT_TEMP_PRESETS[currentLightPresetIndex];
+        String display = name.substring(0, 1).toUpperCase() + name.substring(1).replace('_', ' ');
         return "Preset: \u00a7a" + display;
     }
 
-    private void cycleLightTempPreset() {
-        String current = LDOGConfig.lightTemperaturePreset;
-        int idx = 0;
-        for (int i = 0; i < LIGHT_TEMP_PRESETS.length; i++) {
-            if (LIGHT_TEMP_PRESETS[i].equalsIgnoreCase(current)) {
-                idx = (i + 1) % LIGHT_TEMP_PRESETS.length;
-                break;
-            }
+    static String brightnessLabel(double value) {
+        if (value == 0) return "Brightness: \u00a77Default";
+        if (value > 0) return "Brightness: \u00a7a+" + String.format("%.1f", value);
+        return "Brightness: \u00a7c" + String.format("%.1f", value);
+    }
+
+    static String nightDarknessLabel(double value) {
+        if (Math.abs(value - 1.0) < 0.01) return "Night Dark: \u00a77Vanilla";
+        if (value < 1.0) return "Night Dark: \u00a7a" + String.format("%.1f", value) + "x (brighter)";
+        if (value >= 100) return "Night Dark: \u00a74Pitch Black";
+        if (value >= 5) return "Night Dark: \u00a7c" + String.format("%.0f", value) + "x (extreme)";
+        return "Night Dark: \u00a7c" + String.format("%.1f", value) + "x";
+    }
+
+    private void applyNextLightPreset() {
+        currentLightPresetIndex = (currentLightPresetIndex + 1) % LIGHT_TEMP_PRESETS.length;
+        LightTemperaturePreset preset = LightTemperaturePreset.fromConfig(
+            LIGHT_TEMP_PRESETS[currentLightPresetIndex]);
+        LDOGConfig.blockLightRed = preset.blockR;
+        LDOGConfig.blockLightGreen = preset.blockG;
+        LDOGConfig.blockLightBlue = preset.blockB;
+        LDOGConfig.skyLightRed = preset.skyR;
+        LDOGConfig.skyLightGreen = preset.skyG;
+        LDOGConfig.skyLightBlue = preset.skyB;
+        LDOGConfig.lightBrightnessBoost = preset.brightnessBoost;
+        LDOGConfig.nightDarkness = preset.nightDarkness;
+        LDOGConfig.enableHDR = preset.hdr;
+        LDOGConfig.enableLightTemperature = true;
+    }
+
+    private void refreshLightButtons() {
+        for (int i = 0; i < settingsList.getSize(); i++) {
+            net.minecraft.client.gui.GuiListExtended.IGuiListEntry entry = settingsList.getListEntry(i);
+            if (!(entry instanceof GuiLDOGSettingsList.ButtonRowEntry)) continue;
+            GuiLDOGSettingsList.ButtonRowEntry row = (GuiLDOGSettingsList.ButtonRowEntry) entry;
+            refreshLightButton(row.getLeftButton());
+            refreshLightButton(row.getRightButton());
         }
-        LDOGConfig.lightTemperaturePreset = LIGHT_TEMP_PRESETS[idx];
+    }
+
+    private void refreshLightButton(GuiButton btn) {
+        if (btn == null) return;
+        switch (btn.id) {
+            case BTN_LIGHT_TEMP:
+                btn.displayString = toggleLabel("Light Customization", LDOGConfig.enableLightTemperature); break;
+            case BTN_LIGHT_TEMP_PRESET:
+                btn.displayString = lightTempPresetLabel(); break;
+            case BTN_BLOCK_LIGHT_R:
+                btn.displayString = tintLabel("Block Red", LDOGConfig.blockLightRed, "\u00a7c"); break;
+            case BTN_BLOCK_LIGHT_G:
+                btn.displayString = tintLabel("Block Green", LDOGConfig.blockLightGreen, "\u00a7a"); break;
+            case BTN_BLOCK_LIGHT_B:
+                btn.displayString = tintLabel("Block Blue", LDOGConfig.blockLightBlue, "\u00a79"); break;
+            case BTN_SKY_LIGHT_R:
+                btn.displayString = tintLabel("Sky Red", LDOGConfig.skyLightRed, "\u00a7c"); break;
+            case BTN_SKY_LIGHT_G:
+                btn.displayString = tintLabel("Sky Green", LDOGConfig.skyLightGreen, "\u00a7a"); break;
+            case BTN_SKY_LIGHT_B:
+                btn.displayString = tintLabel("Sky Blue", LDOGConfig.skyLightBlue, "\u00a79"); break;
+            case BTN_BRIGHTNESS_BOOST:
+                btn.displayString = brightnessLabel(LDOGConfig.lightBrightnessBoost); break;
+            case BTN_NIGHT_DARKNESS:
+                btn.displayString = nightDarknessLabel(LDOGConfig.nightDarkness); break;
+            case BTN_HDR:
+                btn.displayString = toggleLabel("HDR Tonemapping", LDOGConfig.enableHDR); break;
+        }
     }
 
     private void refreshButton(GuiButton btn) {

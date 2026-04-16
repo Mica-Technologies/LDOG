@@ -39,14 +39,15 @@ public abstract class MixinEntityRendererLightmap {
     private void ldog$applyLightCustomization(float partialTicks, CallbackInfo ci) {
         if (!LDOGConfig.enableLightTemperature) return;
 
-        LightTemperaturePreset preset = LightTemperaturePreset.fromConfig(
-            LDOGConfig.lightTemperaturePreset);
-
-        float blockR = preset.blockR, blockG = preset.blockG, blockB = preset.blockB;
-        float skyR = preset.skyR, skyG = preset.skyG, skyB = preset.skyB;
-        float brightness = preset.brightnessBoost;
-        float nightDark = preset.nightDarkness;
-        boolean hdr = preset.hdr;
+        float blockR = (float) LDOGConfig.blockLightRed;
+        float blockG = (float) LDOGConfig.blockLightGreen;
+        float blockB = (float) LDOGConfig.blockLightBlue;
+        float skyR = (float) LDOGConfig.skyLightRed;
+        float skyG = (float) LDOGConfig.skyLightGreen;
+        float skyB = (float) LDOGConfig.skyLightBlue;
+        float brightness = (float) LDOGConfig.lightBrightnessBoost;
+        float nightDark = (float) LDOGConfig.nightDarkness;
+        boolean hdr = LDOGConfig.enableHDR;
 
         for (int i = 0; i < 256; i++) {
             int skyLevel = i >> 4;    // 0-15

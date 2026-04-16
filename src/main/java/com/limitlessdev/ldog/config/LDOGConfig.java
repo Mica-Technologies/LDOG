@@ -37,11 +37,40 @@ public class LDOGConfig {
     @Config.Comment("Enable lighting customization (color temperature, brightness, night darkness, HDR).")
     public static boolean enableLightTemperature = false;
 
-    @Config.Comment({
-        "Lighting preset. Controls block/sky light colors, brightness, night darkness, and HDR.",
-        "Values: neutral, warm_torches, cinematic, candlelight, moonlit, dark_nights, horror, bright_caves, vivid, fluorescent, purple_haze, neon_blue, red_alert"
-    })
-    public static String lightTemperaturePreset = "cinematic";
+    @Config.Comment("Block light (torches/lamps) red multiplier.")
+    @Config.RangeDouble(min = 0.5, max = 1.5)
+    public static double blockLightRed = 1.25;
+
+    @Config.Comment("Block light green multiplier.")
+    @Config.RangeDouble(min = 0.5, max = 1.5)
+    public static double blockLightGreen = 1.0;
+
+    @Config.Comment("Block light blue multiplier.")
+    @Config.RangeDouble(min = 0.5, max = 1.5)
+    public static double blockLightBlue = 0.7;
+
+    @Config.Comment("Sky light (sun/moon) red multiplier.")
+    @Config.RangeDouble(min = 0.5, max = 1.5)
+    public static double skyLightRed = 0.8;
+
+    @Config.Comment("Sky light green multiplier.")
+    @Config.RangeDouble(min = 0.5, max = 1.5)
+    public static double skyLightGreen = 0.88;
+
+    @Config.Comment("Sky light blue multiplier.")
+    @Config.RangeDouble(min = 0.5, max = 1.5)
+    public static double skyLightBlue = 1.25;
+
+    @Config.Comment("Overall brightness boost. -1.0 = very dark, 0.0 = vanilla, 1.0 = very bright.")
+    @Config.RangeDouble(min = -1.0, max = 1.0)
+    public static double lightBrightnessBoost = 0.0;
+
+    @Config.Comment("Night darkness multiplier. 1.0 = vanilla, >1.0 = darker nights, 100.0 = pitch black at night.")
+    @Config.RangeDouble(min = 0.5, max = 100.0)
+    public static double nightDarkness = 1.0;
+
+    @Config.Comment("Enable pseudo-HDR tonemapping (ACES filmic curve for cinematic contrast).")
+    public static boolean enableHDR = true;
 
     @Config.Comment({
         "Enable shader support (stretch goal).",
