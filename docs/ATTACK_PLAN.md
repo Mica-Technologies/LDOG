@@ -10,22 +10,18 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 ### Where We Left Off (2026-04-16)
 
-**Phases 1-5 implemented and tested.** All core features working in-game.
+**Phases 1-6 implemented.** All core features and resource pack features working.
 
 - **Phase 1** (rendering optimizations, FPS reducer, clear water): complete
 - **Phase 2** (HD textures): complete — tested with 256x resource pack
-- **Phase 3** (CTM): working — glass blocks, glass panes (synthetic quads, UV mirroring, seam suppression), bookshelf horizontal CTM
-- **Phase 4** (emissive textures): complete — block overlays + item emissive layer (inventory/hand) with fullbright lightmap
-- **Phase 5** (dynamic lights + lighting): working — dynamic lights with smooth mode, full lightmap customization (block/sky color, night darkness, brightness, HDR, 13 presets)
+- **Phase 3** (CTM): complete — glass blocks, glass panes, bookshelf horizontal CTM
+- **Phase 4** (emissive textures): complete — block overlays + item emissive layer with fullbright lightmap
+- **Phase 5** (dynamic lights + lighting): complete — dynamic lights with smooth mode, full lightmap customization
+- **Phase 6** (resource pack features): complete — better grass/snow, natural textures, custom colors, custom sky, random entity textures
 
 **Key next steps:**
-1. Phase 6a: Better Grass / Better Snow
-2. Phase 6b: Natural Textures
-3. Phase 6c: Custom Colors
-4. Phase 6d: Custom Sky
-5. Phase 6e: Random Entity Textures
-6. Phase 7: AA/AF (discuss options with user first)
-7. Phase 8-9: Shaders + FSR (stretch goals)
+1. Phase 7: AA/AF (discuss options with user first)
+2. Phase 8-9: Shaders + FSR (stretch goals)
 
 **Test resource packs (already in run/resourcepacks/):**
 - `default-1-12` (extracted) -- CTM glass + glass panes (47-tile)
@@ -122,32 +118,29 @@ A phased development plan for building out Limitless Development Optigame, from 
 - [x] Flat lighting + directional shading + Z-offset for snow quads
 
 ### 6b: Natural Textures
-- [ ] NaturalTextureHandler: random rotation (0/90/180/270) and flip of block face textures
-- [ ] Parse optifine/natural.properties for per-block configuration
-- [ ] Position-based deterministic randomness (same block always gets same rotation)
-- [ ] Config toggle: enableNaturalTextures
+- [x] NaturalTextureBakedModel: position-based UV rotation (0/90/180/270) and flip
+- [x] NaturalTextureHandler: parses optifine/natural.properties, defaults for 16 common blocks
+- [x] NaturalTextureMode: rotate, rotate+flip, flip, fixed (matching OptiFine format)
+- [x] Config + GUI: enableNaturalTextures
 
 ### 6c: Custom Colors
-- [ ] CustomColorProperties: parse optifine/color.properties + colormap PNGs
-- [ ] Biome foliage/grass color overrides (custom colormap PNGs)
-- [ ] Water color overrides (per-biome)
-- [ ] Redstone wire color by power level
-- [ ] Potion / map / dye color overrides
-- [ ] Sky / fog color overrides
-- [ ] Config toggle: enableCustomColors
+- [x] CustomColorHandler: IResourceManagerReloadListener, fires after vanilla colorizers
+- [x] Custom grass.png/foliage.png colormaps from optifine/colormap/
+- [x] Parse optifine/color.properties for redstone wire colors + static overrides
+- [ ] Per-biome water color overrides (future enhancement)
+- [ ] Potion / map / dye color overrides (future enhancement)
 
 ### 6d: Custom Sky
-- [ ] CustomSkyRenderer: replace RenderGlobal.renderSky() when custom sky properties exist
-- [ ] Parse optifine/sky/world0/*.properties (texture, fade, rotate, blend, speed)
-- [ ] Sky layer rendering with configurable blending and rotation
-- [ ] Custom sun/moon textures
-- [ ] Config toggle: enableCustomSky
+- [x] CustomSkyRenderer: renders sky layers after vanilla sky via MixinRenderGlobal
+- [x] Parse optifine/sky/world0/skyN.properties (texture, fade, rotate, blend, speed, axis)
+- [x] CustomSkyLayer: time-based alpha fade with wrap-around, textured hemisphere rendering
+- [x] Custom sun/moon already supported by vanilla resource pack system
 
 ### 6e: Random Entity Textures
-- [ ] RandomEntityTextureHandler: load texture variants from optifine/random/ paths
-- [ ] Parse .properties files for weights, biome filters, name patterns
-- [ ] UUID-based deterministic texture selection per entity
-- [ ] Config toggle: enableRandomEntityTextures
+- [x] RandomEntityTextureHandler: scans optifine/random/entity/ for numbered variants
+- [x] MixinRenderLivingBase: intercepts getEntityTexture() for all living entities
+- [x] UUID-based deterministic selection with optional weighted .properties
+- [x] Config + GUI: enableRandomEntityTextures
 
 ---
 
