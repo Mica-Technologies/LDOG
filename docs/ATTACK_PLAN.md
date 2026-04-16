@@ -6,23 +6,22 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 ## Resume Prompt
 
-> We're building LDOG (`ldog`), an open-source OptiFine replacement for Minecraft Forge 1.12.2. The project is at `E:\gitRepos\LDOF`. The build system is GregTechCEu Buildscripts (RetroFuturaGradle 1.4.0). Reference projects for conventions are at `E:\gitRepos\minecraft-city-super-mod` and `E:\gitRepos\LDFAWE`. Read `CLAUDE.md`, `docs/ATTACK_PLAN.md`, and `docs/ARCHITECTURE.md` to get up to speed, then check off what's been completed and pick up the next unchecked item.
+> We're building LDOG (`ldog`), an open-source OptiFine replacement for Minecraft Forge 1.12.2. The project is at `E:\gitRepos\LDOG`. The build system is GregTechCEu Buildscripts (RetroFuturaGradle 1.4.0). Reference projects for conventions are at `E:\gitRepos\minecraft-city-super-mod` and `E:\gitRepos\LDFAWE`. Read `CLAUDE.md`, `docs/ATTACK_PLAN.md`, and `docs/ARCHITECTURE.md` to get up to speed, then check off what's been completed and pick up the next unchecked item.
 
-### Where We Left Off (2026-04-15)
+### Where We Left Off (2026-04-16)
 
 **Phases 1-5 implemented and tested.** All core features working in-game.
 
 - **Phase 1** (rendering optimizations, FPS reducer, clear water): complete
 - **Phase 2** (HD textures): structurally complete, needs testing with 32x/64x/128x packs
 - **Phase 3** (CTM): working — glass blocks, glass panes (synthetic quads, UV mirroring, seam suppression), bookshelf horizontal CTM
-- **Phase 4** (emissive textures): working — ore glow overlays verified in-game
+- **Phase 4** (emissive textures): complete — block overlays + item emissive layer (inventory/hand) with fullbright lightmap
 - **Phase 5** (dynamic lights + lighting): working — dynamic lights with smooth mode, full lightmap customization (block/sky color, night darkness, brightness, HDR, 13 presets)
 
 **Key next steps:**
 1. Phase 2: test with HD resource packs (32x, 64x, 128x)
-2. Phase 4: RenderItem emissive layer for items in inventory/hand
-3. Phase 6-8: resource pack features, AA/AF, shaders
-4. Phase 9: FSR upscaling (requires Phase 8 FBO pipeline)
+2. Phase 6-8: resource pack features, AA/AF, shaders
+3. Phase 9: FSR upscaling (requires Phase 8 FBO pipeline)
 
 **Test resource packs (already in run/resourcepacks/):**
 - `default-1-12` (extracted) -- CTM glass + glass panes (47-tile)
@@ -84,8 +83,8 @@ A phased development plan for building out Limitless Development Optigame, from 
 - [x] EmissiveRenderHandler: creates fullbright retextured quads (UV remap to emissive sprite)
 - [x] MixinBlockModelRenderer: intercepts getQuads() in both smooth and flat paths
 - [x] Verified in-game: emissive ore overlays rendering with glow
-- [ ] Emissive layer may need fullbright lightmap injection (current approach adds quads but lighting may override the glow)
-- [ ] RenderItem emissive layer for items in inventory/hand
+- [x] Fullbright lightmap verified: lightmap(240, 240) in BLOCK format correctly bypasses AO/smooth lighting
+- [x] RenderItem emissive layer: MixinRenderItem + EmissiveItemRenderHandler (ITEM format, global fullbright via OpenGlHelper, polygon offset)
 
 ---
 
