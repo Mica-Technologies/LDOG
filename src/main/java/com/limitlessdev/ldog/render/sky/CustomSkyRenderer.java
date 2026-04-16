@@ -148,7 +148,9 @@ public class CustomSkyRenderer {
         // Lazy load on first render — guarantees resource packs are fully available
         if (!loaded) {
             loaded = true;
+            LDOGMod.LOGGER.info("LDOG: CustomSkyRenderer.renderCustomSky() called — starting lazy load");
             loadSkyLayers();
+            LDOGMod.LOGGER.info("LDOG: Lazy load complete. Layers: {}", layers.size());
         }
 
         if (layers.isEmpty()) return;

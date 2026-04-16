@@ -94,9 +94,17 @@ public abstract class MixinRenderGlobal {
      */
     @Inject(method = "renderSky(FI)V", at = @At("RETURN"))
     private void ldog$renderCustomSky(float partialTicks, int pass, CallbackInfo ci) {
-        if (pass == 2) return; // Skip pass 2 (end sky)
+        if (pass == 2) return;
+        if (!ldog$skyMixinConfirmed) {
+            ldog$skyMixinConfirmed = true;
+            com.limitlessdev.ldog.LDOGMod.LOGGER.info("LDOG: renderSky mixin CONFIRMED firing (pass={}, enableCustomSky={})",
+                pass, LDOGConfig.enableCustomSky);
+        }
         if (LDOGConfig.enableCustomSky) {
             CustomSkyRenderer.renderCustomSky(partialTicks);
         }
     }
+
+    @Unique
+    private static boolean ldog$skyMixinConfirmed = false;
 }
