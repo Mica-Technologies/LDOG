@@ -1,32 +1,43 @@
 package com.limitlessdev.ldog.render.bettergrass;
 
+import com.limitlessdev.ldog.LDOGMod;
 import com.limitlessdev.ldog.Tags;
 import com.limitlessdev.ldog.config.LDOGConfig;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.renderer.BufferBuilder;
+import net.minecraft.client.renderer.block.model.IBakedModel;
+import net.minecraft.client.renderer.block.model.ModelResourceLocation;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.renderer.texture.TextureMap;
 import net.minecraft.init.Blocks;
 import net.minecraft.util.EnumFacing;
+import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.IBlockAccess;
+import net.minecraftforge.client.event.ModelBakeEvent;
 import net.minecraftforge.client.event.TextureStitchEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.relauncher.Side;
 
+import java.util.HashSet;
+import java.util.Set;
+
 /**
- * Renders snow-textured side quads on any opaque block that has a snow
- * layer on top. Called from MixinBlockModelRenderer after the block's
- * base quads have been rendered.
+ * Better Snow handler with two rendering paths:
  *
- * Snow quads are written directly into the block's rendering buffer
- * with flat lighting (sampled from the face's neighbor position) and a
- * small Z-offset to prevent z-fighting with the original side texture.
+ * 1. MODEL WRAPPER (preferred): Common blocks (dirt, stone, sand, etc.) are
+ *    wrapped with BetterSnowBakedModel at ModelBakeEvent. The wrapper replaces
+ *    side textures with snow in getQuads(), so vanilla's AO pipeline handles
+ *    lighting correctly.
  *
- * Directional shading is applied to match vanilla's face brightness:
- * UP=1.0, NORTH/SOUTH=0.8, EAST/WEST=0.6, DOWN=0.5.
+ * 2. OVERLAY FALLBACK: Blocks not wrapped by the model wrapper get snow overlay
+ *    quads added at render time (flat lighting + Z-offset). This covers modded
+ *    blocks and uncommon vanilla blocks.
+ *
+ * Grass and mycelium are handled by BetterGrassBakedModel instead.
  */
 @Mod.EventBusSubscriber(modid = Tags.MODID, value = Side.CLIENT)
 public class BetterSnowHandler {
@@ -36,10 +47,69 @@ public class BetterSnowHandler {
 
     private static TextureAtlasSprite snowSprite;
 
+    /** Blocks wrapped with BetterSnowBakedModel — skip these in the overlay path. */
+    private static final Set<Block> wrappedBlocks = new HashSet<>();
+
+    /** Common blocks that appear under snow and should use the model wrapper. */
+    private static final Block[] SNOW_WRAP_BLOCKS = {
+        Blocks.DIRT, Blocks.STONE, Blocks.SAND, Blocks.GRAVEL,
+        Blocks.COBBLESTONE, Blocks.MOSSY_COBBLESTONE,
+        Blocks.SANDSTONE, Blocks.RED_SANDSTONE,
+        Blocks.PLANKS, Blocks.LOG, Blocks.LOG2,
+        Blocks.STONEBRICK, Blocks.BRICK_BLOCK,
+        Blocks.HARDENED_CLAY, Blocks.STAINED_HARDENED_CLAY,
+        Blocks.NETHERRACK, Blocks.SOUL_SAND, Blocks.END_STONE,
+        Blocks.CLAY, Blocks.OBSIDIAN, Blocks.PACKED_ICE,
+    };
+
     @SubscribeEvent
     public static void onTextureStitchPost(TextureStitchEvent.Post event) {
         if (!LDOGConfig.enableBetterSnow) return;
         snowSprite = event.getMap().getAtlasSprite(SNOW_SPRITE_NAME);
+    }
+
+    @SubscribeEvent(priority = EventPriority.LOW)
+    public static void onModelBake(ModelBakeEvent event) {
+        if (!LDOGConfig.enableBetterSnow) return;
+        if (snowSprite == null) return;
+
+        wrappedBlocks.clear();
+        int wrapped = 0;
+
+        for (Block block : SNOW_WRAP_BLOCKS) {
+            int count = wrapBlockModels(event, block);
+            if (count > 0) {
+                wrappedBlocks.add(block);
+                wrapped += count;
+            }
+        }
+
+        if (wrapped > 0) {
+            LDOGMod.LOGGER.info("LDOG: Better Snow wrapped {} models ({} block types)",
+                wrapped, wrappedBlocks.size());
+        }
+    }
+
+    private static int wrapBlockModels(ModelBakeEvent event, Block block) {
+        ResourceLocation regName = block.getRegistryName();
+        if (regName == null) return 0;
+
+        int count = 0;
+        for (Object key : event.getModelRegistry().getKeys()) {
+            if (!(key instanceof ModelResourceLocation)) continue;
+            ModelResourceLocation mrl = (ModelResourceLocation) key;
+            if (!mrl.getPath().equals(regName.getPath()) ||
+                !mrl.getNamespace().equals(regName.getNamespace())) continue;
+            if ("inventory".equals(mrl.getVariant())) continue;
+
+            IBakedModel original = event.getModelRegistry().getObject(mrl);
+            if (original != null) {
+                event.getModelRegistry().putObject(mrl,
+                    new BetterSnowBakedModel(original, snowSprite));
+                count++;
+            }
+        }
+        return count;
     }
 
     /**
@@ -51,10 +121,10 @@ public class BetterSnowHandler {
         if (snowSprite == null) return;
         if (!state.isOpaqueCube()) return;
 
-        // Grass and mycelium snow is handled by BetterGrassBakedModel (model wrapper)
-        // which replaces the snowed side texture directly, getting proper AO lighting
+        // Grass/mycelium handled by BetterGrassBakedModel, common blocks by BetterSnowBakedModel
         Block block = state.getBlock();
         if (block == Blocks.GRASS || block == Blocks.MYCELIUM) return;
+        if (wrappedBlocks.contains(block)) return;
 
         IBlockState above = world.getBlockState(pos.up());
         Block aboveBlock = above.getBlock();
