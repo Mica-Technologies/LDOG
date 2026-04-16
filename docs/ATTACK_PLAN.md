@@ -10,7 +10,7 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 ### Where We Left Off (2026-04-16)
 
-**Phases 1-7 implemented** (Phase 7 with known caveats, see below).
+**Phases 1-7 implemented** (Phase 7a/b with known caveats, 7c still open; 7d done).
 
 - **Phase 1** (rendering optimizations, FPS reducer, clear water): complete
 - **Phase 2** (HD textures): complete — tested with 256x resource pack
@@ -19,6 +19,7 @@ A phased development plan for building out Limitless Development Optigame, from 
 - **Phase 5** (dynamic lights + lighting): complete — dynamic lights, full lightmap customization (13 presets)
 - **Phase 6** (resource pack features): complete — better grass/snow, natural textures, custom colors, custom sky, random entity textures
 - **Phase 7a+b** (AF + MSAA): complete but experimental (see caveats below)
+- **Phase 7d** (FXAA): complete — wraps MC's shipped fxaa.json shader pass
 
 **Phase 7 known caveats:**
 - **AF atlas bleed**: Enabling AF shows faint block-edge lines at distance. Cause: vanilla MC atlas has only 1px sprite border at mip 0, which halves each mip level. At grazing angles AF samples along an elongated line that crosses sprite boundaries in the smaller mips. OptiFine solves this by extending each mip level's sprite border (sometimes called "anisotropic-safe mipmaps" or "extended border mipmaps"). Tracked as **Phase 7c**.
@@ -26,8 +27,7 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 **Key next steps:**
 1. **Phase 7c** (extended border mipmaps) — fixes the AF atlas bleed properly. Mixin on TextureAtlasSprite.generateMipmaps (or TextureMap) to pad each mip level's sprite with N extra pixels of the sprite's own edge color.
-2. **Phase 7d** (FXAA post-process) — catches alpha-test edges (leaves, fences) that MSAA can't smooth, and avoids the rasterization edge-lines issue. Post-process GLSL pass after world render, before GUI. Requires FBO sampling setup that doubles as Phase 8 groundwork.
-3. **Phase 8** (Shaders) + **Phase 9** (FSR): stretch goals, see Super Resolution + Radiance mods for reference.
+2. **Phase 8** (Shaders) + **Phase 9** (FSR): stretch goals, see Super Resolution + Radiance mods for reference.
 
 **Test resource packs (already in run/resourcepacks/):**
 - `default-1-12` (extracted) -- CTM glass + glass panes (47-tile)
@@ -176,7 +176,12 @@ A phased development plan for building out Limitless Development Optigame, from 
 - [ ] Not started. Target: mixin on `TextureAtlasSprite.generateMipmaps` (or `TextureMap.loadTextureAtlas`) to extend each sprite's mip level with N pixels of its own edge color (N >= 2^mipLevel), so AF anisotropic samples never cross into neighboring sprites. OptiFine/MCPatcher reference pattern.
 
 ### 7d: FXAA post-process
-- [ ] Not started. Post-process GLSL pass after world render and before GUI. Catches alpha-test edges (leaves, fences, tall grass) that MSAA can't smooth. Doubles as FBO-pipeline groundwork for Phase 8.
+- [x] Config: `enableFXAA`
+- [x] `FXAAHandler` toggles `EntityRenderer.loadShader("shaders/post/fxaa.json")` on/off
+- [x] `AccessorEntityRenderer` mixin for clearing shaderGroup+useShader on disable
+- [x] First-tick reconciliation so launching with FXAA pre-enabled picks it up
+- [x] GUI row
+- Notes: Leverages MC 1.12.2's shipped FXAA shader assets (Super Secret Settings remnant) — no GLSL authoring needed. Effect subtle on 16x vanilla textures by design; more visible on HD packs and alpha-test foliage.
 
 ---
 
