@@ -1,6 +1,7 @@
 package com.limitlessdev.ldog.mixin;
 
 import com.limitlessdev.ldog.config.LDOGConfig;
+import com.limitlessdev.ldog.render.bettergrass.BetterSnowHandler;
 import com.limitlessdev.ldog.render.emissive.EmissiveRenderHandler;
 import com.limitlessdev.ldog.render.emissive.EmissiveTextureRegistry;
 import net.minecraft.block.state.IBlockState;
@@ -37,6 +38,9 @@ public abstract class MixinBlockModelRenderer {
         if (LDOGConfig.enableEmissiveTextures && EmissiveTextureRegistry.getEmissiveSpriteCount() > 0) {
             EmissiveRenderHandler.renderEmissiveOverlay(
                 modelIn, stateIn, worldIn, posIn, checkSides, rand);
+        }
+        if (LDOGConfig.enableBetterSnow) {
+            BetterSnowHandler.renderSnowSides(worldIn, stateIn, posIn, buffer);
         }
     }
 }
