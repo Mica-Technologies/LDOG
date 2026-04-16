@@ -91,15 +91,23 @@ public abstract class MixinRenderGlobal {
 
     /**
      * Render custom sky layers after vanilla sky rendering.
+     *
+     * Uses explicit SRG method name to avoid ambiguity with the private
+     * renderSky(BufferBuilder, float, boolean) helper overload, which
+     * the refmap incorrectly resolves to when using the MCP name alone.
      */
-    @Inject(method = "renderSky(FI)V", at = @At("RETURN"))
-    private void ldog$renderCustomSky(float partialTicks, int pass, CallbackInfo ci) {
-        if (pass == 2) return;
+    @Inject(method = "func_174976_a(FI)V", at = @At("HEAD"), remap = false)
+    private void ldog$renderCustomSkyHead(float partialTicks, int pass, CallbackInfo ci) {
         if (!ldog$skyMixinConfirmed) {
             ldog$skyMixinConfirmed = true;
-            com.limitlessdev.ldog.LDOGMod.LOGGER.info("LDOG: renderSky mixin CONFIRMED firing (pass={}, enableCustomSky={})",
+            com.limitlessdev.ldog.LDOGMod.LOGGER.info("LDOG: renderSky mixin CONFIRMED (pass={}, customSky={})",
                 pass, LDOGConfig.enableCustomSky);
         }
+    }
+
+    @Inject(method = "func_174976_a(FI)V", at = @At("RETURN"), remap = false)
+    private void ldog$renderCustomSkyPost(float partialTicks, int pass, CallbackInfo ci) {
+        if (pass == 2) return;
         if (LDOGConfig.enableCustomSky) {
             CustomSkyRenderer.renderCustomSky(partialTicks);
         }
