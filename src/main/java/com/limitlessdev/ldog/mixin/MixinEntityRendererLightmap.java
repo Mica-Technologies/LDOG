@@ -83,27 +83,24 @@ public abstract class MixinEntityRendererLightmap {
                 b += brightness * 0.3f;
             }
 
-            // 3. Night darkness — darken entries with low sky light.
-            // Uses CLAMPING: caps the maximum brightness that sky-lit areas can
-            // reach. This overrides vanilla's gamma/brightness — no matter how
-            // bright vanilla makes things, the clamp enforces the ceiling.
-            // Block-lit areas (torches) are protected from darkening.
+            // 3. Night darkness — darken ALL non-torch-lit entries.
+            // Affects the total lightmap output (ambient, gamma, everything)
+            // so vanilla brightness can't counteract the darkness.
+            // Torches (blockLevel >= 8) get full protection.
+            // Formula: darkMul = skyFactor / (skyFactor + nightDark - 1)
+            //   At nightDark=1: identity (no change)
+            //   At nightDark=2: moderate darkening
+            //   At nightDark=100: pitch black for all non-torch areas
             if (nightDark != 1.0f && skyLevel < 15) {
                 float skyFactor = skyLevel / 15f;
 
                 if (nightDark > 1.0f) {
-                    // Block light protection: torches shouldn't be darkened.
-                    // Full protection at blockLevel >= 8.
                     float blockProtection = Math.min(1.0f, blockLevel / 8.0f);
-
-                    // Maximum brightness ceiling: at nightDark=100, sky=4 →
-                    // ceiling = 0.003 (pitch black). Torches add up to 1.0.
-                    float ceiling = skyFactor / nightDark + blockProtection;
-                    ceiling = Math.min(1.0f, ceiling);
-
-                    r = Math.min(r, ceiling);
-                    g = Math.min(g, ceiling);
-                    b = Math.min(b, ceiling);
+                    float darkMul = skyFactor / (skyFactor + (nightDark - 1.0f));
+                    darkMul = blockProtection + (1.0f - blockProtection) * darkMul;
+                    r *= darkMul;
+                    g *= darkMul;
+                    b *= darkMul;
                 } else {
                     // Brighter nights (nightDark < 1): boost low-sky-light entries
                     float brightMul = 1.0f + (1.0f - nightDark) * (1.0f - skyFactor) * 2.0f;
