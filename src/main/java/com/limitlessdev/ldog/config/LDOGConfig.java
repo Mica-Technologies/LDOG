@@ -84,6 +84,9 @@ public class LDOGConfig {
     @Config.Comment("Enable natural textures (random rotation/flip of block textures to reduce visual repetition).")
     public static boolean enableNaturalTextures = true;
 
+    @Config.Comment("Enable custom colors from resource packs (custom grass/foliage colormaps, redstone wire colors, etc.).")
+    public static boolean enableCustomColors = true;
+
     @Config.Comment("Show performance metrics overlay in the upper-left corner (FPS, frame time, memory, culling stats).")
     public static boolean enablePerformanceOverlay = false;
 

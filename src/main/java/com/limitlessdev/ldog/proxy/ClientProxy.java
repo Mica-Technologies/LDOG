@@ -1,6 +1,9 @@
 package com.limitlessdev.ldog.proxy;
 
+import com.limitlessdev.ldog.render.color.CustomColorHandler;
 import com.limitlessdev.ldog.render.dynamiclights.DynamicLightTickHandler;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.IReloadableResourceManager;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
@@ -17,6 +20,11 @@ public class ClientProxy extends CommonProxy {
     public void init(FMLInitializationEvent event) {
         super.init(event);
         MinecraftForge.EVENT_BUS.register(new DynamicLightTickHandler());
+
+        // Register custom color reload listener (after vanilla's colorizer listeners)
+        IReloadableResourceManager resourceManager =
+            (IReloadableResourceManager) Minecraft.getMinecraft().getResourceManager();
+        resourceManager.registerReloadListener(CustomColorHandler.INSTANCE);
     }
 
     @Override

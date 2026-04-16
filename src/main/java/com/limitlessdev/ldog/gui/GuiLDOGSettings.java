@@ -75,6 +75,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_BETTER_SNOW = 71;
     private static final int BTN_PERF_OVERLAY = 72;
     private static final int BTN_NATURAL_TEXTURES = 73;
+    private static final int BTN_CUSTOM_COLORS = 74;
 
     private static final String[] BETTER_GRASS_MODES = {"off", "fast", "fancy"};
 
@@ -171,7 +172,8 @@ public class GuiLDOGSettings extends GuiScreen {
         settingsList.addButtonRow(
             new GuiButton(BTN_NATURAL_TEXTURES, 0, 0, w, h,
                 toggleLabel("Natural Textures", LDOGConfig.enableNaturalTextures)),
-            null);
+            new GuiButton(BTN_CUSTOM_COLORS, 0, 0, w, h,
+                toggleLabel("Custom Colors", LDOGConfig.enableCustomColors)));
 
         // -- Lighting --
         settingsList.addHeaderRow("Dynamic Lights");
@@ -457,6 +459,10 @@ public class GuiLDOGSettings extends GuiScreen {
             case BTN_NATURAL_TEXTURES:
                 LDOGConfig.enableNaturalTextures = !LDOGConfig.enableNaturalTextures;
                 button.displayString = toggleLabel("Natural Textures", LDOGConfig.enableNaturalTextures);
+                break;
+            case BTN_CUSTOM_COLORS:
+                LDOGConfig.enableCustomColors = !LDOGConfig.enableCustomColors;
+                button.displayString = toggleLabel("Custom Colors", LDOGConfig.enableCustomColors);
                 break;
         }
     }
