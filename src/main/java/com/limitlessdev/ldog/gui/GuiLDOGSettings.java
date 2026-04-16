@@ -372,47 +372,47 @@ public class GuiLDOGSettings extends GuiScreen {
             case BTN_BLOCK_LIGHT_R:
                 LDOGConfig.blockLightRed = cycleValue(LIGHT_TINT_VALUES, LDOGConfig.blockLightRed);
                 button.displayString = tintLabel("Block Red", LDOGConfig.blockLightRed, "\u00a7c");
-                currentLightPresetIndex = -1;
+                autoEnableLightCustomization();
                 break;
             case BTN_BLOCK_LIGHT_G:
                 LDOGConfig.blockLightGreen = cycleValue(LIGHT_TINT_VALUES, LDOGConfig.blockLightGreen);
                 button.displayString = tintLabel("Block Green", LDOGConfig.blockLightGreen, "\u00a7a");
-                currentLightPresetIndex = -1;
+                autoEnableLightCustomization();
                 break;
             case BTN_BLOCK_LIGHT_B:
                 LDOGConfig.blockLightBlue = cycleValue(LIGHT_TINT_VALUES, LDOGConfig.blockLightBlue);
                 button.displayString = tintLabel("Block Blue", LDOGConfig.blockLightBlue, "\u00a79");
-                currentLightPresetIndex = -1;
+                autoEnableLightCustomization();
                 break;
             case BTN_SKY_LIGHT_R:
                 LDOGConfig.skyLightRed = cycleValue(LIGHT_TINT_VALUES, LDOGConfig.skyLightRed);
                 button.displayString = tintLabel("Sky Red", LDOGConfig.skyLightRed, "\u00a7c");
-                currentLightPresetIndex = -1;
+                autoEnableLightCustomization();
                 break;
             case BTN_SKY_LIGHT_G:
                 LDOGConfig.skyLightGreen = cycleValue(LIGHT_TINT_VALUES, LDOGConfig.skyLightGreen);
                 button.displayString = tintLabel("Sky Green", LDOGConfig.skyLightGreen, "\u00a7a");
-                currentLightPresetIndex = -1;
+                autoEnableLightCustomization();
                 break;
             case BTN_SKY_LIGHT_B:
                 LDOGConfig.skyLightBlue = cycleValue(LIGHT_TINT_VALUES, LDOGConfig.skyLightBlue);
                 button.displayString = tintLabel("Sky Blue", LDOGConfig.skyLightBlue, "\u00a79");
-                currentLightPresetIndex = -1;
+                autoEnableLightCustomization();
                 break;
             case BTN_BRIGHTNESS_BOOST:
                 LDOGConfig.lightBrightnessBoost = cycleValue(BRIGHTNESS_VALUES, LDOGConfig.lightBrightnessBoost);
                 button.displayString = brightnessLabel(LDOGConfig.lightBrightnessBoost);
-                currentLightPresetIndex = -1;
+                autoEnableLightCustomization();
                 break;
             case BTN_NIGHT_DARKNESS:
                 LDOGConfig.nightDarkness = cycleValue(NIGHT_DARK_VALUES, LDOGConfig.nightDarkness);
                 button.displayString = nightDarknessLabel(LDOGConfig.nightDarkness);
-                currentLightPresetIndex = -1;
+                autoEnableLightCustomization();
                 break;
             case BTN_HDR:
                 LDOGConfig.enableHDR = !LDOGConfig.enableHDR;
                 button.displayString = toggleLabel("HDR Tonemapping", LDOGConfig.enableHDR);
-                currentLightPresetIndex = -1;
+                autoEnableLightCustomization();
                 break;
             case BTN_CUSTOM_SKY:
                 LDOGConfig.enableCustomSky = !LDOGConfig.enableCustomSky;
@@ -555,6 +555,18 @@ public class GuiLDOGSettings extends GuiScreen {
             GuiLDOGSettingsList.ButtonRowEntry row = (GuiLDOGSettingsList.ButtonRowEntry) entry;
             refreshButton(row.getLeftButton());
             refreshButton(row.getRightButton());
+        }
+    }
+
+    /**
+     * Auto-enable light customization when any individual option is changed,
+     * and refresh the toggle button + mark preset as custom.
+     */
+    private void autoEnableLightCustomization() {
+        currentLightPresetIndex = -1;
+        if (!LDOGConfig.enableLightTemperature) {
+            LDOGConfig.enableLightTemperature = true;
+            refreshLightButtons();
         }
     }
 
