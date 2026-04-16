@@ -10,7 +10,7 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 ### Where We Left Off (2026-04-16)
 
-**Phases 1-6 implemented.** All core features and resource pack features working.
+**Phases 1-7 implemented** (Phase 7 with known caveats, see below).
 
 - **Phase 1** (rendering optimizations, FPS reducer, clear water): complete
 - **Phase 2** (HD textures): complete — tested with 256x resource pack
@@ -18,14 +18,16 @@ A phased development plan for building out Limitless Development Optigame, from 
 - **Phase 4** (emissive textures): complete — block + item emissive with fullbright lightmap
 - **Phase 5** (dynamic lights + lighting): complete — dynamic lights, full lightmap customization (13 presets)
 - **Phase 6** (resource pack features): complete — better grass/snow, natural textures, custom colors, custom sky, random entity textures
+- **Phase 7a+b** (AF + MSAA): complete but experimental (see caveats below)
 
-**Known issue — Custom Sky rendering:**
-The renderSky mixin had a refmap ambiguity bug (two methods both named `renderSky` in MCP). Fixed by using explicit descriptor `(FI)V` and regenerating the refmap. Diagnostic logging is in place — after launching, check `run/logs/latest.log` for `"LDOG: renderSky mixin CONFIRMED"` to verify the injection fires. If it does fire but sky layers still don't render, the issue is in the skybox rendering code (GL state, texture loading, or geometry). Test packs: Dramatic Skys Demo, Affinity HD Bundle.
+**Phase 7 known caveats:**
+- **AF atlas bleed**: Enabling AF shows faint block-edge lines at distance. Cause: vanilla MC atlas has only 1px sprite border at mip 0, which halves each mip level. At grazing angles AF samples along an elongated line that crosses sprite boundaries in the smaller mips. OptiFine solves this by extending each mip level's sprite border (sometimes called "anisotropic-safe mipmaps" or "extended border mipmaps"). Tracked as **Phase 7c**.
+- **MSAA edge lines**: MSAA reveals sub-pixel rasterization gaps at chunk/block-face seams on distant geometry (adjacent faces' edges are mathematically coincident but FP imprecision creates microscopic gaps that pre-MSAA rasterization didn't sample). OptiFine avoids this by setting display-level MSAA via `PixelFormat.withSamples()` and disabling MC's intermediate FBO — which loses spectator outlines. Not worth the tradeoff; recommend FXAA instead.
 
 **Key next steps:**
-1. Verify custom sky mixin fires (check diagnostic logs), then debug rendering if needed
-2. Phase 7: AA/AF (discuss options with user first)
-3. Phase 8-9: Shaders + FSR (stretch goals, see Super Resolution + Radiance mods for reference)
+1. **Phase 7c** (extended border mipmaps) — fixes the AF atlas bleed properly. Mixin on TextureAtlasSprite.generateMipmaps (or TextureMap) to pad each mip level's sprite with N extra pixels of the sprite's own edge color.
+2. **Phase 7d** (FXAA post-process) — catches alpha-test edges (leaves, fences) that MSAA can't smooth, and avoids the rasterization edge-lines issue. Post-process GLSL pass after world render, before GUI. Requires FBO sampling setup that doubles as Phase 8 groundwork.
+3. **Phase 8** (Shaders) + **Phase 9** (FSR): stretch goals, see Super Resolution + Radiance mods for reference.
 
 **Test resource packs (already in run/resourcepacks/):**
 - `default-1-12` (extracted) -- CTM glass + glass panes (47-tile)
@@ -154,7 +156,27 @@ The renderSky mixin had a refmap ambiguity bug (two methods both named `renderSk
 
 ## Phase 7: Anti-aliasing / Anisotropic Filtering
 
-- [ ] Not started (will discuss AA algorithm options with user before implementing)
+### 7a: Anisotropic Filtering
+- [x] Config: `enableAnisotropicFiltering`, `anisotropicLevel` (2/4/8/16, clamped to GPU max)
+- [x] `AnisotropicFilteringHandler` applies `GL_TEXTURE_MAX_ANISOTROPY_EXT` at TextureStitchEvent.Post
+- [x] GUI: toggle + level cycling button; re-applies on save without full resource reload
+- [x] Graceful fallback if `GL_EXT_texture_filter_anisotropic` is missing
+- [ ] **Known issue**: faint block-edge lines at distance (atlas sprite border bleed on small mip levels). See Phase 7c.
+
+### 7b: MSAA
+- [x] Config: `enableMSAA`, `msaaSamples` (2/4/8, clamped to `GL_MAX_SAMPLES`)
+- [x] `MSAAFramebuffer` auxiliary multisampled FBO (GL_RGBA8 color renderbuffer + GL_DEPTH24_STENCIL8)
+- [x] `MixinEntityRendererMSAA` binds MS FBO at renderWorldPass HEAD, blit-resolves color to mc.framebufferMc at RETURN
+- [x] Auto-resizes on window size change
+- [x] GUI: toggle + sample count cycling
+- [x] Graceful fallback if GL 3.0 or EXT_framebuffer_multisample+blit missing
+- [ ] **Known issue**: faint rasterization edge lines at distant chunk/block-face seams. OptiFine avoids this with display-level MSAA (PixelFormat.withSamples + disable fboEnable) but loses spectator outlines. Not fixing — FXAA (Phase 7d) is a better long-term AA answer.
+
+### 7c: Extended border mipmaps (AF bleed fix)
+- [ ] Not started. Target: mixin on `TextureAtlasSprite.generateMipmaps` (or `TextureMap.loadTextureAtlas`) to extend each sprite's mip level with N pixels of its own edge color (N >= 2^mipLevel), so AF anisotropic samples never cross into neighboring sprites. OptiFine/MCPatcher reference pattern.
+
+### 7d: FXAA post-process
+- [ ] Not started. Post-process GLSL pass after world render and before GUI. Catches alpha-test edges (leaves, fences, tall grass) that MSAA can't smooth. Doubles as FBO-pipeline groundwork for Phase 8.
 
 ---
 
