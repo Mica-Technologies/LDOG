@@ -129,11 +129,19 @@ Uses `getUnInterpolatedU/V` → `getInterpolatedU/V` to remap UV from old sprite
 
 ## Rendering Pipeline Notes
 
-### Lightmap Tinting
+### Lightmap Customization
 The lightmap is a 16×16 texture (256 entries) mapping `skyLight*16 + blockLight` to ARGB color. Modify `lightmapColors[]` in `EntityRenderer.updateLightmap()` just before `updateDynamicTexture()` to apply global color shifts. Zero per-block cost.
 
+**Effect ordering matters:**
+1. Block/sky light color tinting (weighted blend based on which light source dominates)
+2. Brightness boost (additive shift, applied before darkness so darkness overrides it)
+3. Night darkness (multiplicative reduction — must come AFTER brightness)
+4. HDR tonemapping (ACES curve, applied last)
+
+**Night darkness formula:** `darkMul = skyFactor / (skyFactor + nightDark - 1)` with block light protection for torches (`blockLevel >= 8` = full protection). This is a global brightness reduction, not just a sky-based clamp, so vanilla gamma/brightness can't counteract it.
+
 ### Dynamic Light Injection
-Inject into `ChunkCache.getCombinedLight()` to raise the block light component. The return value is packed as `skyLight << 20 | blockLight << 4`. Extract, modify, repack.
+Inject into `ChunkCache.getCombinedLight()` (NOT `World` — World loads before any mixin system). The return value is packed as `skyLight << 20 | blockLight << 4`. Extract, modify, repack.
 
 ### Chunk Re-renders
 Call `RenderGlobal.markBlockRangeForRenderUpdate(x1,y1,z1, x2,y2,z2)` when dynamic state changes. Only mark when the block position actually changes, not sub-block movement.

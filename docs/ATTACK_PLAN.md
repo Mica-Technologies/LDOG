@@ -10,25 +10,19 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 ### Where We Left Off (2026-04-15)
 
-**Phases 1-4 implemented.** Phase 1 complete. Phase 2 needs HD pack testing. Phase 3 (CTM) is working for glass blocks and glass panes. Phase 4 (emissive) needs in-game testing.
+**Phases 1-5 implemented and tested.** All core features working in-game.
 
-**CTM (Phase 3) -- working:**
-- Full 47-tile CTM with correct OptiFine/MCPatcher NEIGHBOR_MAP lookup table
-- Glass blocks: correct tile selection, borders at edges, seamless interior
-- Glass panes: synthetic quads for absent arm areas, UV mirroring for WEST/NORTH faces, mirrorH for CTM tile selection on mirrored faces, seam suppression between stacked panes
-- Tested with: `default-1-12` resource pack (mcpatcher/ctm paths)
-- Remaining: test bookshelf horizontal CTM
-
-**Emissive (Phase 4) -- needs testing:**
-- Previous blocker was that `mapRegisteredSprites` is cleared before `TextureStitchEvent.Pre` fires, so sprite enumeration found nothing
-- Fixed by scanning resource pack files directly (both dirs and zips) for `*_e.png` files
-- Last commit (`3325e11`) has this fix but hasn't been tested in-game yet
-- Resource pack: `emissive-ores-1-12-2` (has `_e.png` files under `textures/blocks/`, `emissive.properties` with `suffix.emissive=_e`)
+- **Phase 1** (rendering optimizations, FPS reducer, clear water): complete
+- **Phase 2** (HD textures): structurally complete, needs testing with 32x/64x/128x packs
+- **Phase 3** (CTM): working — glass blocks, glass panes (synthetic quads, UV mirroring, seam suppression), bookshelf horizontal CTM
+- **Phase 4** (emissive textures): working — ore glow overlays verified in-game
+- **Phase 5** (dynamic lights + lighting): working — dynamic lights with smooth mode, full lightmap customization (block/sky color, night darkness, brightness, HDR, 13 presets)
 
 **Key next steps:**
-1. Test emissive textures in-game: run the game, check log for `LDOG: Found emissive:` lines
-2. Test bookshelf horizontal CTM with resource pack
-3. Phase 5: Dynamic Lights
+1. Phase 2: test with HD resource packs (32x, 64x, 128x)
+2. Phase 4: RenderItem emissive layer for items in inventory/hand
+3. Phase 6-8: resource pack features, AA/AF, shaders
+4. Phase 9: FSR upscaling (requires Phase 8 FBO pipeline)
 
 **Test resource packs (already in run/resourcepacks/):**
 - `default-1-12` (extracted) -- CTM glass + glass panes (47-tile)
@@ -95,9 +89,23 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 ---
 
-## Phase 5: Dynamic Lights
+## Phase 5: Dynamic Lights + Lighting Customization
 
-- [ ] Not started
+- [x] DynamicLightManager: tracks entities holding light-emitting items, distance-attenuated
+- [x] ItemLightRegistry: maps items to light levels (block items auto-detect + hardcoded overrides)
+- [x] MixinWorldDynamicLights: injects into ChunkCache.getCombinedLight() (World loads too early for mixins)
+- [x] DynamicLightTickHandler: per-tick entity scanning + per-frame smooth mode
+- [x] Entities on fire emit light level 15; dropped items emit their item's light level
+- [x] Configurable update interval (Smooth/per-frame, Fast/per-tick, or N ticks)
+- [x] MixinEntityRendererLightmap: full lightmap customization via 16x16 texture manipulation
+- [x] Separate block/sky light RGB tinting (warm torches + cool moonlight, no shaders)
+- [x] Night darkness multiplier (0.5x brighter → 100x pitch black) with torch protection
+- [x] Brightness boost (-1.0 to +1.0)
+- [x] Pseudo-HDR tonemapping (ACES filmic curve)
+- [x] 13 named presets (neutral, warm_torches, cinematic, candlelight, moonlit, dark_nights, horror, bright_caves, vivid, fluorescent, purple_haze, neon_blue, red_alert)
+- [x] Full GUI: preset cycling + individual controls for every parameter
+- [x] Auto-enable when any individual option is changed
+- [ ] Per-light-source color (torch=warm, redstone=red) — possible future enhancement
 
 ---
 
@@ -160,8 +168,8 @@ Resource packs may use either `mcpatcher/ctm` or `optifine/ctm`. Tile PNGs live 
 |---|---|---|
 | `v0.0.1-alpha` | Phase 0 | Mod loads, nothing visible yet |
 | `v0.1.0-alpha` | Phase 1 + C1 | FPS improvements, FPS reducer, clear water (replaces 3 mods) |
-| `v0.4.0-alpha` | Phase 2-4 | HD textures, CTM framework, emissive framework (in progress) |
-| `v0.5.0-alpha` | Phase 5 | Dynamic lights |
+| `v0.4.0-alpha` | Phase 2-4 | HD textures, CTM, emissive textures |
+| `v0.5.0-alpha` | Phase 5 | Dynamic lights, lighting customization (block/sky color, night darkness, HDR) |
 | `v0.6.0-alpha` | Phase 6 | Full resource pack feature parity |
 | `v1.0.0-beta` | Phase 8 | Shader support -- OptiFine fully replaceable |
 
