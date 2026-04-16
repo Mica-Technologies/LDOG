@@ -238,6 +238,24 @@ Replaces the Smooth Font mod's functionality: antialiased TrueType font renderin
 
 ---
 
+## Phase C4: OptiFine Override Mode (reverse the coexistence)
+
+Today's compat model: if OptiFine is detected, LDOG auto-disables its overlapping features (CTM, emissive, sky, etc.) and lets OptiFine handle them. This is the safe default. Once LDOG's implementation of a given feature is demonstrably *as good or better* than OptiFine's (faster, lower memory, better-looking, more configurable), we want the ability to flip it: LDOG disables OptiFine's version and takes over.
+
+- [ ] **Research feasibility**: OptiFine's settings live in `optifine.OptiFineConfig` / `Config` (class names vary by version). Investigate whether those fields are reflectively writable at runtime. If yes, we can toggle individual features off. If no (final fields, package-private methods with bytecode checks), fall back to editing `options.txt` before MC reads it, or CoreMod-level bytecode patching of the relevant Config initializer.
+- [ ] **Per-feature override flag**: extend `OptiFineCompat` so every feature has three modes rather than two:
+  - `AUTO` (current default): detect OptiFine, let it handle this feature
+  - `LDOG_OVERRIDE`: detect OptiFine, forcibly disable OptiFine's version, use LDOG's
+  - `OPTIFINE_OVERRIDE`: detect OptiFine, disable LDOG's version (current `AUTO` behavior)
+- [ ] **Conservative defaults**: ship with `AUTO` as the default for every feature; only flip individual ones to `LDOG_OVERRIDE` after benchmarked parity (FPS delta, memory footprint, visual equivalence).
+- [ ] **Graceful failure**: if the OptiFine toggle fails (reflection blocked, field renamed across OptiFine versions), log a warning and fall back to `OPTIFINE_OVERRIDE` — never leave both systems fighting over the same feature.
+- [ ] **GUI section**: "OptiFine Interop" with a per-feature dropdown (only visible when OptiFine is detected).
+- [ ] **Version-aware**: OptiFine field/class names drift across versions. Probe at startup, build a feature-to-field map for the detected OptiFine version, log what LDOG can and can't control.
+
+**Why this is its own phase**: requires every LDOG feature to already be implemented and benchmarked vs OptiFine's equivalent, so it naturally comes after the core phases settle. Think of it as the switch-over point where LDOG transitions from "coexists with OptiFine" to "replaces OptiFine" — users with both installed can progressively migrate.
+
+---
+
 ## Key Technical Notes
 
 ### Mixin Registration
