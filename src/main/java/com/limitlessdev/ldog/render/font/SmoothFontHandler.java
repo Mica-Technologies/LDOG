@@ -105,9 +105,9 @@ public final class SmoothFontHandler implements IResourceManagerReloadListener {
     @Override
     public void onResourceManagerReload(IResourceManager resourceManager) {
         LDOGMod.LOGGER.info(
-            "LDOG: SmoothFont reload (enableSmoothFont={}, useHDFontTexture={}, antialiasedFont={}, useFontPropertyWidths={}, optiFine={})",
+            "LDOG: SmoothFont reload (enableSmoothFont={}, useHDFontTexture={}, fontAntialiasing={}, useFontPropertyWidths={}, optiFine={})",
             LDOGConfig.enableSmoothFont, LDOGConfig.useHDFontTexture,
-            LDOGConfig.antialiasedFont, LDOGConfig.useFontPropertyWidths,
+            LDOGConfig.fontAntialiasing, LDOGConfig.useFontPropertyWidths,
             !OptiFineCompat.shouldHandleSmoothFont());
         reloadHDFontTexture(resourceManager);
         reloadWidthOverrides(resourceManager);
@@ -263,12 +263,22 @@ public final class SmoothFontHandler implements IResourceManagerReloadListener {
     }
 
     /**
-     * Invoked from the GUI after an antialias toggle flip so the user doesn't
-     * have to wait for a full resource reload to see the filter change.
+     * Invoked from the GUI after the font AA mode changes so the user doesn't
+     * have to wait for a full resource reload to see the filter flip.
      */
     public void refreshAntialiasFilter() {
         if (hdFontTexture != null) {
             hdFontTexture.refreshFilter();
         }
+    }
+
+    /**
+     * Returns true if the current HD texture needs to be rebuilt to switch to
+     * {@code target} (i.e. the change involves adding or dropping a mip chain).
+     * The GUI uses this to decide between a cheap filter flip and a full
+     * resource reload on save.
+     */
+    public boolean needsReloadToSwitchTo(FontAAMode target) {
+        return hdFontTexture != null && hdFontTexture.needsReloadToSwitchTo(target);
     }
 }

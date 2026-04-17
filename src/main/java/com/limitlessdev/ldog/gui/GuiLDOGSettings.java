@@ -95,6 +95,7 @@ public class GuiLDOGSettings extends GuiScreen {
 
     private static final int[] ANISOTROPIC_VALUES = {2, 4, 8, 16};
     private static final int[] MSAA_VALUES = {2, 4, 8};
+    private static final String[] FONT_AA_MODES = {"off", "bilinear", "trilinear"};
 
     private static final String[] BETTER_GRASS_MODES = {"off", "fast", "fancy"};
 
@@ -199,7 +200,7 @@ public class GuiLDOGSettings extends GuiScreen {
                 toggleLabel("HD Font Texture", LDOGConfig.useHDFontTexture)));
         settingsList.addButtonRow(
             new GuiButton(BTN_AA_FONT, 0, 0, w, h,
-                toggleLabel("Antialiased Font", LDOGConfig.antialiasedFont)),
+                fontAALabel(LDOGConfig.fontAntialiasing)),
             new GuiButton(BTN_FONT_WIDTHS, 0, 0, w, h,
                 toggleLabel("Pack Widths", LDOGConfig.useFontPropertyWidths)));
 
@@ -571,11 +572,23 @@ public class GuiLDOGSettings extends GuiScreen {
                 button.displayString = toggleLabel("HD Font Texture", LDOGConfig.useHDFontTexture);
                 fontSettingsChanged = true;
                 break;
-            case BTN_AA_FONT:
-                LDOGConfig.antialiasedFont = !LDOGConfig.antialiasedFont;
-                button.displayString = toggleLabel("Antialiased Font", LDOGConfig.antialiasedFont);
-                fontFilterChanged = true;
+            case BTN_AA_FONT: {
+                String prev = LDOGConfig.fontAntialiasing;
+                LDOGConfig.fontAntialiasing = cycleStringValue(FONT_AA_MODES, prev);
+                button.displayString = fontAALabel(LDOGConfig.fontAntialiasing);
+                // A pure filter flip is cheap (two glTexParameteri calls) and
+                // avoids a full resource reload; but if the change crosses the
+                // mipmap boundary (trilinear <-> off/bilinear) we need a fresh
+                // upload to build or drop the chain.
+                com.limitlessdev.ldog.render.font.FontAAMode target =
+                    com.limitlessdev.ldog.render.font.FontAAMode.parse(LDOGConfig.fontAntialiasing);
+                if (com.limitlessdev.ldog.render.font.SmoothFontHandler.INSTANCE.needsReloadToSwitchTo(target)) {
+                    fontSettingsChanged = true;
+                } else {
+                    fontFilterChanged = true;
+                }
                 break;
+            }
             case BTN_FONT_WIDTHS:
                 LDOGConfig.useFontPropertyWidths = !LDOGConfig.useFontPropertyWidths;
                 button.displayString = toggleLabel("Pack Widths", LDOGConfig.useFontPropertyWidths);
@@ -645,12 +658,16 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a77(optifine/font/ascii.png or mcpatcher/font/ascii.png)",
             "\u00a77instead of the vanilla 128x128 texture.");
         registerTooltip(BTN_AA_FONT,
-            "\u00a7eAntialiased Font",
-            "\u00a77Uses GL_LINEAR filtering on the font texture for",
-            "\u00a77smooth glyph edges. Without this, HD fonts look",
-            "\u00a77blocky like vanilla.",
+            "\u00a7eFont Antialiasing",
+            "\u00a7cOff:\u00a77 GL_NEAREST, blocky vanilla look.",
+            "\u00a7eBilinear:\u00a77 GL_LINEAR. Smooth at 1:1 but aliased at",
+            "\u00a77GUI scale since the HD atlas has no mip chain.",
+            "\u00a7aTrilinear:\u00a77 LINEAR_MIPMAP_LINEAR + generated mipmaps.",
+            "\u00a77Smoothest — the GPU picks a pre-downsampled level",
+            "\u00a77that matches the screen footprint.",
             "",
-            "\u00a77Flips live without a resource reload.");
+            "\u00a77Bilinear<->Off flip live. Switching to/from Trilinear",
+            "\u00a77triggers a resource reload to build/drop the mip chain.");
         registerTooltip(BTN_FONT_WIDTHS,
             "\u00a7ePack Widths",
             "\u00a77Honor per-glyph widths from the pack's",
@@ -772,6 +789,15 @@ public class GuiLDOGSettings extends GuiScreen {
             case "fast":  return "Better Grass: \u00a7aFast";
             case "fancy": return "Better Grass: \u00a7aFancy";
             default:      return "Better Grass: \u00a77" + mode;
+        }
+    }
+
+    static String fontAALabel(String mode) {
+        switch (mode == null ? "" : mode.toLowerCase()) {
+            case "off":       return "Font AA: \u00a7cOff";
+            case "bilinear":  return "Font AA: \u00a7eBilinear";
+            case "trilinear": return "Font AA: \u00a7aTrilinear";
+            default:          return "Font AA: \u00a77" + mode;
         }
     }
 

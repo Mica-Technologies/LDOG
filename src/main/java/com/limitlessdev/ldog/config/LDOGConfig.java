@@ -127,10 +127,16 @@ public class LDOGConfig {
     public static boolean useHDFontTexture = true;
 
     @Config.Comment({
-        "Use GL_LINEAR filtering on the font texture for antialiased glyph edges.",
-        "Without this, HD font textures look blocky like the vanilla 16x font."
+        "Font antialiasing level. Applies when an HD font texture is active.",
+        "  off       — GL_NEAREST (blocky, vanilla look).",
+        "  bilinear  — GL_LINEAR on the base level (smooth at 1:1, but aliased at",
+        "              GUI scale because the HD atlas has no mip chain).",
+        "  trilinear — GL_LINEAR_MIPMAP_LINEAR with generated mipmaps. Smoothest:",
+        "              the GPU picks a pre-downsampled level matching the screen",
+        "              footprint and trilinearly blends between levels.",
+        "Changes take effect on next resource reload."
     })
-    public static boolean antialiasedFont = true;
+    public static String fontAntialiasing = "trilinear";
 
     @Config.Comment({
         "Override per-glyph widths from a pack-provided ascii.properties file.",
