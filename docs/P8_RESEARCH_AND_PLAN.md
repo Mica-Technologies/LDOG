@@ -501,7 +501,7 @@ References:
 
 ## Phase 8a - Minimal Post-Process Pipeline Foundation
 
-**Status (2026-04-17): in progress.** Framework skeleton, mixin lifecycle hook, telemetry, and experimental config gate have landed; no visual change yet. Remaining work before 8a "done": `RenderTargetManager` (8a.2), parity validation evidence (8a.3), and overlay/"active scale" surfacing once a scaled target exists.
+**Status (2026-04-17, end of day): code-complete pending validation.** All five PR slices have landed behind the `enablePostProcessPipeline = false` gate. `RenderTargetManager` owns the scaled scene target + ping-pong; pipeline lifecycle drives its `ensure`/`dispose`; `PipelineDebugStats` surfaces target state; first-enable log reports coexistence posture for MSAA/FXAA. What's still owed: (1) the binding hook that actually redirects world rendering into the scene target and blits back (designed below, deferred pending live validation), and (2) parity validation evidence once that hook lands.
 
 Goal: generalized internal post-process scaffold that can host FSR1-style passes.
 
@@ -572,14 +572,14 @@ Goal: generalized internal post-process scaffold that can host FSR1-style passes
 
 - [x] **PR-8a.1 Framework-only:** pass contract + pipeline shell + no-op pass, no visible behavior change.
   - Landed: `PostProcessPass`, `PostProcessContext`, `PostProcessPipeline`, `passes/NoOpPass`.
-- [ ] **PR-8a.2 Target management:** internal render target lifecycle and resize logic.
-  - Not started. `RenderTargetManager` not yet created; pipeline is currently no-op and does not own an offscreen color target.
+- [x] **PR-8a.2 Target management:** internal render target lifecycle and resize logic.
+  - Landed: `RenderTargetManager` owns a scaled GL_RGBA8 color texture + GL_DEPTH24_STENCIL8 depth renderbuffer as the scene target, plus a color-only ping-pong target. `ensure(baseW, baseH, scale)` reallocates on dim/scale change; `dispose()` cleans up. Driven from `PostProcessPipeline.ensureInitialized` and `disableAll`. Does NOT yet bind the scene target for world rendering — that ships with the 9a binding hook.
 - [~] **PR-8a.3 Runtime hook:** mixin integration + parity validation evidence.
   - Mixin landed (`MixinEntityRendererPostPipeline` on `renderWorldPass` RETURN, registered in `mixins.ldog.json`). Parity validation capture still owed.
 - [x] **PR-8a.4 Stability/telemetry:** debug stats, logging, and fallback behavior.
-  - Landed: `PipelineDebugStats`; `PostProcessPipeline.runPasses` removes faulty passes on execute failure; `disableAll` on fatal init/resize error; ready/resize info logs.
+  - Landed: `PipelineDebugStats` (active passes, frame nanos, target ready/scale/dims); `PostProcessPipeline.runPasses` removes faulty passes on execute failure; `disableAll` on fatal init/resize error also disposes `RenderTargetManager`; first-enable log reports base+scaled dims, target readiness, and MSAA/FXAA posture.
 - [x] **PR-8a.5 Config surfacing (gating only):** experimental toggle/scale controls (post-stability only).
-  - `LDOGConfig.enablePostProcessPipeline` added, **default off**, tagged experimental. Scale controls and GUI entry intentionally deferred per plan (post-stability gate).
+  - `LDOGConfig.enablePostProcessPipeline` (default off, experimental) and `LDOGConfig.internalRenderScale` (double 0.5..1.0, default 1.0) added. GUI entry intentionally deferred per plan (post-stability gate).
 
 ### 8a acceptance criteria
 
@@ -592,9 +592,9 @@ Goal: generalized internal post-process scaffold that can host FSR1-style passes
 ### 8a implementation tasks (digestible)
 
 - [x] Add a small internal pass contract (`init`, `resize`, `execute`, `dispose`) for post-process stages. _(`PostProcessPass` also has `id()` and `isEnabled()`.)_
-- [ ] Implement render-target manager for scaled world color target + transient ping-pong target.
+- [x] Implement render-target manager for scaled world color target + transient ping-pong target. _(See PR-8a.2 above.)_
 - [x] Add orchestration hook that executes registered passes after world render and before UI. _(Injected at `RETURN` of `EntityRenderer.renderWorldPass`; UI/HUD compositing ordering to be verified as part of 8a.3 parity work.)_
-- [~] Add debug metrics (active scale, pass count, pass time budget) to LDOG overlay/logging. _(`PipelineDebugStats` captures active pass count, last width/height, last frame nanos; overlay surfacing and "active scale" still pending — depends on 8a.2 target manager.)_
+- [x] Add debug metrics (active scale, pass count, pass time budget) to LDOG overlay/logging. _(`PipelineDebugStats` captures active pass count, last width/height, last frame nanos, target ready/scale/dims. Overlay surfacing — rendering these to a live HUD — still pending; counters are log-visible for now.)_
 - [x] Add defensive error handling: disable faulty pass and continue frame without crash.
 
 ### 8a preliminary validation checklist
@@ -624,13 +624,46 @@ Estimate: `M`, 2-4 weeks, plus 1 week risk buffer.
 
 ## Phase 8b - Pipeline Hardening and Compatibility
 
+**Status (2026-04-17): initial observability pass landed.** Remaining items are re-scoped for after the 9a binding hook exists, since most hardening only matters once the pipeline actually owns the world-pass FBO.
+
 Goal: make foundation robust across current LDOG features.
 
-- [ ] Validate interaction with FXAA, MSAA path, and resource reload behavior.
-- [ ] Add config toggles and safe fallback behavior.
-- [ ] Add logging for pass failures and automatic downgrade path.
+- [~] Validate interaction with FXAA, MSAA path, and resource reload behavior.
+  - Posture documented in the first-enable log. `PostProcessPipeline.hasConflictingFeatureOn()` centralizes the MSAA check for the future binding hook to consume. Real validation (screenshots + lifecycle stress) is owed once binding is in.
+- [x] Add config toggles and safe fallback behavior.
+  - `enablePostProcessPipeline` master gate + `internalRenderScale` experimental scale control. Fault-tolerant pass disabling + `disableAll` on fatal error.
+- [x] Add logging for pass failures and automatic downgrade path.
+  - Per-pass failure logs with pass id; first-enable log reports target readiness so unavailable GL 3.0 is obvious.
 
 Estimate: `M`, 2-3 weeks, plus 1 week risk buffer.
+
+## Phase 8c (new) - Binding hook + parity validation
+
+**Why this exists:** 8a and 8b both stop short of binding the scene target for world rendering. Everything the pipeline can do visibly requires this hook. Pulling it into its own phase makes the risk surface explicit — this is where parity can break.
+
+**Design (for the next session to pick up):**
+
+1. **New mixin:** `MixinEntityRendererPostPipelineBind` (not merged into the existing `MixinEntityRendererPostPipeline` — keep the lifecycle hook behavior-neutral).
+   - `@At("HEAD")` of `renderWorldPass(IFJ)V`: if `enablePostProcessPipeline && !hasConflictingFeatureOn() && RenderTargetManager.isReady()`, save the current FBO handle + current viewport, bind `RenderTargetManager.getSceneFbo()`, set viewport to `(0, 0, scaledW, scaledH)`, clear color+depth. Set a `@Unique` boolean `ldog$pipelineActive = true`.
+   - `@At("RETURN")` (before the existing `MixinEntityRendererPostPipeline` runs passes, or ordered after — verify): if `ldog$pipelineActive`, execute the pass chain against the scene target, then blit the result back to the saved FBO at the saved viewport dimensions using `glBlitFramebuffer` with `GL_LINEAR`. Restore viewport. Unset `ldog$pipelineActive`.
+
+2. **Ordering vs. existing `MixinEntityRendererPostPipeline`:** the existing RETURN hook currently just ticks the pass chain. The new bind/blit logic needs to wrap it. Two options: (a) fold both behaviors into a single wrapper mixin, or (b) keep separate and use `@Inject` priority. Option (a) is less fragile; expect to delete the current `MixinEntityRendererPostPipeline` and replace with the wrapper.
+
+3. **MSAA conflict path:** when `hasConflictingFeatureOn()` is true, the pipeline must NOT bind — MSAA already owns the FBO swap. Pass chain still runs on the main framebuffer after MSAA resolve (which is what happens today anyway).
+
+4. **FXAA conflict path:** none. FXAA runs as `loadShader` on the main framebuffer after `renderWorldPass` returns. With our blit-back the main FB contains the upscaled result; FXAA operates on that. No change needed.
+
+5. **Parity validation protocol** (needed before declaring 8c done):
+   - With `enablePostProcessPipeline=true`, `internalRenderScale=1.0`, capture stills in three scenes (clarity/UI, foliage, moving entities) vs. baseline with pipeline off. Expect sub-pixel floating-point variance only.
+   - Same with MSAA enabled — the binding hook should no-op (check via log line "targets=ok, msaa=on (pipeline yields binding)") and rendering should be bit-identical to MSAA-alone baseline.
+   - Same with FXAA enabled — FXAA composites after pipeline; expect same FXAA smoothing as baseline.
+   - Resize/alt-tab/F3+T loop — no FBO leaks, no black frames, no crashes. `RenderTargetManager` should log one reallocate per resize and zero reallocates per F3+T.
+
+6. **Explicitly NOT 8c scope:** actual upscaling quality (the blit-back is plain bilinear). FSR1 EASU+RCAS shader authoring is 9a. But 8c delivers a working — if low-quality — scaled rendering path that demonstrates the plumbing.
+
+**Risk buffer:** viewport/projection/clear-state mismatches are the classic failure mode here. Expect iteration and live-client testing before merge.
+
+**Estimate:** `S/M`, 3-7 days of active implementation + testing, plus 2-3 days of parity capture.
 
 ## Phase 9a - FSR1-style Spatial Upscaling MVP
 
