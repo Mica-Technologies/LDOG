@@ -204,9 +204,10 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 ## Phase 8: Shader Pipeline
 
-- [~] **Phase 8a in progress (2026-04-17):** post-process pipeline scaffold landed — pass contract, pipeline shell, no-op pass, mixin lifecycle hook on `EntityRenderer.renderWorldPass`, debug telemetry, fault-tolerant pass disabling, and an off-by-default `enablePostProcessPipeline` config gate. No visual change yet.
-- [ ] 8a remaining: `RenderTargetManager` (scaled world target + ping-pong), parity validation evidence, overlay/"active scale" surfacing.
-- [ ] 8b hardening, 9a FSR1 MVP, 9b tuning, 9c temporal research — not started.
+- [x] **Phase 8a code-complete (2026-04-17):** pass contract, pipeline shell, no-op pass, mixin lifecycle hook on `EntityRenderer.renderWorldPass`, `RenderTargetManager` (scaled color texture + depth RBO + ping-pong target), lifecycle wiring, fault-tolerant pass disabling, and off-by-default `enablePostProcessPipeline` + experimental `internalRenderScale` (0.5..1.0) config. No visual change yet — target is allocated but not bound for world rendering.
+- [~] **Phase 8b initial observability landed (2026-04-17):** `PipelineDebugStats` surfaces target readiness/scale/dims, first-enable log reports coexistence posture (MSAA yields the binding slot, FXAA composites after). Full hardening + lifecycle validation is re-scoped to after 8c.
+- [ ] **Phase 8c binding hook + parity validation — next:** redirect world rendering into the scene target, bilinear blit-back to main FB, parity test matrix. Design captured in `docs/P8_RESEARCH_AND_PLAN.md`.
+- [ ] Phase 9a FSR1 MVP (EASU+RCAS GLSL), 9b tuning, 9c temporal research — not started.
 - Deep-dive planning and feasibility reference: `docs/P8_RESEARCH_AND_PLAN.md`
 
 ---
