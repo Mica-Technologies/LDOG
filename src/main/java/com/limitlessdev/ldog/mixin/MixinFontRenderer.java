@@ -31,14 +31,23 @@ public abstract class MixinFontRenderer {
             target = "Lnet/minecraft/client/gui/FontRenderer;bindTexture(Lnet/minecraft/util/ResourceLocation;)V",
             remap = false))
     private void ldog$bindActiveFontTexture(FontRenderer self, ResourceLocation vanillaFont) {
-        SmoothFontHandler handler = SmoothFontHandler.INSTANCE;
         FontRendererInvoker invoker = (FontRendererInvoker) self;
+        // Only swap for the main Minecraft FontRenderer. Forge's SplashFontRenderer
+        // (and potentially other mod subclasses) overrides bindTexture with a
+        // private texture pool that throws on unknown ResourceLocations, and runs
+        // on a dedicated thread with its own GL context — binding our HD location
+        // there would crash and running our filter refresh would hit the wrong
+        // context. Pass-through for any subclass.
+        if (self.getClass() != FontRenderer.class) {
+            invoker.ldog$invokeBindTexture(vanillaFont);
+            return;
+        }
+        SmoothFontHandler handler = SmoothFontHandler.INSTANCE;
         if (handler.hasHDFont()) {
             invoker.ldog$invokeBindTexture(handler.getHDFontLocation());
-            handler.onFirstBindAfterReload();
         } else {
             invoker.ldog$invokeBindTexture(vanillaFont);
-            handler.onFirstBindAfterReload();
         }
+        handler.onFirstBindAfterReload();
     }
 }
