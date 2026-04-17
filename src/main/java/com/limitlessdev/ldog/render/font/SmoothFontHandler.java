@@ -3,7 +3,9 @@ package com.limitlessdev.ldog.render.font;
 import com.limitlessdev.ldog.LDOGMod;
 import com.limitlessdev.ldog.compat.OptiFineCompat;
 import com.limitlessdev.ldog.config.LDOGConfig;
+import com.limitlessdev.ldog.mixin.FontRendererInvoker;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.client.resources.IResource;
 import net.minecraft.client.resources.IResourceManager;
@@ -109,17 +111,53 @@ public final class SmoothFontHandler implements IResourceManagerReloadListener {
             !OptiFineCompat.shouldHandleSmoothFont());
         reloadHDFontTexture(resourceManager);
         reloadWidthOverrides(resourceManager);
+        applyWidthOverridesToFontRenderer();
         loggedFirstBind = false;
     }
 
     /**
-     * Called once by the MixinFontRenderer redirect on its first hit after a reload.
-     * Confirms in the log that the mixin wired in correctly and which path is live.
+     * Writes any loaded width overrides directly into the live FontRenderer's
+     * {@code charWidth[]}. Called after {@link #reloadWidthOverrides} so our
+     * values land <em>after</em> FontRenderer's own {@code readFontTexture}
+     * (which MC already triggered earlier in the same reload pass). This is
+     * why we don't do the patching via {@code @Inject(TAIL)} on readFontTexture:
+     * FontRenderer's listener is registered before ours, so a TAIL inject
+     * would always read the previous-reload's override table.
      */
-    public void noteFirstBindIfNeeded() {
+    private void applyWidthOverridesToFontRenderer() {
+        if (!hasAnyWidthOverrides || !isActive() || !LDOGConfig.useFontPropertyWidths) return;
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null) return;
+        FontRenderer fr = mc.fontRenderer;
+        if (fr == null) return;
+        int[] charWidth = ((FontRendererInvoker) fr).ldog$getCharWidth();
+        int applied = 0;
+        for (int i = 0; i < widthOverrides.length && i < charWidth.length; i++) {
+            int override = widthOverrides[i];
+            if (override >= 0) {
+                charWidth[i] = override;
+                applied++;
+            }
+        }
+        LDOGMod.LOGGER.info("LDOG: Applied {} font width overrides to FontRenderer", applied);
+    }
+
+    /**
+     * Called by the MixinFontRenderer redirect on its first hit after each
+     * reload. Logs that the mixin wired in correctly, and — crucially —
+     * re-applies the LINEAR filter to the HD texture once it is first bound
+     * on the render thread. Without this one-shot refresh, first-launch
+     * frequently shows what looks like the vanilla font, because something
+     * in MC's startup sequence can flip the per-texture filter state on the
+     * currently-bound texture; toggling settings then triggers a
+     * {@code refreshResources()} whose upload resets the filter, which is
+     * what made "turn it off and back on" heal the display.
+     */
+    public void onFirstBindAfterReload() {
         if (loggedFirstBind) return;
         loggedFirstBind = true;
         if (hasHDFont()) {
+            if (hdFontTexture != null) hdFontTexture.refreshFilter();
             LDOGMod.LOGGER.info("LDOG: FontRenderer mixin live — binding HD font ({})", HD_FONT_LOCATION);
         } else {
             LDOGMod.LOGGER.info("LDOG: FontRenderer mixin live — HD font not active (hdFontAvailable={}, enabled={}, useHD={})",
@@ -187,13 +225,18 @@ public final class SmoothFontHandler implements IResourceManagerReloadListener {
             props.load(resource.getInputStream());
             int count = 0;
             for (String name : props.stringPropertyNames()) {
-                // Format: "width.N=W" where N is the code point (0-255) and W is the width.
+                // OptiFine / MCPatcher format: "width.N=W" where N is the code point
+                // (0-255) and W is the *raw* glyph pixel width (no trailing spacing).
+                // Vanilla's charWidth[] entries include a +1 for inter-glyph spacing
+                // (see FontRenderer.readFontTexture), so we add 1 here to match
+                // vanilla's convention — without it, glyphs advance one pixel less
+                // than they visibly render, which reads as odd gaps / clipping.
                 if (!name.startsWith("width.")) continue;
                 try {
                     int codePoint = Integer.parseInt(name.substring(6).trim());
-                    int width = Integer.parseInt(props.getProperty(name).trim());
-                    if (codePoint >= 0 && codePoint < widthOverrides.length && width >= 0) {
-                        widthOverrides[codePoint] = width;
+                    int rawWidth = Integer.parseInt(props.getProperty(name).trim());
+                    if (codePoint >= 0 && codePoint < widthOverrides.length && rawWidth >= 0) {
+                        widthOverrides[codePoint] = rawWidth + 1;
                         count++;
                     }
                 } catch (NumberFormatException ignored) {
