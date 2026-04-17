@@ -92,10 +92,18 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_HD_FONT = 91;
     private static final int BTN_AA_FONT = 92;
     private static final int BTN_FONT_WIDTHS = 93;
+    private static final int BTN_TTF_FONT = 94;
+    private static final int BTN_TTF_FAMILY = 95;
+    private static final int BTN_TTF_SIZE = 96;
 
     private static final int[] ANISOTROPIC_VALUES = {2, 4, 8, 16};
     private static final int[] MSAA_VALUES = {2, 4, 8};
     private static final String[] FONT_AA_MODES = {"off", "bilinear", "trilinear"};
+    private static final String[] TTF_FAMILIES = {
+        "SansSerif", "Serif", "Monospaced", "Arial", "Verdana", "Tahoma",
+        "Segoe UI", "Helvetica", "Consolas", "Courier New"
+    };
+    private static final int[] TTF_SIZES = {16, 20, 24, 28, 32, 40, 48};
 
     private static final String[] BETTER_GRASS_MODES = {"off", "fast", "fancy"};
 
@@ -203,6 +211,15 @@ public class GuiLDOGSettings extends GuiScreen {
                 fontAALabel(LDOGConfig.fontAntialiasing)),
             new GuiButton(BTN_FONT_WIDTHS, 0, 0, w, h,
                 toggleLabel("Pack Widths", LDOGConfig.useFontPropertyWidths)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_TTF_FONT, 0, 0, w, h,
+                toggleLabel("TTF Font", LDOGConfig.useTTFFont)),
+            new GuiButton(BTN_TTF_SIZE, 0, 0, w, h,
+                valLabel("TTF Size", LDOGConfig.ttfFontSize)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_TTF_FAMILY, 0, 0, w, h,
+                "Family: \u00a7a" + LDOGConfig.ttfFontFamily),
+            null);
 
         // -- Visual --
         currentPresetIndex = detectCurrentPreset();
@@ -594,6 +611,26 @@ public class GuiLDOGSettings extends GuiScreen {
                 button.displayString = toggleLabel("Pack Widths", LDOGConfig.useFontPropertyWidths);
                 fontSettingsChanged = true;
                 break;
+            case BTN_TTF_FONT:
+                LDOGConfig.useTTFFont = !LDOGConfig.useTTFFont;
+                button.displayString = toggleLabel("TTF Font", LDOGConfig.useTTFFont);
+                fontSettingsChanged = true;
+                break;
+            case BTN_TTF_FAMILY:
+                LDOGConfig.ttfFontFamily = cycleStringValue(TTF_FAMILIES, LDOGConfig.ttfFontFamily);
+                button.displayString = "Family: \u00a7a" + LDOGConfig.ttfFontFamily;
+                fontSettingsChanged = true;
+                break;
+            case BTN_TTF_SIZE:
+                LDOGConfig.ttfFontSize = cycleValue(TTF_SIZES, LDOGConfig.ttfFontSize);
+                // Keep cell size in sync: ~4/3 of the font size rounded up to 8px,
+                // capped at the config max. Gives enough breathing room in the cell
+                // for ascenders/descenders without wasting atlas area.
+                int cell = Math.min(128, ((LDOGConfig.ttfFontSize * 4 / 3) + 7) & ~7);
+                LDOGConfig.ttfCellSize = Math.max(LDOGConfig.ttfFontSize, cell);
+                button.displayString = valLabel("TTF Size", LDOGConfig.ttfFontSize);
+                fontSettingsChanged = true;
+                break;
         }
     }
 
@@ -656,7 +693,31 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a7eHD Font Texture",
             "\u00a77Loads the HD ASCII font PNG from the resource pack",
             "\u00a77(optifine/font/ascii.png or mcpatcher/font/ascii.png)",
-            "\u00a77instead of the vanilla 128x128 texture.");
+            "\u00a77instead of the vanilla 128x128 texture.",
+            "",
+            "\u00a77Ignored when TTF Font is on (TTF takes priority).");
+        registerTooltip(BTN_TTF_FONT,
+            "\u00a7eTTF Font",
+            "\u00a77Rasterize glyphs from a system TrueType font at startup",
+            "\u00a77using Java AWT, similar to Smooth Font's default mode.",
+            "\u00a77Produces pixel-perfect antialiased glyphs at the chosen",
+            "\u00a77cell size — crisper than any filter applied to a",
+            "\u00a77pre-rasterized atlas.",
+            "",
+            "\u00a77Overrides HD Font Texture when enabled.");
+        registerTooltip(BTN_TTF_FAMILY,
+            "\u00a7eTTF Font Family",
+            "\u00a77Cycles through common font families. Logical names",
+            "\u00a77(SansSerif, Serif, Monospaced) always resolve;",
+            "\u00a77OS-specific names fall back to the system default",
+            "\u00a77if missing on your machine.");
+        registerTooltip(BTN_TTF_SIZE,
+            "\u00a7eTTF Font Size",
+            "\u00a77AWT point size used to rasterize. Cell size is",
+            "\u00a77auto-sized 4/3 larger (rounded up to 8px) to leave",
+            "\u00a77breathing room for ascenders/descenders.",
+            "",
+            "\u00a77Larger = sharper at high GUI scales, more atlas memory.");
         registerTooltip(BTN_AA_FONT,
             "\u00a7eFont Antialiasing",
             "\u00a7cOff:\u00a77 GL_NEAREST, blocky vanilla look.",

@@ -43,8 +43,8 @@ public abstract class MixinFontRenderer {
             return;
         }
         SmoothFontHandler handler = SmoothFontHandler.INSTANCE;
-        if (handler.hasHDFont()) {
-            invoker.ldog$invokeBindTexture(handler.getHDFontLocation());
+        if (handler.hasCustomFont()) {
+            invoker.ldog$invokeBindTexture(handler.getCustomFontLocation());
         } else {
             invoker.ldog$invokeBindTexture(vanillaFont);
         }

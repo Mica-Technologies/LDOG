@@ -10,7 +10,7 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 ### Where We Left Off (2026-04-17)
 
-**Phases 1-7 implemented** (Phase 7a/b with known caveats, 7c done 2026-04-17; 7d done). **Phase C3 easy-path shipped 2026-04-17** (HD font texture swap + LINEAR filter + pack width overrides).
+**Phases 1-7 implemented** (Phase 7a/b with known caveats, 7c done 2026-04-17; 7d done). **Phase C3 complete 2026-04-17** — HD font texture swap + pack width overrides + 3-level AA (off/bilinear/trilinear) with LOD bias and anisotropic polish on the trilinear path + TTF runtime rasterization from a system TrueType font via AWT.
 
 - **Phase 1** (rendering optimizations, FPS reducer, clear water): complete
 - **Phase 2** (HD textures): complete — tested with 256x resource pack
@@ -28,8 +28,8 @@ A phased development plan for building out Limitless Development Optigame, from 
 **Key next steps:**
 1. **Phase C4** (OptiFine Override Mode) — reverse the coexistence once parity is proven; research-heavy (reflective writes against `optifine.Config`).
 2. **Phase 6d** custom-sky mixin verification — landed but needs in-game confirmation the injection fires.
-3. **Phase C3 full-path** (optional) — runtime TTF/AWT rasterization with lazy disk-cached glyph atlas; only worth doing if players want fonts not shipped in their resource pack.
-4. **Phase 8** (Shaders) + **Phase 9** (FSR): stretch goals, see Super Resolution + Radiance mods for reference.
+3. **Phase 8** (Shaders) + **Phase 9** (FSR): stretch goals, see Super Resolution + Radiance mods for reference.
+4. **C3 polish** (optional): disk-cached TTF atlas, async rasterization, Unicode glyph pages.
 
 **Test resource packs (already in run/resourcepacks/):**
 - `default-1-12` (extracted) -- CTM glass + glass panes (47-tile)
@@ -242,7 +242,8 @@ Replaces the Smooth Font mod's functionality: antialiased TrueType font renderin
 - [x] GUI section: "Font Rendering" with 4 toggles.
 - [x] OptiFine conflict check: `OptiFineCompat.shouldHandleSmoothFont()` auto-disables all four features when OptiFine is detected.
 - [x] Unicode glyph pages (`glyph_XX.png`) deliberately unchanged in v1 — ASCII HD swap is the user-visible win; unicode pages are lower priority and untouched by the hook.
-- [ ] **Full path (deferred)**: research MC's FontRenderer hook points (`renderUnicodeChar`, `getCharWidth`); replace glyph source with Java AWT `Font` + `Graphics2D` antialiased rasterization; lazy glyph rasterization; persistent disk cache at `config/ldog/font-cache/<font-hash>/<size>.png`; multithreaded warm-up.
+- [x] **Full path shipped 2026-04-17**: `TTFFontRasterizer` uses `java.awt.Graphics2D` with `TEXT_ANTIALIAS_ON` + `FRACTIONALMETRICS_ON` hints to rasterize MC's 256-char default-font page from an AWT `Font` into a 16×16 grid atlas at a configurable cell size. `TTFFontTexture` uploads that atlas via the shared `FontTextureUploader` (same filter/mipmap/LOD/anisotropic stack as the HD path). `SmoothFontHandler` prioritizes TTF over HD when `useTTFFont` is on; widths come straight from AWT `FontMetrics.charWidth(ch)` scaled to MC's logical 8-per-cell space. Configurable: `useTTFFont`, `ttfFontFamily`, `ttfBold`, `ttfItalic`, `ttfFontSize`, `ttfCellSize`. GUI adds a TTF toggle, family cycle (SansSerif/Serif/Monospaced/Arial/Verdana/Tahoma/Segoe UI/Helvetica/Consolas/Courier New), and size cycle. ASCII page is eager-rasterized at reload (~100ms for 256 glyphs — a single page, not Smooth Font's all-Unicode-pages × multiple-sizes double-launch cost).
+- [ ] **Future enhancements (not blocking)**: persistent disk cache at `config/ldog/font-cache/<font-hash>/<size>.png`, async rasterization on a worker thread, Unicode glyph_XX.png runtime rasterization with lazy+cached per-page atlases, bold/italic GUI toggles, subpixel rendering hint.
 
 **Why the load-time budget matters:** Smooth Font takes ~5-10s extra on first launch because it synchronously rasterizes all 256 glyph pages × multiple sizes. Lazy + cached + threaded should put first launch at ~1s overhead and subsequent launches at near-zero.
 

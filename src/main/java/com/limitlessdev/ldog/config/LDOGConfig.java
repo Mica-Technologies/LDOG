@@ -122,9 +122,49 @@ public class LDOGConfig {
     @Config.Comment({
         "Use HD ASCII font PNG from resource pack if available.",
         "Checks optifine/font/ascii.png and mcpatcher/font/ascii.png.",
-        "Falls back to vanilla textures/font/ascii.png when not present."
+        "Falls back to vanilla textures/font/ascii.png when not present.",
+        "Ignored when useTTFFont is on (TTF takes priority)."
     })
     public static boolean useHDFontTexture = true;
+
+    @Config.Comment({
+        "Runtime TTF rasterization — rasterize glyphs from a system TrueType",
+        "font at startup using Java AWT, similar to Smooth Font's default mode.",
+        "Produces pixel-perfect antialiased glyphs at the chosen cell size,",
+        "which is crisper than any filter applied to a pre-rasterized atlas.",
+        "Overrides useHDFontTexture when enabled (TTF is the active atlas)."
+    })
+    public static boolean useTTFFont = false;
+
+    @Config.Comment({
+        "TTF font family name. Logical names (SansSerif, Serif, Monospaced,",
+        "Dialog, DialogInput) are guaranteed resolvable; OS-specific names",
+        "(Arial, Segoe UI, etc.) fall back to the system default if missing."
+    })
+    public static String ttfFontFamily = "SansSerif";
+
+    @Config.Comment("Request a bold face from the TTF font.")
+    public static boolean ttfBold = false;
+
+    @Config.Comment("Request an italic face from the TTF font.")
+    public static boolean ttfItalic = false;
+
+    @Config.Comment({
+        "AWT point size for TTF rasterization. Roughly 70-80% of ttfCellSize",
+        "gives good results — larger values risk clipping ascenders/descenders,",
+        "smaller values leave empty padding inside each cell."
+    })
+    @Config.RangeInt(min = 8, max = 96)
+    public static int ttfFontSize = 24;
+
+    @Config.Comment({
+        "Pixel size of each cell in the 16x16 glyph atlas. Full atlas is",
+        "16 * ttfCellSize on a side. Larger = sharper base level (mipmaps",
+        "handle downsampling for smaller GUI scales). 32 is a good default;",
+        "64 looks slightly crisper on 4K displays at the cost of ~4x memory."
+    })
+    @Config.RangeInt(min = 8, max = 128)
+    public static int ttfCellSize = 32;
 
     @Config.Comment({
         "Font antialiasing level. Applies when an HD font texture is active.",

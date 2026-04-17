@@ -6,7 +6,9 @@ import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.mixin.FontRendererInvoker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
+import net.minecraft.client.renderer.texture.ITextureObject;
 import net.minecraft.client.renderer.texture.TextureManager;
+import net.minecraft.client.renderer.texture.TextureUtil;
 import net.minecraft.client.resources.IResource;
 import net.minecraft.client.resources.IResourceManager;
 import net.minecraft.client.resources.IResourceManagerReloadListener;
@@ -19,36 +21,39 @@ import java.util.Arrays;
 import java.util.Properties;
 
 /**
- * LDOG's Smooth Font replacement (Phase C3, easy path: HD texture swap).
+ * Coordinates LDOG's font replacement pipeline. Two sources of glyph pixels
+ * are supported, in priority order:
  *
- * <p>On each resource reload, probes the active resource pack for an HD ASCII
- * font PNG in the OptiFine or MCPatcher paths; if found, registers it with
- * {@link TextureManager} under a stable LDOG location and remembers the ID so
- * the FontRenderer mixin can substitute it at bind time. Also parses an
- * {@code ascii.properties} width table if one is present, which MixinFontRenderer
- * layers on top of vanilla's auto-computed widths.
- *
- * <p>Path priority (first match wins):
  * <ol>
- *   <li>{@code assets/minecraft/optifine/font/ascii.png}</li>
- *   <li>{@code assets/minecraft/mcpatcher/font/ascii.png}</li>
+ *   <li><b>TTF</b> — runtime AWT rasterization from a system TrueType font
+ *       ({@link TTFFontRasterizer}). Pixel-perfect antialiased glyphs at the
+ *       chosen cell size; this is what Smooth Font's default mode gives you.
+ *       Takes priority when {@link LDOGConfig#useTTFFont} is on.</li>
+ *   <li><b>HD</b> — pre-rasterized PNG from a resource pack, at
+ *       {@code optifine/font/ascii.png} or {@code mcpatcher/font/ascii.png}
+ *       ({@link HDFontTexture}). Used when TTF is off and
+ *       {@link LDOGConfig#useHDFontTexture} is on.</li>
  * </ol>
- * Vanilla's own {@code textures/font/ascii.png} always stays loaded; if no HD
- * variant is present, FontRenderer uses it unchanged.
  *
- * <p>Properties lookup (first match wins):
- * <ol>
- *   <li>{@code assets/minecraft/optifine/font/ascii.properties}</li>
- *   <li>{@code assets/minecraft/mcpatcher/font/ascii.properties}</li>
- *   <li>{@code assets/minecraft/font/ascii.properties}</li>
- * </ol>
+ * <p>Either source is uploaded under the same stable
+ * {@code ldog:textures/font/hd_ascii} location, so {@link MixinFontRenderer}'s
+ * redirect is unchanged regardless of which source is active.
+ *
+ * <p>Width overrides follow the active source:
+ * <ul>
+ *   <li>TTF: widths come straight from AWT {@code FontMetrics.charWidth(ch)},
+ *       converted to MC's logical 8-per-cell scale and patched into
+ *       {@code FontRenderer.charWidth[]} via the accessor.</li>
+ *   <li>HD: widths come from a pack-provided {@code ascii.properties} file if
+ *       present and {@link LDOGConfig#useFontPropertyWidths} is on.</li>
+ * </ul>
  */
 public final class SmoothFontHandler implements IResourceManagerReloadListener {
 
     public static final SmoothFontHandler INSTANCE = new SmoothFontHandler();
 
-    /** Stable ResourceLocation under which the HD texture is registered. */
-    private static final ResourceLocation HD_FONT_LOCATION =
+    /** Stable ResourceLocation under which whichever source is active lives. */
+    private static final ResourceLocation ACTIVE_FONT_LOCATION =
         new ResourceLocation("ldog", "textures/font/hd_ascii");
 
     private static final ResourceLocation[] HD_FONT_CANDIDATES = {
@@ -62,9 +67,10 @@ public final class SmoothFontHandler implements IResourceManagerReloadListener {
         new ResourceLocation("minecraft", "font/ascii.properties"),
     };
 
-    private boolean hdFontAvailable = false;
+    /** One of: "none", "ttf", "hd" — tracks which source populated the atlas. */
+    private String activeSource = "none";
     private HDFontTexture hdFontTexture;
-    /** True after the first bind-redirect hit is logged; avoids log spam. */
+    private TTFFontTexture ttfFontTexture;
     private boolean loggedFirstBind = false;
 
     /** 256-entry width override table; -1 means "no override for this code point". */
@@ -79,53 +85,158 @@ public final class SmoothFontHandler implements IResourceManagerReloadListener {
         return LDOGConfig.enableSmoothFont && OptiFineCompat.shouldHandleSmoothFont();
     }
 
-    public boolean hasHDFont() {
-        return hdFontAvailable && LDOGConfig.useHDFontTexture && isActive();
+    /** True when any LDOG font source (TTF or HD) is loaded and should be bound. */
+    public boolean hasCustomFont() {
+        return !"none".equals(activeSource) && isActive();
     }
 
-    /**
-     * The ResourceLocation to bind in place of {@code textures/font/ascii.png}
-     * when HD mode is on and a variant was discovered.
-     */
-    public ResourceLocation getHDFontLocation() {
-        return HD_FONT_LOCATION;
+    public ResourceLocation getCustomFontLocation() {
+        return ACTIVE_FONT_LOCATION;
     }
 
-    /**
-     * Returns the overridden width for a code point, or {@code -1} if no override
-     * applies (caller should keep vanilla's auto-computed width).
-     */
-    public int getWidthOverride(int codePoint) {
-        if (!isActive() || !LDOGConfig.useFontPropertyWidths || !hasAnyWidthOverrides) return -1;
-        if (codePoint < 0 || codePoint >= widthOverrides.length) return -1;
-        return widthOverrides[codePoint];
-    }
-
-    /** Called on every resource reload (pack swap, F3+T, or settings save). */
     @Override
     public void onResourceManagerReload(IResourceManager resourceManager) {
         LDOGMod.LOGGER.info(
-            "LDOG: SmoothFont reload (enableSmoothFont={}, useHDFontTexture={}, fontAntialiasing={}, useFontPropertyWidths={}, optiFine={})",
-            LDOGConfig.enableSmoothFont, LDOGConfig.useHDFontTexture,
+            "LDOG: SmoothFont reload (enable={}, ttf={}, hd={}, aa={}, packWidths={}, optiFine={})",
+            LDOGConfig.enableSmoothFont, LDOGConfig.useTTFFont, LDOGConfig.useHDFontTexture,
             LDOGConfig.fontAntialiasing, LDOGConfig.useFontPropertyWidths,
             !OptiFineCompat.shouldHandleSmoothFont());
-        reloadHDFontTexture(resourceManager);
+        reloadActiveFont(resourceManager);
         reloadWidthOverrides(resourceManager);
         applyWidthOverridesToFontRenderer();
         loggedFirstBind = false;
     }
 
     /**
+     * Selects the active font source. TTF wins if enabled; otherwise falls back
+     * to the HD pack-PNG swap; otherwise leaves vanilla untouched.
+     */
+    private void reloadActiveFont(IResourceManager resourceManager) {
+        activeSource = "none";
+        hdFontTexture = null;
+        ttfFontTexture = null;
+
+        if (!isActive()) {
+            LDOGMod.LOGGER.info("LDOG: Smooth font disabled (enable={}, optiFine={})",
+                LDOGConfig.enableSmoothFont, !OptiFineCompat.shouldHandleSmoothFont());
+            return;
+        }
+
+        TextureManager tm = Minecraft.getMinecraft().getTextureManager();
+        if (tm == null) return;
+
+        if (LDOGConfig.useTTFFont) {
+            if (tryLoadTTFFont(tm)) return;
+            LDOGMod.LOGGER.warn("LDOG: TTF font load failed; falling through to HD path");
+        }
+
+        if (LDOGConfig.useHDFontTexture) {
+            tryLoadHDFont(tm, resourceManager);
+        } else {
+            LDOGMod.LOGGER.info("LDOG: HD font disabled (useHDFontTexture=false)");
+        }
+    }
+
+    private boolean tryLoadTTFFont(TextureManager tm) {
+        TTFFontRasterizer.Result result;
+        try {
+            result = TTFFontRasterizer.rasterize(
+                LDOGConfig.ttfFontFamily,
+                LDOGConfig.ttfBold, LDOGConfig.ttfItalic,
+                LDOGConfig.ttfFontSize, LDOGConfig.ttfCellSize);
+        } catch (Throwable t) {
+            LDOGMod.LOGGER.warn("LDOG: TTF rasterization failed: {}", t.toString());
+            return false;
+        }
+        // Evict any stale HD registration so the location points at the TTF atlas.
+        ITextureObject prev = tm.getTexture(ACTIVE_FONT_LOCATION);
+        if (prev != null) TextureUtil.deleteTexture(prev.getGlTextureId());
+        ttfFontTexture = new TTFFontTexture(ACTIVE_FONT_LOCATION, result);
+        boolean ok = tm.loadTexture(ACTIVE_FONT_LOCATION, ttfFontTexture);
+        if (!ok) {
+            LDOGMod.LOGGER.warn("LDOG: TextureManager rejected TTF atlas");
+            ttfFontTexture = null;
+            return false;
+        }
+        activeSource = "ttf";
+        LDOGMod.LOGGER.info("LDOG: TTF font active ({} {}{}{}pt @ {}px cells → {})",
+            LDOGConfig.ttfFontFamily,
+            LDOGConfig.ttfBold ? "bold " : "",
+            LDOGConfig.ttfItalic ? "italic " : "",
+            LDOGConfig.ttfFontSize, LDOGConfig.ttfCellSize, ACTIVE_FONT_LOCATION);
+        return true;
+    }
+
+    private void tryLoadHDFont(TextureManager tm, IResourceManager rm) {
+        ResourceLocation hdSource = null;
+        for (ResourceLocation candidate : HD_FONT_CANDIDATES) {
+            boolean present = resourceExists(rm, candidate);
+            LDOGMod.LOGGER.info("LDOG: HD font probe {} -> {}", candidate, present ? "FOUND" : "absent");
+            if (present && hdSource == null) hdSource = candidate;
+        }
+        if (hdSource == null) {
+            LDOGMod.LOGGER.info("LDOG: No HD font texture in active resource pack — using vanilla");
+            return;
+        }
+        ITextureObject prev = tm.getTexture(ACTIVE_FONT_LOCATION);
+        if (prev != null) TextureUtil.deleteTexture(prev.getGlTextureId());
+        hdFontTexture = new HDFontTexture(hdSource);
+        boolean ok = tm.loadTexture(ACTIVE_FONT_LOCATION, hdFontTexture);
+        if (ok) {
+            activeSource = "hd";
+            LDOGMod.LOGGER.info("LDOG: HD font active ({} → {})", hdSource, ACTIVE_FONT_LOCATION);
+        } else {
+            LDOGMod.LOGGER.warn("LDOG: Failed to register HD font {}", hdSource);
+            hdFontTexture = null;
+        }
+    }
+
+    /**
+     * Populates {@link #widthOverrides} from whichever source is active:
+     * TTF takes its widths from rasterization; HD reads ascii.properties (gated
+     * on {@link LDOGConfig#useFontPropertyWidths}).
+     */
+    private void reloadWidthOverrides(IResourceManager resourceManager) {
+        Arrays.fill(widthOverrides, -1);
+        hasAnyWidthOverrides = false;
+
+        if (!isActive()) return;
+
+        if ("ttf".equals(activeSource) && ttfFontTexture != null) {
+            int[] ttfWidths = ttfFontTexture.getLogicalWidths();
+            int count = 0;
+            for (int i = 0; i < Math.min(ttfWidths.length, widthOverrides.length); i++) {
+                if (ttfWidths[i] >= 0) {
+                    widthOverrides[i] = ttfWidths[i];
+                    count++;
+                }
+            }
+            hasAnyWidthOverrides = count > 0;
+            LDOGMod.LOGGER.info("LDOG: Loaded {} font widths from TTF metrics", count);
+            return;
+        }
+
+        if (!LDOGConfig.useFontPropertyWidths) return;
+        for (ResourceLocation candidate : WIDTH_PROPERTY_CANDIDATES) {
+            if (tryLoadProperties(resourceManager, candidate)) {
+                LDOGMod.LOGGER.info("LDOG: Loaded font width overrides from {}", candidate);
+                return;
+            }
+        }
+        LDOGMod.LOGGER.debug("LDOG: No font width properties in resource pack");
+    }
+
+    /**
      * Writes any loaded width overrides directly into the live FontRenderer's
      * {@code charWidth[]}. Called after {@link #reloadWidthOverrides} so our
      * values land <em>after</em> FontRenderer's own {@code readFontTexture}
-     * (which MC already triggered earlier in the same reload pass). This is
-     * why we don't do the patching via {@code @Inject(TAIL)} on readFontTexture:
-     * FontRenderer's listener is registered before ours, so a TAIL inject
-     * would always read the previous-reload's override table.
+     * (which MC already triggered earlier in the same reload pass).
      */
     private void applyWidthOverridesToFontRenderer() {
-        if (!hasAnyWidthOverrides || !isActive() || !LDOGConfig.useFontPropertyWidths) return;
+        if (!hasAnyWidthOverrides || !isActive()) return;
+        // TTF widths are authoritative for their source; HD widths only apply when
+        // the user opted in via useFontPropertyWidths.
+        if ("hd".equals(activeSource) && !LDOGConfig.useFontPropertyWidths) return;
         Minecraft mc = Minecraft.getMinecraft();
         if (mc == null) return;
         FontRenderer fr = mc.fontRenderer;
@@ -139,82 +250,25 @@ public final class SmoothFontHandler implements IResourceManagerReloadListener {
                 applied++;
             }
         }
-        LDOGMod.LOGGER.info("LDOG: Applied {} font width overrides to FontRenderer", applied);
+        LDOGMod.LOGGER.info("LDOG: Applied {} font width overrides to FontRenderer (source={})",
+            applied, activeSource);
     }
 
     /**
      * Called by the MixinFontRenderer redirect on its first hit after each
-     * reload. Logs that the mixin wired in correctly, and — crucially —
-     * re-applies the LINEAR filter to the HD texture once it is first bound
-     * on the render thread. Without this one-shot refresh, first-launch
-     * frequently shows what looks like the vanilla font, because something
-     * in MC's startup sequence can flip the per-texture filter state on the
-     * currently-bound texture; toggling settings then triggers a
-     * {@code refreshResources()} whose upload resets the filter, which is
-     * what made "turn it off and back on" heal the display.
+     * reload. Re-applies the current filter to the already-bound texture as a
+     * defensive one-shot against filter state being clobbered during startup.
      */
     public void onFirstBindAfterReload() {
         if (loggedFirstBind) return;
         loggedFirstBind = true;
-        if (hasHDFont()) {
-            if (hdFontTexture != null) hdFontTexture.refreshFilter();
-            LDOGMod.LOGGER.info("LDOG: FontRenderer mixin live — binding HD font ({})", HD_FONT_LOCATION);
+        if (hasCustomFont()) {
+            refreshAntialiasFilter();
+            LDOGMod.LOGGER.info("LDOG: FontRenderer mixin live — binding {} font ({})",
+                activeSource, ACTIVE_FONT_LOCATION);
         } else {
-            LDOGMod.LOGGER.info("LDOG: FontRenderer mixin live — HD font not active (hdFontAvailable={}, enabled={}, useHD={})",
-                hdFontAvailable, isActive(), LDOGConfig.useHDFontTexture);
+            LDOGMod.LOGGER.info("LDOG: FontRenderer mixin live — no custom font active");
         }
-    }
-
-    private void reloadHDFontTexture(IResourceManager resourceManager) {
-        hdFontAvailable = false;
-        hdFontTexture = null;
-
-        if (!isActive() || !LDOGConfig.useHDFontTexture) {
-            LDOGMod.LOGGER.info("LDOG: HD font disabled (active={}, useHDFontTexture={})",
-                isActive(), LDOGConfig.useHDFontTexture);
-            return;
-        }
-
-        ResourceLocation hdSource = null;
-        for (ResourceLocation candidate : HD_FONT_CANDIDATES) {
-            boolean present = resourceExists(resourceManager, candidate);
-            LDOGMod.LOGGER.info("LDOG: HD font probe {} -> {}", candidate, present ? "FOUND" : "absent");
-            if (present && hdSource == null) {
-                hdSource = candidate;
-            }
-        }
-
-        if (hdSource == null) {
-            LDOGMod.LOGGER.info("LDOG: No HD font texture in active resource pack — using vanilla");
-            return;
-        }
-
-        TextureManager tm = Minecraft.getMinecraft().getTextureManager();
-        if (tm == null) return;
-
-        hdFontTexture = new HDFontTexture(hdSource);
-        boolean ok = tm.loadTexture(HD_FONT_LOCATION, hdFontTexture);
-        if (ok) {
-            hdFontAvailable = true;
-            LDOGMod.LOGGER.info("LDOG: HD font active ({} → {})", hdSource, HD_FONT_LOCATION);
-        } else {
-            LDOGMod.LOGGER.warn("LDOG: Failed to register HD font {}", hdSource);
-        }
-    }
-
-    private void reloadWidthOverrides(IResourceManager resourceManager) {
-        Arrays.fill(widthOverrides, -1);
-        hasAnyWidthOverrides = false;
-
-        if (!isActive() || !LDOGConfig.useFontPropertyWidths) return;
-
-        for (ResourceLocation candidate : WIDTH_PROPERTY_CANDIDATES) {
-            if (tryLoadProperties(resourceManager, candidate)) {
-                LDOGMod.LOGGER.info("LDOG: Loaded font width overrides from {}", candidate);
-                return;
-            }
-        }
-        LDOGMod.LOGGER.debug("LDOG: No font width properties in resource pack");
     }
 
     private boolean tryLoadProperties(IResourceManager resourceManager, ResourceLocation loc) {
@@ -225,12 +279,6 @@ public final class SmoothFontHandler implements IResourceManagerReloadListener {
             props.load(resource.getInputStream());
             int count = 0;
             for (String name : props.stringPropertyNames()) {
-                // OptiFine / MCPatcher format: "width.N=W" where N is the code point
-                // (0-255) and W is the *raw* glyph pixel width (no trailing spacing).
-                // Vanilla's charWidth[] entries include a +1 for inter-glyph spacing
-                // (see FontRenderer.readFontTexture), so we add 1 here to match
-                // vanilla's convention — without it, glyphs advance one pixel less
-                // than they visibly render, which reads as odd gaps / clipping.
                 if (!name.startsWith("width.")) continue;
                 try {
                     int codePoint = Integer.parseInt(name.substring(6).trim());
@@ -240,7 +288,7 @@ public final class SmoothFontHandler implements IResourceManagerReloadListener {
                         count++;
                     }
                 } catch (NumberFormatException ignored) {
-                    // Skip malformed entries; other keys in .properties are allowed.
+                    // Skip malformed entries.
                 }
             }
             hasAnyWidthOverrides = count > 0;
@@ -267,18 +315,17 @@ public final class SmoothFontHandler implements IResourceManagerReloadListener {
      * have to wait for a full resource reload to see the filter flip.
      */
     public void refreshAntialiasFilter() {
-        if (hdFontTexture != null) {
-            hdFontTexture.refreshFilter();
-        }
+        if (ttfFontTexture != null) ttfFontTexture.refreshFilter();
+        if (hdFontTexture != null) hdFontTexture.refreshFilter();
     }
 
     /**
-     * Returns true if the current HD texture needs to be rebuilt to switch to
-     * {@code target} (i.e. the change involves adding or dropping a mip chain).
-     * The GUI uses this to decide between a cheap filter flip and a full
-     * resource reload on save.
+     * Returns true if the current active texture needs to be rebuilt to switch
+     * to {@code target} (i.e. the change involves adding or dropping a mip chain).
      */
     public boolean needsReloadToSwitchTo(FontAAMode target) {
-        return hdFontTexture != null && hdFontTexture.needsReloadToSwitchTo(target);
+        if (ttfFontTexture != null) return ttfFontTexture.needsReloadToSwitchTo(target);
+        if (hdFontTexture != null) return hdFontTexture.needsReloadToSwitchTo(target);
+        return false;
     }
 }
