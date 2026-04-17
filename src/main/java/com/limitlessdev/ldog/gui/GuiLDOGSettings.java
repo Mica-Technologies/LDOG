@@ -100,10 +100,6 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int[] ANISOTROPIC_VALUES = {2, 4, 8, 16};
     private static final int[] MSAA_VALUES = {2, 4, 8};
     private static final String[] FONT_AA_MODES = {"off", "bilinear", "trilinear"};
-    private static final String[] TTF_FAMILIES = {
-        "SansSerif", "Serif", "Monospaced", "Arial", "Verdana", "Tahoma",
-        "Segoe UI", "Helvetica", "Consolas", "Courier New"
-    };
     private static final int[] TTF_SIZES = {16, 20, 24, 28, 32, 40, 48};
 
     private static final String[] BETTER_GRASS_MODES = {"off", "fast", "fancy"};
@@ -219,7 +215,7 @@ public class GuiLDOGSettings extends GuiScreen {
                 valLabel("TTF Size", LDOGConfig.ttfFontSize)));
         settingsList.addButtonRow(
             new GuiButton(BTN_TTF_FAMILY, 0, 0, w, h,
-                "Family: \u00a7a" + LDOGConfig.ttfFontFamily),
+                fontFamilyLabel(LDOGConfig.ttfFontFamily)),
             new GuiButton(BTN_FONT_SHADOW, 0, 0, w, h,
                 toggleLabel("Drop Shadows", LDOGConfig.fontDropShadows)));
 
@@ -619,8 +615,10 @@ public class GuiLDOGSettings extends GuiScreen {
                 fontSettingsChanged = true;
                 break;
             case BTN_TTF_FAMILY:
-                LDOGConfig.ttfFontFamily = cycleStringValue(TTF_FAMILIES, LDOGConfig.ttfFontFamily);
-                button.displayString = "Family: \u00a7a" + LDOGConfig.ttfFontFamily;
+                LDOGConfig.ttfFontFamily = cycleStringValue(
+                    com.limitlessdev.ldog.render.font.TTFFontCatalog.getAllFamilies(),
+                    LDOGConfig.ttfFontFamily);
+                button.displayString = fontFamilyLabel(LDOGConfig.ttfFontFamily);
                 fontSettingsChanged = true;
                 break;
             case BTN_FONT_SHADOW:
@@ -715,10 +713,15 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a77Overrides HD Font Texture when enabled.");
         registerTooltip(BTN_TTF_FAMILY,
             "\u00a7eTTF Font Family",
-            "\u00a77Cycles through common font families. Logical names",
+            "\u00a77Cycles through available font families. Logical names",
             "\u00a77(SansSerif, Serif, Monospaced) always resolve;",
             "\u00a77OS-specific names fall back to the system default",
-            "\u00a77if missing on your machine.");
+            "\u00a77if missing on your machine.",
+            "",
+            "\u00a7aBring your own:\u00a77 drop .ttf or .otf files into",
+            "\u00a77\u00a7oconfig/ldog/fonts/\u00a7r\u00a77 to see them in this cycle.",
+            "\u00a77Custom entries are highlighted in yellow. Files can be",
+            "\u00a77added/removed while the game is running — F3+T to rescan.");
         registerTooltip(BTN_TTF_SIZE,
             "\u00a7eTTF Font Size",
             "\u00a77AWT point size used to rasterize. Cell size is",
@@ -875,6 +878,13 @@ public class GuiLDOGSettings extends GuiScreen {
             case "trilinear": return "Font AA: \u00a7aTrilinear";
             default:          return "Font AA: \u00a77" + mode;
         }
+    }
+
+    /** Highlights user-dropped fonts in yellow so custom vs built-in is visible. */
+    static String fontFamilyLabel(String family) {
+        boolean isCustom = com.limitlessdev.ldog.render.font.TTFFontCatalog.isCustomFamily(family);
+        String color = isCustom ? "\u00a7e" : "\u00a7a";
+        return "Family: " + color + family;
     }
 
     // ---- Water preset helpers ----

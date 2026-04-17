@@ -3,6 +3,7 @@ package com.limitlessdev.ldog.proxy;
 import com.limitlessdev.ldog.render.color.CustomColorHandler;
 import com.limitlessdev.ldog.render.dynamiclights.DynamicLightTickHandler;
 import com.limitlessdev.ldog.render.font.SmoothFontHandler;
+import com.limitlessdev.ldog.render.font.TTFFontCatalog;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.IReloadableResourceManager;
 import net.minecraftforge.common.MinecraftForge;
@@ -15,6 +16,10 @@ public class ClientProxy extends CommonProxy {
     @Override
     public void preInit(FMLPreInitializationEvent event) {
         super.preInit(event);
+        // Create the user-font directory and register any .ttf/.otf already in it
+        // with AWT's GraphicsEnvironment so the TTF rasterizer can pick them up
+        // by family name just like built-in fonts.
+        TTFFontCatalog.init(event.getModConfigurationDirectory());
     }
 
     @Override

@@ -101,6 +101,9 @@ public final class SmoothFontHandler implements IResourceManagerReloadListener {
             LDOGConfig.enableSmoothFont, LDOGConfig.useTTFFont, LDOGConfig.useHDFontTexture,
             LDOGConfig.fontAntialiasing, LDOGConfig.useFontPropertyWidths,
             !OptiFineCompat.shouldHandleSmoothFont());
+        // Pick up any user-dropped .ttf/.otf files that appeared since last reload
+        // before we (maybe) try to rasterize from one.
+        TTFFontCatalog.rescan();
         reloadActiveFont(resourceManager);
         reloadWidthOverrides(resourceManager);
         applyWidthOverridesToFontRenderer();
