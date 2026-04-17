@@ -96,9 +96,12 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_TTF_FAMILY = 95;
     private static final int BTN_TTF_SIZE = 96;
     private static final int BTN_FONT_SHADOW = 97;
+    private static final int BTN_PIPELINE = 100;
+    private static final int BTN_PIPELINE_SCALE = 101;
 
     private static final int[] ANISOTROPIC_VALUES = {2, 4, 8, 16};
     private static final int[] MSAA_VALUES = {2, 4, 8};
+    private static final double[] PIPELINE_SCALE_VALUES = {1.0, 0.85, 0.75, 0.5};
     private static final String[] FONT_AA_MODES = {"off", "bilinear", "trilinear"};
     private static final int[] TTF_SIZES = {16, 20, 24, 28, 32, 40, 48};
 
@@ -192,6 +195,17 @@ public class GuiLDOGSettings extends GuiScreen {
             new GuiButton(BTN_FXAA, 0, 0, w, h,
                 toggleLabel("FXAA", LDOGConfig.enableFXAA)),
             null);
+
+        // -- Post-Process Pipeline (Phase 8, Experimental) --
+        // Scaffold only today: allocates an offscreen scene target but does not
+        // yet bind it for world rendering, so changing these values has no
+        // visible effect. The binding hook (Phase 8c) is the next step.
+        settingsList.addHeaderRow("Post-Process (Experimental)");
+        settingsList.addButtonRow(
+            new GuiButton(BTN_PIPELINE, 0, 0, w, h,
+                toggleLabel("Post Pipeline", LDOGConfig.enablePostProcessPipeline)),
+            new GuiButton(BTN_PIPELINE_SCALE, 0, 0, w, h,
+                pipelineScaleLabel(LDOGConfig.internalRenderScale)));
 
         // -- Font Rendering --
         // Drop-in replacement for the Smooth Font mod. Swaps in HD ascii.png from
@@ -572,6 +586,15 @@ public class GuiLDOGSettings extends GuiScreen {
                 button.displayString = toggleLabel("FXAA", LDOGConfig.enableFXAA);
                 fxaaSettingsChanged = true;
                 break;
+            case BTN_PIPELINE:
+                LDOGConfig.enablePostProcessPipeline = !LDOGConfig.enablePostProcessPipeline;
+                button.displayString = toggleLabel("Post Pipeline", LDOGConfig.enablePostProcessPipeline);
+                break;
+            case BTN_PIPELINE_SCALE:
+                LDOGConfig.internalRenderScale = cycleValue(
+                    PIPELINE_SCALE_VALUES, LDOGConfig.internalRenderScale);
+                button.displayString = pipelineScaleLabel(LDOGConfig.internalRenderScale);
+                break;
             case BTN_EXT_BORDER:
                 LDOGConfig.enableExtendedBorderMipmaps = !LDOGConfig.enableExtendedBorderMipmaps;
                 button.displayString = toggleLabel("Ext Border Mips", LDOGConfig.enableExtendedBorderMipmaps);
@@ -752,6 +775,30 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a77Honor per-glyph widths from the pack's",
             "\u00a77ascii.properties file (format: width.N=W).",
             "\u00a77Checks optifine/font, mcpatcher/font, then font/.");
+        registerTooltip(BTN_PIPELINE,
+            "\u00a7ePost-Process Pipeline (Phase 8 scaffold)",
+            "\u00a77Experimental. Allocates an offscreen scene target so",
+            "\u00a77future passes (FSR1 upscaling, sharpen, etc.) can hook",
+            "\u00a77in without reworking the renderer.",
+            "",
+            "\u00a7cNo visible effect yet:\u00a77 the binding hook that redirects",
+            "\u00a77world rendering into the scaled target ships in Phase 8c.",
+            "\u00a77Enabling this today is safe but only exercises lifecycle",
+            "\u00a77wiring. Flips live.",
+            "",
+            "\u00a77When enabled, yields to MSAA (which owns its own FBO);",
+            "\u00a77composes cleanly with FXAA.");
+        registerTooltip(BTN_PIPELINE_SCALE,
+            "\u00a7eInternal Render Scale",
+            "\u00a771.0x = native resolution. Below 1.0 will eventually",
+            "\u00a77render the world smaller and upscale for a perf win.",
+            "",
+            "\u00a7cNo visible effect yet:\u00a77 the pipeline allocates a",
+            "\u00a77smaller scene target, but world rendering still goes",
+            "\u00a77to the main framebuffer at native resolution until the",
+            "\u00a77Phase 8c binding hook lands.",
+            "",
+            "\u00a77Only consumed when the Post Pipeline toggle is on.");
     }
 
     private void saveAndClose() {
@@ -860,6 +907,11 @@ public class GuiLDOGSettings extends GuiScreen {
 
     static String msaaLabel(int samples) {
         return "Samples: \u00a7a" + samples + "x";
+    }
+
+    static String pipelineScaleLabel(double scale) {
+        String color = Math.abs(scale - 1.0) < 0.01 ? "\u00a77" : "\u00a7e";
+        return "Render Scale: " + color + String.format("%.2fx", scale);
     }
 
     static String betterGrassLabel(String mode) {
