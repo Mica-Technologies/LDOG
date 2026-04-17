@@ -162,6 +162,8 @@ public final class PostProcessPipeline {
                 reason = "MSAA is on (pipeline correctly yields the binding slot)";
             } else if (!RenderTargetManager.INSTANCE.isReady()) {
                 reason = "RenderTargetManager not ready (GL 3.0 unavailable or FBO allocation failed)";
+            } else if (net.minecraft.client.Minecraft.getMinecraft().gameSettings.anaglyph) {
+                reason = "anaglyph 3D is on (8c binding only runs on pass 2, which is the non-anaglyph world pass)";
             } else {
                 reason = "unknown — binding guards may be misconfigured or the mixin @Redirect is not matching";
             }

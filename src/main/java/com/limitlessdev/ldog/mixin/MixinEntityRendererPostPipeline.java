@@ -40,7 +40,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * Activation guards (all must hold):
  *   - LDOGConfig.enablePostProcessPipeline
  *   - PostProcessPipeline.hasConflictingFeatureOn() is false (MSAA yields)
- *   - pass == 0 (anaglyph passes 1/2 would composite incorrectly)
+ *   - pass == 2 — this is the non-anaglyph world pass, i.e. the call MC
+ *     makes when gameSettings.anaglyph is off (the common case). Pass 0 is
+ *     the anaglyph red-eye, pass 1 the green+blue eye; both composite via
+ *     colormask into the same framebuffer and our scene-target blit-back
+ *     would clobber the interleaving, so anaglyph users are not served by
+ *     the pipeline in 8c.
  *   - RenderTargetManager.ensure() succeeds and isReady()
  */
 @Mixin(EntityRenderer.class)
@@ -57,7 +62,7 @@ public abstract class MixinEntityRendererPostPipeline {
 
         if (!LDOGConfig.enablePostProcessPipeline) return;
         if (PostProcessPipeline.hasConflictingFeatureOn()) return;
-        if (pass != 0) return;
+        if (pass != 2) return;
 
         Framebuffer fb = Minecraft.getMinecraft().getFramebuffer();
         if (fb == null) return;
