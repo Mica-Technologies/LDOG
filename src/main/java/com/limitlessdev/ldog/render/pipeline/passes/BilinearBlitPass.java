@@ -2,6 +2,7 @@ package com.limitlessdev.ldog.render.pipeline.passes;
 
 import com.limitlessdev.ldog.render.pipeline.PostProcessContext;
 import com.limitlessdev.ldog.render.pipeline.PostProcessPass;
+import com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL30;
 
@@ -58,6 +59,6 @@ public final class BilinearBlitPass implements PostProcessPass {
 
     @Override
     public boolean isEnabled() {
-        return true;
+        return UpscalerAlgorithm.selected() == UpscalerAlgorithm.BILINEAR;
     }
 }

@@ -98,6 +98,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_FONT_SHADOW = 97;
     private static final int BTN_PIPELINE = 100;
     private static final int BTN_PIPELINE_SCALE = 101;
+    private static final int BTN_PIPELINE_UPSCALER = 102;
 
     private static final int[] ANISOTROPIC_VALUES = {2, 4, 8, 16};
     private static final int[] MSAA_VALUES = {2, 4, 8};
@@ -206,6 +207,10 @@ public class GuiLDOGSettings extends GuiScreen {
                 toggleLabel("Post Pipeline", LDOGConfig.enablePostProcessPipeline)),
             new GuiButton(BTN_PIPELINE_SCALE, 0, 0, w, h,
                 pipelineScaleLabel(LDOGConfig.internalRenderScale)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_PIPELINE_UPSCALER, 0, 0, w, h,
+                upscalerLabel(com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm.selected())),
+            null);
 
         // -- Font Rendering --
         // Drop-in replacement for the Smooth Font mod. Swaps in HD ascii.png from
@@ -595,6 +600,17 @@ public class GuiLDOGSettings extends GuiScreen {
                     PIPELINE_SCALE_VALUES, LDOGConfig.internalRenderScale);
                 button.displayString = pipelineScaleLabel(LDOGConfig.internalRenderScale);
                 break;
+            case BTN_PIPELINE_UPSCALER: {
+                com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm current =
+                    com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm.selected();
+                com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm[] all =
+                    com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm.values();
+                com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm next =
+                    all[(current.ordinal() + 1) % all.length];
+                LDOGConfig.upscalerAlgorithm = next.configKey();
+                button.displayString = upscalerLabel(next);
+                break;
+            }
             case BTN_EXT_BORDER:
                 LDOGConfig.enableExtendedBorderMipmaps = !LDOGConfig.enableExtendedBorderMipmaps;
                 button.displayString = toggleLabel("Ext Border Mips", LDOGConfig.enableExtendedBorderMipmaps);
@@ -790,15 +806,22 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a77composes cleanly with FXAA.");
         registerTooltip(BTN_PIPELINE_SCALE,
             "\u00a7eInternal Render Scale",
-            "\u00a771.0x = native resolution. Below 1.0 will eventually",
-            "\u00a77render the world smaller and upscale for a perf win.",
-            "",
-            "\u00a7cNo visible effect yet:\u00a77 the pipeline allocates a",
-            "\u00a77smaller scene target, but world rendering still goes",
-            "\u00a77to the main framebuffer at native resolution until the",
-            "\u00a77Phase 8c binding hook lands.",
+            "\u00a771.0x = native resolution. Below 1.0 renders the world",
+            "\u00a77smaller and upscales to native — a perf win at the cost",
+            "\u00a77of image quality that depends on the chosen upscaler.",
             "",
             "\u00a77Only consumed when the Post Pipeline toggle is on.");
+        registerTooltip(BTN_PIPELINE_UPSCALER,
+            "\u00a7eUpscaler Algorithm",
+            "\u00a77Selects the filter used to resolve the scaled scene",
+            "\u00a77target back to native resolution.",
+            "",
+            "\u00a7aBilinear:\u00a77 plain GL_LINEAR blit. Cheapest, blurriest",
+            "\u00a77at low scales. Good baseline.",
+            "\u00a7aFSR1:\u00a77 edge-adaptive spatial upsampling. Sharper",
+            "\u00a77edges than bilinear at the same render scale.",
+            "",
+            "\u00a77Only applies when render scale is below 1.0.");
     }
 
     private void saveAndClose() {
@@ -912,6 +935,10 @@ public class GuiLDOGSettings extends GuiScreen {
     static String pipelineScaleLabel(double scale) {
         String color = Math.abs(scale - 1.0) < 0.01 ? "\u00a77" : "\u00a7e";
         return "Render Scale: " + color + String.format("%.2fx", scale);
+    }
+
+    static String upscalerLabel(com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm alg) {
+        return "Upscaler: \u00a7a" + alg.displayName();
     }
 
     static String betterGrassLabel(String mode) {

@@ -244,6 +244,14 @@ public class LDOGConfig {
     public static double internalRenderScale = 1.0;
 
     @Config.Comment({
+        "Upscaling algorithm used to resolve the scaled scene target back to native resolution.",
+        "bilinear = plain GL_LINEAR blit (cheap, blurry at low scales — Phase 9a.1 baseline).",
+        "fsr1     = FSR1-style edge-adaptive spatial upsampling (sharper, Phase 9a.2).",
+        "Only consumed when enablePostProcessPipeline is true and internalRenderScale < 1.0."
+    })
+    public static String upscalerAlgorithm = "bilinear";
+
+    @Config.Comment({
         "Enable shader support (stretch goal).",
         "Auto-disabled when OptiFine is detected."
     })

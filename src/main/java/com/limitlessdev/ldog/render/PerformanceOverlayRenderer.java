@@ -5,6 +5,7 @@ import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.pipeline.PipelineDebugStats;
 import com.limitlessdev.ldog.render.pipeline.PostProcessPipeline;
 import com.limitlessdev.ldog.render.pipeline.RenderTargetManager;
+import com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
@@ -160,7 +161,8 @@ public class PerformanceOverlayRenderer {
         RenderTargetManager rtm = RenderTargetManager.INSTANCE;
         if (PipelineDebugStats.bindingActive()) {
             double ms = PipelineDebugStats.lastFrameNanos() / 1_000_000.0;
-            return String.format("Pipeline: ACTIVE  %dx%d @ %.2fx  %dp %.2fms",
+            return String.format("Pipeline: ACTIVE [%s]  %dx%d @ %.2fx  %dp %.2fms",
+                UpscalerAlgorithm.selected().displayName(),
                 rtm.getScaledWidth(), rtm.getScaledHeight(), rtm.getScale(),
                 PipelineDebugStats.activePasses(), ms);
         }

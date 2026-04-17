@@ -3,6 +3,7 @@ package com.limitlessdev.ldog.render.pipeline;
 import com.limitlessdev.ldog.LDOGMod;
 import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.pipeline.passes.BilinearBlitPass;
+import com.limitlessdev.ldog.render.pipeline.passes.FSR1EASUPass;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -38,9 +39,11 @@ public final class PostProcessPipeline {
     private int framesSinceLastBind;
 
     private PostProcessPipeline() {
-        // Default chain: just the bilinear upscale/blit. FSR1/EASU will slot
-        // in ahead of this in Phase 9a.2.
+        // All upscalers are always registered; each pass's isEnabled() checks
+        // the selected algorithm so exactly one runs per frame. New upscalers
+        // (NIS, FSR2, etc.) plug in here alongside the existing ones.
         passes.add(new BilinearBlitPass());
+        passes.add(new FSR1EASUPass());
     }
 
     /**
