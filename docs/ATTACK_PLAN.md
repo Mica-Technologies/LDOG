@@ -8,9 +8,9 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 > We're building LDOG (`ldog`), an open-source OptiFine replacement for Minecraft Forge 1.12.2. The project is at `E:\gitRepos\LDOG`. The build system is GregTechCEu Buildscripts (RetroFuturaGradle 1.4.0). Reference projects for conventions are at `E:\gitRepos\minecraft-city-super-mod` and `E:\gitRepos\LDFAWE`. Read `CLAUDE.md`, `docs/ATTACK_PLAN.md`, and `docs/ARCHITECTURE.md` to get up to speed, then check off what's been completed and pick up the next unchecked item.
 
-### Where We Left Off (2026-04-16)
+### Where We Left Off (2026-04-17)
 
-**Phases 1-7 implemented** (Phase 7a/b with known caveats, 7c still open; 7d done).
+**Phases 1-7 implemented** (Phase 7a/b with known caveats, 7c done 2026-04-17; 7d done).
 
 - **Phase 1** (rendering optimizations, FPS reducer, clear water): complete
 - **Phase 2** (HD textures): complete — tested with 256x resource pack
@@ -26,9 +26,10 @@ A phased development plan for building out Limitless Development Optigame, from 
 - **MSAA edge lines**: MSAA reveals sub-pixel rasterization gaps at chunk/block-face seams on distant geometry (adjacent faces' edges are mathematically coincident but FP imprecision creates microscopic gaps that pre-MSAA rasterization didn't sample). OptiFine avoids this by setting display-level MSAA via `PixelFormat.withSamples()` and disabling MC's intermediate FBO — which loses spectator outlines. Not worth the tradeoff; recommend FXAA instead.
 
 **Key next steps:**
-1. **Phase 7c** (extended border mipmaps) — fixes the AF atlas bleed properly. Mixin on TextureAtlasSprite.generateMipmaps (or TextureMap) to pad each mip level's sprite with N extra pixels of the sprite's own edge color.
-2. **Phase C3** (Smooth Font absorption) — antialiased TrueType text rendering with lazy + disk-cached glyph atlas. Target: drop Smooth Font from the modpack without paying its ~doubled-launch-time cost.
-3. **Phase 8** (Shaders) + **Phase 9** (FSR): stretch goals, see Super Resolution + Radiance mods for reference.
+1. **Phase C3** (Smooth Font absorption) — HD font swap easy-path first (detect `optifine/font/ascii.png`, substitute FontRenderer's ResourceLocation, flip filter to LINEAR). Full TTF/AWT path deferred.
+2. **Phase C4** (OptiFine Override Mode) — reverse the coexistence once parity is proven; research-heavy (reflective writes against `optifine.Config`).
+3. **Phase 6d** custom-sky mixin verification — landed but needs in-game confirmation the injection fires.
+4. **Phase 8** (Shaders) + **Phase 9** (FSR): stretch goals, see Super Resolution + Radiance mods for reference.
 
 **Test resource packs (already in run/resourcepacks/):**
 - `default-1-12` (extracted) -- CTM glass + glass panes (47-tile)
@@ -162,7 +163,7 @@ A phased development plan for building out Limitless Development Optigame, from 
 - [x] `AnisotropicFilteringHandler` applies `GL_TEXTURE_MAX_ANISOTROPY_EXT` at TextureStitchEvent.Post
 - [x] GUI: toggle + level cycling button; re-applies on save without full resource reload
 - [x] Graceful fallback if `GL_EXT_texture_filter_anisotropic` is missing
-- [ ] **Known issue**: faint block-edge lines at distance (atlas sprite border bleed on small mip levels). See Phase 7c.
+- [x] **Fixed by Phase 7c**: block-edge bleed at distance addressed by extended-border mipmaps (opt-in).
 
 ### 7b: MSAA
 - [x] Config: `enableMSAA`, `msaaSamples` (2/4/8, clamped to `GL_MAX_SAMPLES`)
@@ -174,8 +175,15 @@ A phased development plan for building out Limitless Development Optigame, from 
 - [ ] **Known issue**: faint rasterization edge lines at distant chunk/block-face seams. OptiFine avoids this with display-level MSAA (PixelFormat.withSamples + disable fboEnable) but loses spectator outlines. Not fixing — FXAA (Phase 7d) is a better long-term AA answer.
 
 ### 7c: Extended border mipmaps (AF bleed fix)
-- [ ] Not started. Target: mixin on `TextureAtlasSprite.generateMipmaps` (or `TextureMap.loadTextureAtlas`) to extend each sprite's mip level with N pixels of its own edge color (N >= 2^mipLevel), so AF anisotropic samples never cross into neighboring sprites. OptiFine/MCPatcher reference pattern.
-- **Tried and reverted (2026-04-16)**: simpler mitigation — clamp `GL_TEXTURE_MAX_LOD` to `mipmapLevels - 2` on the block atlas when AF is on, to keep the sampler off the worst-bleed mip levels. Didn't visibly reduce the distant-block edge lines and added mild quality regression, so reverted uncommitted. The proper fix really does need extended borders — no GL-param shortcut exists. Likely structure when tackled: subclass/replace `Stitcher` to allocate `2^mipmapLevels` pixels of inter-sprite padding, then hook the atlas upload path to fill the padding area with each sprite's edge-extended pixel data. Post-upload, mipmaps downsample the halo correctly at every level.
+- [x] Config: `enableExtendedBorderMipmaps` (default off — opt-in, grows atlas ~3x for 16x packs).
+- [x] `ExtendedBorderHandler`: holds per-stitch state (mipmapLevels, active flag), generates padded mipmap chains via clamp-to-edge halo at each mip level.
+- [x] `MixinStitcherHolder`: `@Redirect`s `getIconWidth/Height` inside `Holder.<init>` to inflate packing dims by `2 * border` (border = `2^mipmapLevels`). Sprite's own `width/height` stay untouched so external callers see inner size.
+- [x] `MixinStitcher`: `@Redirect`s the `initSprite` call in `getStichSlots` to shift sprite origin inward by `border`, so UVs address only the inner region.
+- [x] `MixinTextureMap`: brackets the stitch pass with `beginStitch`/`endStitch`; `@Redirect`s the `TextureUtil.uploadTextureMipmap` call in `finishLoading` to write padded pixel data at `(innerOrigin - border)` with dims `(w + 2*border, h + 2*border)`. Uses `remap = false` on the enclosing `@Redirect` because `finishLoading` is Forge-added (no SRG mapping), but inner `@At(target = ..., remap = true)` keeps the MCP-mapped target remapped.
+- [x] GUI toggle in the AA/Filtering section. On save, triggers `mc.refreshResources()` to rebuild the atlas (packing change, not a live-refresh like AF).
+- [x] All 50 unit tests pass.
+- **Known limitations**: animated sprite halo stays as the first frame's edge color (updateAnimation is not redirected, v1 tradeoff). Atlas growth may push some modpacks past `GL_MAX_TEXTURE_SIZE` — enable only if your atlas has headroom.
+- **Tried and reverted (2026-04-16, pre-implementation)**: clamp `GL_TEXTURE_MAX_LOD` to `mipmapLevels - 2` on the block atlas when AF is on. Didn't visibly reduce the distant-block edge lines and added mild quality regression, so reverted uncommitted. Confirmed: extended borders were the right approach.
 
 ### 7d: FXAA post-process
 - [x] Config: `enableFXAA`

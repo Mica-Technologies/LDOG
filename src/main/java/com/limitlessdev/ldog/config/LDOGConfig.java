@@ -103,6 +103,15 @@ public class LDOGConfig {
     public static int anisotropicLevel = 4;
 
     @Config.Comment({
+        "Extended-border mipmaps: pads each atlas sprite with an edge-extended halo so",
+        "anisotropic sampling at grazing angles cannot bleed into neighboring sprites.",
+        "Fixes the faint block-edge lines visible at distance when AF is on.",
+        "Grows atlas size (~3x for 16x packs) — enable only alongside Anisotropic Filtering.",
+        "Changes take effect on next resource reload (auto-triggered on save)."
+    })
+    public static boolean enableExtendedBorderMipmaps = false;
+
+    @Config.Comment({
         "Enable multi-sample anti-aliasing (MSAA) for world geometry.",
         "Requires a GPU that supports multisampled framebuffers."
     })

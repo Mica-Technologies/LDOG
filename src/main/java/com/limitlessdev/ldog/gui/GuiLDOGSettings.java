@@ -82,6 +82,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_MSAA = 82;
     private static final int BTN_MSAA_SAMPLES = 83;
     private static final int BTN_FXAA = 84;
+    private static final int BTN_EXT_BORDER = 85;
 
     private static final int[] ANISOTROPIC_VALUES = {2, 4, 8, 16};
     private static final int[] MSAA_VALUES = {2, 4, 8};
@@ -161,6 +162,10 @@ public class GuiLDOGSettings extends GuiScreen {
                 toggleLabel("Anisotropic", LDOGConfig.enableAnisotropicFiltering)),
             new GuiButton(BTN_ANISOTROPIC_LEVEL, 0, 0, w, h,
                 afLabel(LDOGConfig.anisotropicLevel)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_EXT_BORDER, 0, 0, w, h,
+                toggleLabel("Ext Border Mips", LDOGConfig.enableExtendedBorderMipmaps)),
+            null);
         settingsList.addButtonRow(
             new GuiButton(BTN_MSAA, 0, 0, w, h,
                 toggleLabel("MSAA", LDOGConfig.enableMSAA)),
@@ -524,11 +529,17 @@ public class GuiLDOGSettings extends GuiScreen {
                 button.displayString = toggleLabel("FXAA", LDOGConfig.enableFXAA);
                 fxaaSettingsChanged = true;
                 break;
+            case BTN_EXT_BORDER:
+                LDOGConfig.enableExtendedBorderMipmaps = !LDOGConfig.enableExtendedBorderMipmaps;
+                button.displayString = toggleLabel("Ext Border Mips", LDOGConfig.enableExtendedBorderMipmaps);
+                extBorderSettingsChanged = true;
+                break;
         }
     }
 
     private boolean aaSettingsChanged = false;
     private boolean fxaaSettingsChanged = false;
+    private boolean extBorderSettingsChanged = false;
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
@@ -544,7 +555,11 @@ public class GuiLDOGSettings extends GuiScreen {
             // Water opacity/tint is baked into chunk vertex data — must rebuild.
             this.mc.renderGlobal.loadRenderers();
         }
-        if (aaSettingsChanged) {
+        if (extBorderSettingsChanged) {
+            // Packing changes — requires a full resource reload to rebuild the atlas.
+            // This subsumes AF refresh (which also re-runs at TextureStitchEvent.Post).
+            this.mc.refreshResources();
+        } else if (aaSettingsChanged) {
             com.limitlessdev.ldog.texture.AnisotropicFilteringHandler.refreshMainAtlas();
         }
         if (fxaaSettingsChanged) {
