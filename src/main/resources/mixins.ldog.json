@@ -19,6 +19,7 @@
     "MixinWorldDynamicLights",
     "MixinEntityRendererLightmap",
     "MixinEntityRendererMSAA",
+    "MixinEntityRendererPostPipeline",
     "AccessorEntityRenderer"
   ],
   "server": []
