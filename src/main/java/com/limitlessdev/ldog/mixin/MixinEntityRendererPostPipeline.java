@@ -1,13 +1,13 @@
 package com.limitlessdev.ldog.mixin;
 
 import com.limitlessdev.ldog.config.LDOGConfig;
+import com.limitlessdev.ldog.render.pipeline.PostProcessContext;
 import com.limitlessdev.ldog.render.pipeline.PostProcessPipeline;
 import com.limitlessdev.ldog.render.pipeline.RenderTargetManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.EntityRenderer;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.shader.Framebuffer;
-import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL30;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -18,29 +18,30 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Phase 8c: redirect world rendering into the pipeline's scaled scene target,
- * then blit back to the main framebuffer at native resolution before UI draws.
+ * then hand control to PostProcessPipeline at RETURN so the pass chain
+ * (currently just BilinearBlitPass) produces the final upscaled image on the
+ * main framebuffer before UI draws.
  *
- * Wraps EntityRenderer.renderWorldPass with three hooks:
+ * Three hooks:
  *   HEAD   — save the main FBO handle, bind the scene target.
  *   INVOKE — redirect the vanilla GlStateManager.viewport(displayW, displayH)
- *            call near the top of renderWorldPass so the world rasterizes at
- *            the scaled target's dimensions instead of overshooting past it.
- *   RETURN — run the post-process pass chain against the scene target, blit
- *            it back to main FB with GL_LINEAR (a plain bilinear upscale in
- *            8c — FSR1 EASU/RCAS lands in Phase 9a), then explicitly rebind
- *            main FB and reset the viewport so GUI/HUD renders at native.
- *
- * Only activates when all of:
- *   - LDOGConfig.enablePostProcessPipeline
- *   - PostProcessPipeline.hasConflictingFeatureOn() is false (MSAA owns the
- *     FBO swap when enabled, so the pipeline yields)
- *   - pass == 0 (anaglyph passes 1/2 would composite incorrectly through
- *     a full-blit overwrite)
- *   - RenderTargetManager.isReady() after ensure() succeeds
+ *            call near the top of renderWorldPass so world rasterizes at the
+ *            scaled target's dimensions. Without this the viewport extends
+ *            past the scene FBO and rendering is clipped or undefined.
+ *   RETURN — build a PostProcessContext with main + scene state and call
+ *            PostProcessPipeline.onFrame. The pass chain is responsible for
+ *            writing final pixels to the main framebuffer. After passes run,
+ *            re-bind main FB and reset viewport so GUI/HUD renders at native.
  *
  * The vanilla GlStateManager.clear(0x4080) call at the top of renderWorldPass
  * runs AFTER our HEAD bind, so it clears the scene target for us — no manual
  * clear needed here.
+ *
+ * Activation guards (all must hold):
+ *   - LDOGConfig.enablePostProcessPipeline
+ *   - PostProcessPipeline.hasConflictingFeatureOn() is false (MSAA yields)
+ *   - pass == 0 (anaglyph passes 1/2 would composite incorrectly)
+ *   - RenderTargetManager.ensure() succeeds and isReady()
  */
 @Mixin(EntityRenderer.class)
 public abstract class MixinEntityRendererPostPipeline {
@@ -99,38 +100,26 @@ public abstract class MixinEntityRendererPostPipeline {
         Framebuffer fb = Minecraft.getMinecraft().getFramebuffer();
         if (fb == null) return;
 
-        if (!ldog$pipelineActive) {
-            // Pipeline is enabled but yielded (MSAA on, anaglyph pass, or
-            // RTM unavailable). Still tick the pass chain against main FB
-            // dimensions so any future pass that wants to composite onto
-            // the main framebuffer can run.
-            PostProcessPipeline.INSTANCE.onWorldPassRendered(
-                fb.framebufferTextureWidth, fb.framebufferTextureHeight,
-                pass, partialTicks);
-            return;
-        }
-
         RenderTargetManager rtm = RenderTargetManager.INSTANCE;
-        int scaledW = rtm.getScaledWidth();
-        int scaledH = rtm.getScaledHeight();
+        int mainFbo = ldog$pipelineActive ? ldog$savedFbo : fb.framebufferObject;
+        int mainW = ldog$pipelineActive ? ldog$savedMainWidth : fb.framebufferTextureWidth;
+        int mainH = ldog$pipelineActive ? ldog$savedMainHeight : fb.framebufferTextureHeight;
 
-        // Passes run against the scene target at scaled dimensions.
-        PostProcessPipeline.INSTANCE.onWorldPassRendered(scaledW, scaledH, pass, partialTicks);
+        PostProcessContext ctx = new PostProcessContext(
+            mainFbo, mainW, mainH,
+            rtm.getSceneFbo(), rtm.getSceneColorTexture(),
+            rtm.getScaledWidth(), rtm.getScaledHeight(),
+            ldog$pipelineActive, pass, partialTicks);
 
-        // Blit scene target (scaled) -> main FB (native) with GL_LINEAR for
-        // cheap bilinear upscaling. FSR1 EASU+RCAS in Phase 9a will replace
-        // this with a quality upscaler reading from the scene color texture.
-        GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, rtm.getSceneFbo());
-        GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, ldog$savedFbo);
-        GL30.glBlitFramebuffer(
-            0, 0, scaledW, scaledH,
-            0, 0, ldog$savedMainWidth, ldog$savedMainHeight,
-            GL11.GL_COLOR_BUFFER_BIT, GL11.GL_LINEAR);
+        PostProcessPipeline.INSTANCE.onFrame(ctx);
 
-        // Restore main FB + native viewport so GUI/HUD draws correctly.
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, ldog$savedFbo);
-        GlStateManager.viewport(0, 0, ldog$savedMainWidth, ldog$savedMainHeight);
-
-        ldog$pipelineActive = false;
+        if (ldog$pipelineActive) {
+            // Defensive restore — BilinearBlitPass already leaves main FB
+            // bound, but a future pass might not. Keep GUI/HUD draw state
+            // predictable regardless of what ran in the chain.
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, mainFbo);
+            GlStateManager.viewport(0, 0, mainW, mainH);
+            ldog$pipelineActive = false;
+        }
     }
 }

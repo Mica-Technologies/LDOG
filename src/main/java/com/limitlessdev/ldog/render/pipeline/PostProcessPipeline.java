@@ -2,47 +2,67 @@ package com.limitlessdev.ldog.render.pipeline;
 
 import com.limitlessdev.ldog.LDOGMod;
 import com.limitlessdev.ldog.config.LDOGConfig;
-import com.limitlessdev.ldog.render.pipeline.passes.NoOpPass;
+import com.limitlessdev.ldog.render.pipeline.passes.BilinearBlitPass;
 
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
 /**
- * Minimal pipeline shell for Phase 8a.
+ * Orchestrates the post-process pass chain that runs at the tail of each
+ * world-render pass.
  *
- * v1 goal is safe lifecycle wiring with a no-op pass and zero visual changes.
+ * The mixin is responsible for binding the scene target at HEAD; this class
+ * is responsible for running passes, surfacing diagnostics, and disposing on
+ * fatal errors.
  */
 public final class PostProcessPipeline {
 
     public static final PostProcessPipeline INSTANCE = new PostProcessPipeline();
+
+    /**
+     * After this many frames with the pipeline gate on but binding never
+     * activating, emit a one-shot WARN explaining which guard is blocking.
+     * Tuned to ignore normal warmup (first frame or two may miss before RTM
+     * is ready).
+     */
+    private static final int BIND_WATCHDOG_FRAMES = 120;
 
     private final List<PostProcessPass> passes = new ArrayList<>();
     private boolean initialized;
     private int width;
     private int height;
     private boolean loggedReady;
+    private boolean loggedFirstBind;
+    private boolean loggedBindWatchdog;
+    private int framesSinceLastBind;
 
     private PostProcessPipeline() {
-        // Always keep one no-op pass to validate lifecycle/ordering.
-        passes.add(new NoOpPass());
+        // Default chain: just the bilinear upscale/blit. FSR1/EASU will slot
+        // in ahead of this in Phase 9a.2.
+        passes.add(new BilinearBlitPass());
     }
 
-    public void onWorldPassRendered(int width, int height, int pass, float partialTicks) {
+    /**
+     * Tick the pass chain for one frame. Called from the renderWorldPass
+     * RETURN hook with all the state the mixin has already gathered.
+     */
+    public void onFrame(PostProcessContext ctx) {
         if (!LDOGConfig.enablePostProcessPipeline) return;
-        if (width <= 0 || height <= 0) return;
+        if (ctx.mainWidth() <= 0 || ctx.mainHeight() <= 0) return;
 
         long t0 = System.nanoTime();
 
         try {
-            ensureInitialized(width, height);
-            PostProcessContext context = new PostProcessContext(width, height, pass, partialTicks);
-            int active = runPasses(context);
-            PipelineDebugStats.update(active, width, height, System.nanoTime() - t0);
+            ensureInitialized(ctx.mainWidth(), ctx.mainHeight());
+            int active = runPasses(ctx);
+            PipelineDebugStats.update(active, ctx.mainWidth(), ctx.mainHeight(), System.nanoTime() - t0);
 
             RenderTargetManager rtm = RenderTargetManager.INSTANCE;
             PipelineDebugStats.updateTargets(
                 rtm.isReady(), rtm.getScale(), rtm.getScaledWidth(), rtm.getScaledHeight());
+
+            diagnoseBinding(ctx);
         } catch (Exception e) {
             LDOGMod.LOGGER.error("LDOG: Post-process pipeline fatal error; disabling for this session", e);
             disableAll();
@@ -52,10 +72,9 @@ public final class PostProcessPipeline {
     /**
      * True when another LDOG feature currently owns the world-pass FBO binding.
      *
-     * Reserved for the Phase 9a binding hook — when the pipeline eventually
-     * redirects world rendering into its scene target, it must yield to MSAA
-     * (which wraps renderWorldPass with its own multisampled FBO). Kept here
-     * as a single source of truth so callers don't duplicate the check.
+     * The 8c binding hook must yield to MSAA (which wraps renderWorldPass with
+     * its own multisampled FBO). Consolidated here as a single source of
+     * truth so the mixin and any future pass share the check.
      */
     public static boolean hasConflictingFeatureOn() {
         return LDOGConfig.enableMSAA;
@@ -118,6 +137,40 @@ public final class PostProcessPipeline {
         return active;
     }
 
+    /**
+     * Diagnostic logs so operators can tell binding actually fired (the
+     * "Pipeline render targets ready" line alone is ambiguous — targets are
+     * allocated even when the mixin yields).
+     */
+    private void diagnoseBinding(PostProcessContext ctx) {
+        if (ctx.bindingActive()) {
+            framesSinceLastBind = 0;
+            if (!loggedFirstBind) {
+                loggedFirstBind = true;
+                LDOGMod.LOGGER.info(
+                    "LDOG: Pipeline binding ACTIVE — world rendered at {}x{}, blitting to {}x{}",
+                    ctx.sceneWidth(), ctx.sceneHeight(), ctx.mainWidth(), ctx.mainHeight());
+            }
+            return;
+        }
+
+        framesSinceLastBind++;
+        if (!loggedBindWatchdog && framesSinceLastBind >= BIND_WATCHDOG_FRAMES) {
+            loggedBindWatchdog = true;
+            String reason;
+            if (hasConflictingFeatureOn()) {
+                reason = "MSAA is on (pipeline correctly yields the binding slot)";
+            } else if (!RenderTargetManager.INSTANCE.isReady()) {
+                reason = "RenderTargetManager not ready (GL 3.0 unavailable or FBO allocation failed)";
+            } else {
+                reason = "unknown — binding guards may be misconfigured or the mixin @Redirect is not matching";
+            }
+            LDOGMod.LOGGER.warn(
+                "LDOG: Pipeline enabled but binding has not activated after {} frames. Reason: {}",
+                BIND_WATCHDOG_FRAMES, reason);
+        }
+    }
+
     private void disableAll() {
         for (PostProcessPass pass : passes) {
             try {
@@ -135,4 +188,3 @@ public final class PostProcessPipeline {
         initialized = false;
     }
 }
-
