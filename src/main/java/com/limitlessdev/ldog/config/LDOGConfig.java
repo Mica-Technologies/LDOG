@@ -198,6 +198,13 @@ public class LDOGConfig {
     public static int fontAnisotropic = 16;
 
     @Config.Comment({
+        "Render drop shadows behind text. Disable to flatten MC's default",
+        "1-pixel offset dark copy that's drawn behind most UI strings.",
+        "Flips live without a resource reload."
+    })
+    public static boolean fontDropShadows = true;
+
+    @Config.Comment({
         "Override per-glyph widths from a pack-provided ascii.properties file.",
         "Checked paths: optifine/font/ascii.properties, mcpatcher/font/ascii.properties,",
         "font/ascii.properties. When absent, widths are computed from the PNG as vanilla does."

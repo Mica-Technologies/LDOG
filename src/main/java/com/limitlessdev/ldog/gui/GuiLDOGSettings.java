@@ -95,6 +95,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_TTF_FONT = 94;
     private static final int BTN_TTF_FAMILY = 95;
     private static final int BTN_TTF_SIZE = 96;
+    private static final int BTN_FONT_SHADOW = 97;
 
     private static final int[] ANISOTROPIC_VALUES = {2, 4, 8, 16};
     private static final int[] MSAA_VALUES = {2, 4, 8};
@@ -219,7 +220,8 @@ public class GuiLDOGSettings extends GuiScreen {
         settingsList.addButtonRow(
             new GuiButton(BTN_TTF_FAMILY, 0, 0, w, h,
                 "Family: \u00a7a" + LDOGConfig.ttfFontFamily),
-            null);
+            new GuiButton(BTN_FONT_SHADOW, 0, 0, w, h,
+                toggleLabel("Drop Shadows", LDOGConfig.fontDropShadows)));
 
         // -- Visual --
         currentPresetIndex = detectCurrentPreset();
@@ -621,6 +623,12 @@ public class GuiLDOGSettings extends GuiScreen {
                 button.displayString = "Family: \u00a7a" + LDOGConfig.ttfFontFamily;
                 fontSettingsChanged = true;
                 break;
+            case BTN_FONT_SHADOW:
+                LDOGConfig.fontDropShadows = !LDOGConfig.fontDropShadows;
+                button.displayString = toggleLabel("Drop Shadows", LDOGConfig.fontDropShadows);
+                // Flag-only flip — next frame's draw reads the new config value.
+                // No filter refresh or resource reload needed.
+                break;
             case BTN_TTF_SIZE:
                 LDOGConfig.ttfFontSize = cycleValue(TTF_SIZES, LDOGConfig.ttfFontSize);
                 // Keep cell size in sync: ~4/3 of the font size rounded up to 8px,
@@ -718,6 +726,13 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a77breathing room for ascenders/descenders.",
             "",
             "\u00a77Larger = sharper at high GUI scales, more atlas memory.");
+        registerTooltip(BTN_FONT_SHADOW,
+            "\u00a7eDrop Shadows",
+            "\u00a77Render the 1-pixel offset dark copy behind text that",
+            "\u00a77MC draws for most UI strings. Disable for a flatter,",
+            "\u00a77cleaner look.",
+            "",
+            "\u00a77Flips live — no reload needed.");
         registerTooltip(BTN_AA_FONT,
             "\u00a7eFont Antialiasing",
             "\u00a7cOff:\u00a77 GL_NEAREST, blocky vanilla look.",

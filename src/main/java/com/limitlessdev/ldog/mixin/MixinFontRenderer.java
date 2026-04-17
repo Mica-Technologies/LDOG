@@ -1,10 +1,12 @@
 package com.limitlessdev.ldog.mixin;
 
+import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.font.SmoothFontHandler;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.util.ResourceLocation;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
 /**
@@ -49,5 +51,22 @@ public abstract class MixinFontRenderer {
             invoker.ldog$invokeBindTexture(vanillaFont);
         }
         handler.onFirstBindAfterReload();
+    }
+
+    /**
+     * Forces the {@code dropShadow} argument of the main drawString overload
+     * to {@code false} when the user disables font drop shadows. This is the
+     * funnel for all text rendering — drawStringWithShadow calls this with
+     * {@code true}, and renderString reads the same boolean — so a single
+     * modify-variable here catches every caller without needing to patch
+     * every draw site.
+     */
+    @ModifyVariable(
+        method = "drawString(Ljava/lang/String;FFIZ)I",
+        at = @At("HEAD"),
+        argsOnly = true,
+        ordinal = 0)
+    private boolean ldog$maybeSuppressShadow(boolean dropShadow) {
+        return LDOGConfig.fontDropShadows ? dropShadow : false;
     }
 }
