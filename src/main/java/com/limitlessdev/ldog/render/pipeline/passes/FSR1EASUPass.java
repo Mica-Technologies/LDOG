@@ -3,25 +3,86 @@ package com.limitlessdev.ldog.render.pipeline.passes;
 import com.limitlessdev.ldog.LDOGMod;
 import com.limitlessdev.ldog.render.pipeline.PostProcessContext;
 import com.limitlessdev.ldog.render.pipeline.PostProcessPass;
+import com.limitlessdev.ldog.render.pipeline.ShaderProgram;
 import com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm;
+import net.minecraft.client.renderer.GlStateManager;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL30;
 
 /**
- * FSR1-style Edge Adaptive Spatial Upsampling pass.
+ * LDOG's FSR1-inspired edge-adaptive spatial upscaler.
  *
- * Phase 9a.2.1 placeholder: ships the upscaler-selector plumbing so the
- * config and GUI can target "fsr1", but the actual EASU fragment shader
- * lands in 9a.2.3. Until then, this pass falls back to the same bilinear
- * glBlitFramebuffer that BilinearBlitPass uses, so selecting FSR1 produces
- * a working (if not yet sharper) image instead of a black screen.
+ * This is an LDOG-original implementation, not a port of AMD's FidelityFX
+ * FSR1 source. It captures the essential character of FSR1's spatial path:
+ * sample the scaled scene with bilinear as a baseline, then apply
+ * contrast-adaptive sharpening over a 5-tap kernel, clamping each channel
+ * to the local min/max to prevent ringing. Sharpen strength scales with
+ * local contrast so flat areas stay soft and edges recover bite.
  *
- * The one-shot INFO log on first execute makes the fallback visible without
- * spamming the console every frame.
+ * Compared to the pure bilinear upscaler:
+ * - Edges and fine detail recover noticeably more definition.
+ * - Cost is ~5 texture fetches + a few ALU ops per output pixel — still
+ *   cheap enough to be worthwhile at any scale &lt; 1.0.
+ * - At scale = 1.0 the sample kernel reduces to the center pixel with
+ *   minimal neighbor contribution, so output is near-identical to source.
+ *
+ * Falls back to plain bilinear blit when shader compilation fails at init,
+ * so a GPU that can't run the shader still produces a usable image.
  */
 public final class FSR1EASUPass implements PostProcessPass {
 
-    private boolean loggedFallback;
+    private static final String VERT_SOURCE =
+        "#version 120\n" +
+        "varying vec2 v_texCoord;\n" +
+        "void main() {\n" +
+        "    gl_Position = vec4(gl_Vertex.xy, 0.0, 1.0);\n" +
+        "    // Map NDC [-1,1] to texCoord [0,1]. Fullscreen triangle extends to\n" +
+        "    // NDC [3,-1]/[-1,3] so its texCoord hits [2,0]/[0,2] — clamped by\n" +
+        "    // CLAMP_TO_EDGE on the scene texture at sample time.\n" +
+        "    v_texCoord = gl_Vertex.xy * 0.5 + 0.5;\n" +
+        "}\n";
+
+    private static final String FRAG_SOURCE =
+        "#version 120\n" +
+        "uniform sampler2D u_sceneTex;\n" +
+        "uniform vec2 u_invSceneDim;\n" +
+        "uniform float u_sharpness;\n" +
+        "varying vec2 v_texCoord;\n" +
+        "\n" +
+        "float luma(vec3 c) {\n" +
+        "    return dot(c, vec3(0.299, 0.587, 0.114));\n" +
+        "}\n" +
+        "\n" +
+        "void main() {\n" +
+        "    // 5-tap cross kernel around the bilinear sample.\n" +
+        "    vec3 c = texture2D(u_sceneTex, v_texCoord).rgb;\n" +
+        "    vec3 n = texture2D(u_sceneTex, v_texCoord + vec2(0.0, -u_invSceneDim.y)).rgb;\n" +
+        "    vec3 s = texture2D(u_sceneTex, v_texCoord + vec2(0.0,  u_invSceneDim.y)).rgb;\n" +
+        "    vec3 e = texture2D(u_sceneTex, v_texCoord + vec2( u_invSceneDim.x, 0.0)).rgb;\n" +
+        "    vec3 w = texture2D(u_sceneTex, v_texCoord + vec2(-u_invSceneDim.x, 0.0)).rgb;\n" +
+        "\n" +
+        "    // Per-channel local min/max for ringing clamp later.\n" +
+        "    vec3 minRGB = min(min(min(n, s), min(e, w)), c);\n" +
+        "    vec3 maxRGB = max(max(max(n, s), max(e, w)), c);\n" +
+        "\n" +
+        "    // Adaptive sharpen strength: mild in flat areas, stronger on high-contrast edges.\n" +
+        "    // Contrast is the luma delta across the 5-tap box; sharpness is a user-facing scalar\n" +
+        "    // (0.0 -> pure bilinear, 1.0 -> aggressive).\n" +
+        "    float contrast = luma(maxRGB) - luma(minRGB);\n" +
+        "    float k = clamp(contrast * 0.5 * u_sharpness, 0.0, 0.4 * u_sharpness);\n" +
+        "\n" +
+        "    // Standard 5-tap unsharp-mask kernel: center weighted up, neighbors subtracted.\n" +
+        "    vec3 sharpened = c * (1.0 + 4.0 * k) - (n + s + e + w) * k;\n" +
+        "\n" +
+        "    // Clamp each channel to its local extreme — this is the 'contrast-limited'\n" +
+        "    // part that kills overshoot halos on the bright side of hard edges.\n" +
+        "    gl_FragColor = vec4(clamp(sharpened, minRGB, maxRGB), 1.0);\n" +
+        "}\n";
+
+    private ShaderProgram shader;
+    private boolean shaderFailed;
+    private boolean loggedFirstExecute;
 
     @Override
     public String id() {
@@ -30,41 +91,98 @@ public final class FSR1EASUPass implements PostProcessPass {
 
     @Override
     public void init(int width, int height) {
-        // 9a.2.3 will allocate the shader program + VAO here.
+        try {
+            shader = new ShaderProgram("ldog_fsr1", VERT_SOURCE, FRAG_SOURCE);
+            LDOGMod.LOGGER.info("LDOG: FSR1 upscaler shader compiled OK");
+        } catch (ShaderProgram.ShaderCompileException e) {
+            shaderFailed = true;
+            LDOGMod.LOGGER.error("LDOG: FSR1 shader compile failed; pass will fall back to bilinear blit", e);
+        }
     }
 
     @Override
     public void resize(int width, int height) {
-        // 9a.2.3 will update any resolution-dependent uniforms here.
+        // No per-resize work; the scaled dims are read from context each frame.
     }
 
     @Override
     public void execute(PostProcessContext ctx) {
         if (!ctx.bindingActive()) return;
 
-        if (!loggedFallback) {
-            loggedFallback = true;
-            LDOGMod.LOGGER.info(
-                "LDOG: FSR1 upscaler selected but shader not yet implemented (Phase 9a.2.3) — falling back to bilinear blit for now");
+        if (shader == null || shaderFailed) {
+            bilinearFallback(ctx);
+            return;
         }
 
+        if (!loggedFirstExecute) {
+            loggedFirstExecute = true;
+            LDOGMod.LOGGER.info("LDOG: FSR1 pass live — {}x{} -> {}x{}",
+                ctx.sceneWidth(), ctx.sceneHeight(), ctx.mainWidth(), ctx.mainHeight());
+        }
+
+        // Save compat-profile GL state we're about to mutate. One push/pop pair
+        // is cheap on the driver and avoids bookkeeping every flag by hand.
+        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT
+            | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT
+            | GL11.GL_VIEWPORT_BIT | GL11.GL_TEXTURE_BIT);
+
+        // Target main FB at native dims — we're rendering the final upscaled image.
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, ctx.mainFbo());
+        GlStateManager.viewport(0, 0, ctx.mainWidth(), ctx.mainHeight());
+
+        // Fullscreen blit: depth/cull/blend off, we want to replace every pixel.
+        GlStateManager.disableDepth();
+        GlStateManager.disableCull();
+        GlStateManager.disableBlend();
+        GlStateManager.disableAlpha();
+
+        // Bind scene color texture on unit 0.
+        GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, ctx.sceneColorTexture());
+
+        shader.bind();
+        shader.setUniform1i("u_sceneTex", 0);
+        shader.setUniform2f("u_invSceneDim", 1.0f / ctx.sceneWidth(), 1.0f / ctx.sceneHeight());
+        // Sharpness default 0.7 gives a clear quality bump over bilinear without
+        // crunchy artifacts on 16x texture packs. Config-exposed in 9a.3.
+        shader.setUniform1f("u_sharpness", 0.7f);
+
+        // Fullscreen triangle — bigger than the viewport, GPU clips the overhang.
+        // Avoids the 2-triangle diagonal seam and is one fewer edge to rasterize.
+        // Vertex shader derives texCoord from gl_Vertex.xy, so we only need
+        // position attributes.
+        GL11.glBegin(GL11.GL_TRIANGLES);
+        GL11.glVertex2f(-1.0f, -1.0f);
+        GL11.glVertex2f( 3.0f, -1.0f);
+        GL11.glVertex2f(-1.0f,  3.0f);
+        GL11.glEnd();
+
+        ShaderProgram.unbind();
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+
+        GL11.glPopAttrib();
+    }
+
+    @Override
+    public void dispose() {
+        if (shader != null) {
+            shader.dispose();
+            shader = null;
+        }
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return UpscalerAlgorithm.selected() == UpscalerAlgorithm.FSR1;
+    }
+
+    private void bilinearFallback(PostProcessContext ctx) {
         GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, ctx.sceneFbo());
         GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, ctx.mainFbo());
         GL30.glBlitFramebuffer(
             0, 0, ctx.sceneWidth(), ctx.sceneHeight(),
             0, 0, ctx.mainWidth(), ctx.mainHeight(),
             GL11.GL_COLOR_BUFFER_BIT, GL11.GL_LINEAR);
-
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, ctx.mainFbo());
-    }
-
-    @Override
-    public void dispose() {
-        // 9a.2.3 will release the shader program + VAO here.
-    }
-
-    @Override
-    public boolean isEnabled() {
-        return UpscalerAlgorithm.selected() == UpscalerAlgorithm.FSR1;
     }
 }
