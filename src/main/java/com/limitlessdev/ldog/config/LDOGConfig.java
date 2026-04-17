@@ -236,6 +236,14 @@ public class LDOGConfig {
     public static boolean enablePostProcessPipeline = false;
 
     @Config.Comment({
+        "Internal render scale for the post-process pipeline.",
+        "1.0 = native resolution; <1.0 renders the world smaller for future upscaling (FSR1, Phase 9a).",
+        "Experimental — only consumed when enablePostProcessPipeline is true."
+    })
+    @Config.RangeDouble(min = 0.5, max = 1.0)
+    public static double internalRenderScale = 1.0;
+
+    @Config.Comment({
         "Enable shader support (stretch goal).",
         "Auto-disabled when OptiFine is detected."
     })
