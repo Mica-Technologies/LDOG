@@ -46,6 +46,9 @@ public final class PostProcessPipeline {
     }
 
     private void ensureInitialized(int w, int h) throws Exception {
+        float scale = (float) LDOGConfig.internalRenderScale;
+        RenderTargetManager.INSTANCE.ensure(w, h, scale);
+
         if (!initialized) {
             this.width = w;
             this.height = h;
@@ -101,6 +104,11 @@ public final class PostProcessPipeline {
             }
         }
         passes.clear();
+        try {
+            RenderTargetManager.INSTANCE.dispose();
+        } catch (Exception ignored) {
+            // Best effort cleanup — already logging on the fatal-error path.
+        }
         initialized = false;
     }
 }
