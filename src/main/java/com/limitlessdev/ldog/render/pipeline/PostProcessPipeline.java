@@ -143,6 +143,8 @@ public final class PostProcessPipeline {
      * allocated even when the mixin yields).
      */
     private void diagnoseBinding(PostProcessContext ctx) {
+        PipelineDebugStats.updateBinding(ctx.bindingActive());
+
         if (ctx.bindingActive()) {
             framesSinceLastBind = 0;
             if (!loggedFirstBind) {

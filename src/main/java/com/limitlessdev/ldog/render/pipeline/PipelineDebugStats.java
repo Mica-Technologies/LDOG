@@ -14,6 +14,7 @@ public final class PipelineDebugStats {
     private static float targetScale;
     private static int targetScaledWidth;
     private static int targetScaledHeight;
+    private static boolean bindingActive;
 
     private PipelineDebugStats() {}
 
@@ -29,6 +30,10 @@ public final class PipelineDebugStats {
         targetScale = scale;
         targetScaledWidth = scaledW;
         targetScaledHeight = scaledH;
+    }
+
+    public static void updateBinding(boolean active) {
+        bindingActive = active;
     }
 
     public static int activePasses() {
@@ -61,6 +66,10 @@ public final class PipelineDebugStats {
 
     public static int targetScaledHeight() {
         return targetScaledHeight;
+    }
+
+    public static boolean bindingActive() {
+        return bindingActive;
     }
 }
 

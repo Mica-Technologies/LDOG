@@ -2,6 +2,9 @@ package com.limitlessdev.ldog.render;
 
 import com.limitlessdev.ldog.Tags;
 import com.limitlessdev.ldog.config.LDOGConfig;
+import com.limitlessdev.ldog.render.pipeline.PipelineDebugStats;
+import com.limitlessdev.ldog.render.pipeline.PostProcessPipeline;
+import com.limitlessdev.ldog.render.pipeline.RenderTargetManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
@@ -9,6 +12,9 @@ import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.relauncher.Side;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Renders a compact performance metrics HUD in the upper-left corner.
@@ -114,28 +120,66 @@ public class PerformanceOverlayRenderer {
         int pCulled = LDOGStats.particlesCulled;
         int teCulled = LDOGStats.tileEntitiesCulled;
 
-        return new String[]{
-            "LDOG Performance",
-            String.format("%d FPS  %.1f ms avg  %.1f ms max", fps, avgMs, maxMs),
-            String.format("Mem: %d / %d MB", usedMB, maxMB),
-            String.format("Culled: %dE %dP %dTE", culled, pCulled, teCulled)
-        };
+        List<String> lines = new ArrayList<>(5);
+        lines.add("LDOG Performance");
+        lines.add(String.format("%d FPS  %.1f ms avg  %.1f ms max", fps, avgMs, maxMs));
+        lines.add(String.format("Mem: %d / %d MB", usedMB, maxMB));
+        lines.add(String.format("Culled: %dE %dP %dTE", culled, pCulled, teCulled));
+
+        if (LDOGConfig.enablePostProcessPipeline) {
+            lines.add(buildPipelineLine());
+        }
+
+        return lines.toArray(new String[0]);
     }
 
     private static int[] buildColors(String[] lines) {
         int fps = Minecraft.getDebugFPS();
-        double avgMs = getAverageFrameTimeMs();
 
         int fpsColor;
         if (fps >= 60) fpsColor = COLOR_GOOD;
         else if (fps >= 30) fpsColor = COLOR_WARN;
         else fpsColor = COLOR_BAD;
 
-        return new int[]{
-            COLOR_HEADER,   // header
-            fpsColor,       // FPS / frame time
-            COLOR_LABEL,    // memory
-            COLOR_LABEL     // culling stats
-        };
+        List<Integer> colors = new ArrayList<>(5);
+        colors.add(COLOR_HEADER);
+        colors.add(fpsColor);
+        colors.add(COLOR_LABEL);
+        colors.add(COLOR_LABEL);
+
+        if (LDOGConfig.enablePostProcessPipeline) {
+            colors.add(pipelineLineColor());
+        }
+
+        int[] out = new int[colors.size()];
+        for (int i = 0; i < out.length; i++) out[i] = colors.get(i);
+        return out;
+    }
+
+    private static String buildPipelineLine() {
+        RenderTargetManager rtm = RenderTargetManager.INSTANCE;
+        if (PipelineDebugStats.bindingActive()) {
+            double ms = PipelineDebugStats.lastFrameNanos() / 1_000_000.0;
+            return String.format("Pipeline: ACTIVE  %dx%d @ %.2fx  %dp %.2fms",
+                rtm.getScaledWidth(), rtm.getScaledHeight(), rtm.getScale(),
+                PipelineDebugStats.activePasses(), ms);
+        }
+        String reason = pipelineYieldReason();
+        return "Pipeline: " + reason;
+    }
+
+    private static int pipelineLineColor() {
+        if (PipelineDebugStats.bindingActive()) return COLOR_GOOD;
+        if (PostProcessPipeline.hasConflictingFeatureOn()) return COLOR_WARN;
+        if (Minecraft.getMinecraft().gameSettings.anaglyph) return COLOR_WARN;
+        if (!RenderTargetManager.INSTANCE.isReady()) return COLOR_BAD;
+        return COLOR_BAD;
+    }
+
+    private static String pipelineYieldReason() {
+        if (PostProcessPipeline.hasConflictingFeatureOn()) return "YIELD (msaa)";
+        if (Minecraft.getMinecraft().gameSettings.anaglyph) return "YIELD (anaglyph)";
+        if (!RenderTargetManager.INSTANCE.isReady()) return "UNAVAIL (no GL3)";
+        return "INACTIVE";
     }
 }
