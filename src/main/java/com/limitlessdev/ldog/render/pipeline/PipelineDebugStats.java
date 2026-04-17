@@ -10,6 +10,11 @@ public final class PipelineDebugStats {
     private static int lastHeight;
     private static long lastFrameNanos;
 
+    private static boolean targetReady;
+    private static float targetScale;
+    private static int targetScaledWidth;
+    private static int targetScaledHeight;
+
     private PipelineDebugStats() {}
 
     public static void update(int activeCount, int width, int height, long nanos) {
@@ -17,6 +22,13 @@ public final class PipelineDebugStats {
         lastWidth = width;
         lastHeight = height;
         lastFrameNanos = nanos;
+    }
+
+    public static void updateTargets(boolean ready, float scale, int scaledW, int scaledH) {
+        targetReady = ready;
+        targetScale = scale;
+        targetScaledWidth = scaledW;
+        targetScaledHeight = scaledH;
     }
 
     public static int activePasses() {
@@ -33,6 +45,22 @@ public final class PipelineDebugStats {
 
     public static long lastFrameNanos() {
         return lastFrameNanos;
+    }
+
+    public static boolean targetReady() {
+        return targetReady;
+    }
+
+    public static float targetScale() {
+        return targetScale;
+    }
+
+    public static int targetScaledWidth() {
+        return targetScaledWidth;
+    }
+
+    public static int targetScaledHeight() {
+        return targetScaledHeight;
     }
 }
 

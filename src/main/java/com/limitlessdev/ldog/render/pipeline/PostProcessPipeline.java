@@ -39,10 +39,26 @@ public final class PostProcessPipeline {
             PostProcessContext context = new PostProcessContext(width, height, pass, partialTicks);
             int active = runPasses(context);
             PipelineDebugStats.update(active, width, height, System.nanoTime() - t0);
+
+            RenderTargetManager rtm = RenderTargetManager.INSTANCE;
+            PipelineDebugStats.updateTargets(
+                rtm.isReady(), rtm.getScale(), rtm.getScaledWidth(), rtm.getScaledHeight());
         } catch (Exception e) {
             LDOGMod.LOGGER.error("LDOG: Post-process pipeline fatal error; disabling for this session", e);
             disableAll();
         }
+    }
+
+    /**
+     * True when another LDOG feature currently owns the world-pass FBO binding.
+     *
+     * Reserved for the Phase 9a binding hook — when the pipeline eventually
+     * redirects world rendering into its scene target, it must yield to MSAA
+     * (which wraps renderWorldPass with its own multisampled FBO). Kept here
+     * as a single source of truth so callers don't duplicate the check.
+     */
+    public static boolean hasConflictingFeatureOn() {
+        return LDOGConfig.enableMSAA;
     }
 
     private void ensureInitialized(int w, int h) throws Exception {
@@ -58,7 +74,14 @@ public final class PostProcessPipeline {
             initialized = true;
             if (!loggedReady) {
                 loggedReady = true;
-                LDOGMod.LOGGER.info("LDOG: Post-process pipeline ready ({} pass(es), {}x{})", passes.size(), w, h);
+                RenderTargetManager rtm = RenderTargetManager.INSTANCE;
+                LDOGMod.LOGGER.info(
+                    "LDOG: Post-process pipeline ready ({} pass(es), base {}x{}, scaled {}x{} @ {}, targets={}, msaa={}, fxaa={})",
+                    passes.size(), w, h,
+                    rtm.getScaledWidth(), rtm.getScaledHeight(), rtm.getScale(),
+                    rtm.isReady() ? "ok" : "unavailable",
+                    LDOGConfig.enableMSAA ? "on (pipeline yields binding)" : "off",
+                    LDOGConfig.enableFXAA ? "on (composites after pipeline)" : "off");
             }
             return;
         }
