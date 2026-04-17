@@ -139,6 +139,25 @@ public class LDOGConfig {
     public static String fontAntialiasing = "trilinear";
 
     @Config.Comment({
+        "Mipmap LOD bias for the HD font texture when trilinear AA is on.",
+        "Negative values shift sampling toward sharper (higher-detail) levels,",
+        "recovering crispness that box-filter mipmap generation loses at heavy",
+        "downsampling. Typical range: -1.0 (sharp) to 0.0 (GPU default).",
+        "Ignored in off/bilinear modes."
+    })
+    @Config.RangeDouble(min = -4.0, max = 4.0)
+    public static double fontLodBias = -0.5;
+
+    @Config.Comment({
+        "Anisotropic sampling level on the HD font texture when trilinear AA",
+        "is on. Takes more source texels per screen pixel along the axis of",
+        "maximum change, which recovers sub-pixel edge detail that trilinear",
+        "loses to mipmap blurring. 1 = off. Clamped to the GPU's max."
+    })
+    @Config.RangeInt(min = 1, max = 16)
+    public static int fontAnisotropic = 16;
+
+    @Config.Comment({
         "Override per-glyph widths from a pack-provided ascii.properties file.",
         "Checked paths: optifine/font/ascii.properties, mcpatcher/font/ascii.properties,",
         "font/ascii.properties. When absent, widths are computed from the PNG as vanilla does."
