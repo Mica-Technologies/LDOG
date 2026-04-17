@@ -229,6 +229,13 @@ public class LDOGConfig {
     public static boolean enableFXAA = false;
 
     @Config.Comment({
+        "Enable Phase 8a post-process pipeline scaffold.",
+        "Experimental: currently lifecycle wiring + no-op pass only.",
+        "Does not change rendered output yet."
+    })
+    public static boolean enablePostProcessPipeline = false;
+
+    @Config.Comment({
         "Enable shader support (stretch goal).",
         "Auto-disabled when OptiFine is detected."
     })
