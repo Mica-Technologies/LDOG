@@ -10,7 +10,7 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 ### Where We Left Off (2026-04-17)
 
-**Phases 1-7 implemented** (Phase 7a/b with known caveats, 7c done 2026-04-17; 7d done).
+**Phases 1-7 implemented** (Phase 7a/b with known caveats, 7c done 2026-04-17; 7d done). **Phase C3 easy-path shipped 2026-04-17** (HD font texture swap + LINEAR filter + pack width overrides).
 
 - **Phase 1** (rendering optimizations, FPS reducer, clear water): complete
 - **Phase 2** (HD textures): complete — tested with 256x resource pack
@@ -26,9 +26,9 @@ A phased development plan for building out Limitless Development Optigame, from 
 - **MSAA edge lines**: MSAA reveals sub-pixel rasterization gaps at chunk/block-face seams on distant geometry (adjacent faces' edges are mathematically coincident but FP imprecision creates microscopic gaps that pre-MSAA rasterization didn't sample). OptiFine avoids this by setting display-level MSAA via `PixelFormat.withSamples()` and disabling MC's intermediate FBO — which loses spectator outlines. Not worth the tradeoff; recommend FXAA instead.
 
 **Key next steps:**
-1. **Phase C3** (Smooth Font absorption) — HD font swap easy-path first (detect `optifine/font/ascii.png`, substitute FontRenderer's ResourceLocation, flip filter to LINEAR). Full TTF/AWT path deferred.
-2. **Phase C4** (OptiFine Override Mode) — reverse the coexistence once parity is proven; research-heavy (reflective writes against `optifine.Config`).
-3. **Phase 6d** custom-sky mixin verification — landed but needs in-game confirmation the injection fires.
+1. **Phase C4** (OptiFine Override Mode) — reverse the coexistence once parity is proven; research-heavy (reflective writes against `optifine.Config`).
+2. **Phase 6d** custom-sky mixin verification — landed but needs in-game confirmation the injection fires.
+3. **Phase C3 full-path** (optional) — runtime TTF/AWT rasterization with lazy disk-cached glyph atlas; only worth doing if players want fonts not shipped in their resource pack.
 4. **Phase 8** (Shaders) + **Phase 9** (FSR): stretch goals, see Super Resolution + Radiance mods for reference.
 
 **Test resource packs (already in run/resourcepacks/):**
@@ -236,11 +236,13 @@ Replaces the Smooth Font mod's functionality: antialiased TrueType font renderin
 
 **Shortcut discovered (2026-04-16)**: the alto resource pack already ships an HD 4096×4096 ASCII font PNG at `assets/minecraft/optifine/font/ascii.png` (and the MCPatcher-path equivalent at `assets/minecraft/mcpatcher/font/ascii.png`). Glyphs are pre-rasterized with clean spacing — no TTF rasterization needed if packs provide this file. First implementation pass should just support this "HD font texture swap" path; true runtime TTF rendering can come later if users want non-pack-provided fonts.
 
-- [ ] **Easy path (do first)**: at texture load time, detect HD font PNGs at the mcpatcher/optifine paths. When found, intercept FontRenderer's ResourceLocation for `textures/font/ascii.png` and related `glyph_XX.png` to substitute the HD variants. Flip `GL_TEXTURE_MIN/MAG_FILTER` to `GL_LINEAR` on the font texture for antialiased sampling. Needs checking whether the HD glyph spacing actually tolerates LINEAR filtering without inter-glyph bleed — probably fine at 16× resolution given visible padding in alto's pack.
-- [ ] **Full path (later)**: research MC's FontRenderer hook points (`renderUnicodeChar`, `getCharWidth`); replace glyph source with Java AWT `Font` + `Graphics2D` antialiased rasterization; lazy glyph rasterization; persistent disk cache at `config/ldog/font-cache/<font-hash>/<size>.png`; multithreaded warm-up.
-- [ ] Config: `enableSmoothFont` (toggle), `useHDFontWhenAvailable` (HD path toggle), `fontFamily` (TTF path — later), `antialiasMode` (none/grayscale/subpixel — later).
-- [ ] GUI section: "Font Rendering".
-- [ ] OptiFine conflict check: OptiFine has its own font rendering option; auto-disable LDOG's version when OptiFine is detected.
+- [x] **Easy path shipped 2026-04-17**: `SmoothFontHandler` scans the active resource pack for HD ASCII PNG in priority order `optifine/font/ascii.png → mcpatcher/font/ascii.png`; registers a `HDFontTexture` (SimpleTexture subclass) under stable `ldog:textures/font/hd_ascii`; applies `GL_LINEAR` filtering at upload for antialiased sampling. `MixinFontRenderer.@Redirect` on the `bindTexture(locationFontTexture)` call inside `renderDefaultChar` swaps the bound texture to the HD variant when available. `FontRendererInvoker` exposes the protected `bindTexture` method so the redirect can invoke vanilla behavior with a substituted ResourceLocation. Both use `remap = false` since `FontRenderer.bindTexture` is a Forge-added method with no SRG mapping.
+- [x] **Width overrides**: Smooth Font / OptiFine `ascii.properties` format (`width.N=W`) parsed from `optifine/font/ → mcpatcher/font/ → font/` priority order. `MixinFontRenderer.@Inject(TAIL)` on `readFontTexture` applies overrides on top of vanilla's auto-computed widths. Alto pack ships widths at `font/ascii.properties` — discovered and honored.
+- [x] Config: `enableSmoothFont` (master), `useHDFontTexture` (HD swap), `antialiasedFont` (LINEAR filter), `useFontPropertyWidths` (override widths). Live toggle: antialias filter flips without a full reload; the other three trigger `mc.refreshResources()` to re-discover pack resources.
+- [x] GUI section: "Font Rendering" with 4 toggles.
+- [x] OptiFine conflict check: `OptiFineCompat.shouldHandleSmoothFont()` auto-disables all four features when OptiFine is detected.
+- [x] Unicode glyph pages (`glyph_XX.png`) deliberately unchanged in v1 — ASCII HD swap is the user-visible win; unicode pages are lower priority and untouched by the hook.
+- [ ] **Full path (deferred)**: research MC's FontRenderer hook points (`renderUnicodeChar`, `getCharWidth`); replace glyph source with Java AWT `Font` + `Graphics2D` antialiased rasterization; lazy glyph rasterization; persistent disk cache at `config/ldog/font-cache/<font-hash>/<size>.png`; multithreaded warm-up.
 
 **Why the load-time budget matters:** Smooth Font takes ~5-10s extra on first launch because it synchronously rasterizes all 256 glyph pages × multiple sizes. Lazy + cached + threaded should put first launch at ~1s overhead and subsequent launches at near-zero.
 

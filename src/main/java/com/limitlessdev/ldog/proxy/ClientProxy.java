@@ -2,6 +2,7 @@ package com.limitlessdev.ldog.proxy;
 
 import com.limitlessdev.ldog.render.color.CustomColorHandler;
 import com.limitlessdev.ldog.render.dynamiclights.DynamicLightTickHandler;
+import com.limitlessdev.ldog.render.font.SmoothFontHandler;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.IReloadableResourceManager;
 import net.minecraftforge.common.MinecraftForge;
@@ -25,6 +26,7 @@ public class ClientProxy extends CommonProxy {
         IReloadableResourceManager resourceManager =
             (IReloadableResourceManager) Minecraft.getMinecraft().getResourceManager();
         resourceManager.registerReloadListener(CustomColorHandler.INSTANCE);
+        resourceManager.registerReloadListener(SmoothFontHandler.INSTANCE);
     }
 
     @Override

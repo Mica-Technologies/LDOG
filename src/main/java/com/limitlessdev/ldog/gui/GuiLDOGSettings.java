@@ -11,6 +11,9 @@ import net.minecraftforge.common.config.Config;
 import net.minecraftforge.common.config.ConfigManager;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * LDOG settings GUI with a scrollable list of settings.
@@ -21,6 +24,8 @@ public class GuiLDOGSettings extends GuiScreen {
 
     private final GuiScreen parentScreen;
     private GuiLDOGSettingsList settingsList;
+    /** Tooltip lines registered per button id. Rendered on hover in drawScreen. */
+    private final Map<Integer, String[]> buttonTooltips = new HashMap<>();
 
     private static final int BTN_DONE = 200;
     private static final int BTN_RENDER_OPTS = 10;
@@ -83,6 +88,10 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_MSAA_SAMPLES = 83;
     private static final int BTN_FXAA = 84;
     private static final int BTN_EXT_BORDER = 85;
+    private static final int BTN_SMOOTH_FONT = 90;
+    private static final int BTN_HD_FONT = 91;
+    private static final int BTN_AA_FONT = 92;
+    private static final int BTN_FONT_WIDTHS = 93;
 
     private static final int[] ANISOTROPIC_VALUES = {2, 4, 8, 16};
     private static final int[] MSAA_VALUES = {2, 4, 8};
@@ -120,6 +129,8 @@ public class GuiLDOGSettings extends GuiScreen {
 
         // Create scrollable list (area between title and Done button)
         settingsList = new GuiLDOGSettingsList(this.mc, this.width, this.height, 28, this.height - 32);
+        buttonTooltips.clear();
+        registerTooltips();
 
         // -- Performance --
         settingsList.addHeaderRow("Performance");
@@ -175,6 +186,22 @@ public class GuiLDOGSettings extends GuiScreen {
             new GuiButton(BTN_FXAA, 0, 0, w, h,
                 toggleLabel("FXAA", LDOGConfig.enableFXAA)),
             null);
+
+        // -- Font Rendering --
+        // Drop-in replacement for the Smooth Font mod. Swaps in HD ascii.png from
+        // optifine/mcpatcher resource-pack paths and applies GL_LINEAR filtering
+        // for antialiased glyphs. Auto-disabled when OptiFine is detected.
+        settingsList.addHeaderRow("Font Rendering");
+        settingsList.addButtonRow(
+            new GuiButton(BTN_SMOOTH_FONT, 0, 0, w, h,
+                toggleLabel("Smooth Font", LDOGConfig.enableSmoothFont)),
+            new GuiButton(BTN_HD_FONT, 0, 0, w, h,
+                toggleLabel("HD Font Texture", LDOGConfig.useHDFontTexture)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_AA_FONT, 0, 0, w, h,
+                toggleLabel("Antialiased Font", LDOGConfig.antialiasedFont)),
+            new GuiButton(BTN_FONT_WIDTHS, 0, 0, w, h,
+                toggleLabel("Pack Widths", LDOGConfig.useFontPropertyWidths)));
 
         // -- Visual --
         currentPresetIndex = detectCurrentPreset();
@@ -534,12 +561,36 @@ public class GuiLDOGSettings extends GuiScreen {
                 button.displayString = toggleLabel("Ext Border Mips", LDOGConfig.enableExtendedBorderMipmaps);
                 extBorderSettingsChanged = true;
                 break;
+            case BTN_SMOOTH_FONT:
+                LDOGConfig.enableSmoothFont = !LDOGConfig.enableSmoothFont;
+                button.displayString = toggleLabel("Smooth Font", LDOGConfig.enableSmoothFont);
+                fontSettingsChanged = true;
+                break;
+            case BTN_HD_FONT:
+                LDOGConfig.useHDFontTexture = !LDOGConfig.useHDFontTexture;
+                button.displayString = toggleLabel("HD Font Texture", LDOGConfig.useHDFontTexture);
+                fontSettingsChanged = true;
+                break;
+            case BTN_AA_FONT:
+                LDOGConfig.antialiasedFont = !LDOGConfig.antialiasedFont;
+                button.displayString = toggleLabel("Antialiased Font", LDOGConfig.antialiasedFont);
+                fontFilterChanged = true;
+                break;
+            case BTN_FONT_WIDTHS:
+                LDOGConfig.useFontPropertyWidths = !LDOGConfig.useFontPropertyWidths;
+                button.displayString = toggleLabel("Pack Widths", LDOGConfig.useFontPropertyWidths);
+                fontSettingsChanged = true;
+                break;
         }
     }
 
     private boolean aaSettingsChanged = false;
     private boolean fxaaSettingsChanged = false;
     private boolean extBorderSettingsChanged = false;
+    /** True when the HD-font discovery inputs changed — needs a resource reload. */
+    private boolean fontSettingsChanged = false;
+    /** True when only the antialias filter flipped — cheap to apply live. */
+    private boolean fontFilterChanged = false;
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
@@ -547,6 +598,64 @@ public class GuiLDOGSettings extends GuiScreen {
         settingsList.drawScreen(mouseX, mouseY, partialTicks);
         this.drawCenteredString(this.fontRenderer, "LDOG Settings", this.width / 2, 8, 0xFFFFFF);
         super.drawScreen(mouseX, mouseY, partialTicks);
+        drawHoveredTooltip(mouseX, mouseY);
+    }
+
+    private void drawHoveredTooltip(int mouseX, int mouseY) {
+        // Only show when the cursor is inside the list's visible area (above/below
+        // the scroll region, buttons would be clipped but still "hovered" by coords).
+        if (mouseY < settingsList.top || mouseY >= settingsList.bottom) return;
+        for (Map.Entry<Integer, String[]> e : buttonTooltips.entrySet()) {
+            GuiButton btn = settingsList.findButton(e.getKey());
+            if (btn == null || !btn.visible) continue;
+            if (mouseX >= btn.x && mouseY >= btn.y
+                && mouseX < btn.x + btn.width && mouseY < btn.y + btn.height) {
+                this.drawHoveringText(Arrays.asList(e.getValue()), mouseX, mouseY);
+                return;
+            }
+        }
+    }
+
+    private void registerTooltip(int buttonId, String... lines) {
+        buttonTooltips.put(buttonId, lines);
+    }
+
+    /** Called from {@link #initGui} to populate per-button hover tooltips. */
+    private void registerTooltips() {
+        registerTooltip(BTN_EXT_BORDER,
+            "\u00a7eExtended Border Mipmaps",
+            "\u00a77Fixes faint block-edge lines at distance when",
+            "\u00a77Anisotropic Filtering is on. Pads every atlas sprite",
+            "\u00a77with an edge-extended halo so AF can't bleed across",
+            "\u00a77tile boundaries at high mip levels.",
+            "",
+            "\u00a7cImpact:\u00a77 grows the block atlas by ~3x for 16x packs.",
+            "\u00a77May push HD packs past the GPU's max texture size.",
+            "\u00a77Zero runtime cost once the atlas is built.",
+            "",
+            "\u00a7aRecommended:\u00a77 enable alongside AF.");
+        registerTooltip(BTN_SMOOTH_FONT,
+            "\u00a7eSmooth Font (master)",
+            "\u00a77Drop-in replacement for the Smooth Font mod.",
+            "\u00a77Turn off to use pure vanilla font rendering.",
+            "\u00a77Auto-disabled when OptiFine is detected.");
+        registerTooltip(BTN_HD_FONT,
+            "\u00a7eHD Font Texture",
+            "\u00a77Loads the HD ASCII font PNG from the resource pack",
+            "\u00a77(optifine/font/ascii.png or mcpatcher/font/ascii.png)",
+            "\u00a77instead of the vanilla 128x128 texture.");
+        registerTooltip(BTN_AA_FONT,
+            "\u00a7eAntialiased Font",
+            "\u00a77Uses GL_LINEAR filtering on the font texture for",
+            "\u00a77smooth glyph edges. Without this, HD fonts look",
+            "\u00a77blocky like vanilla.",
+            "",
+            "\u00a77Flips live without a resource reload.");
+        registerTooltip(BTN_FONT_WIDTHS,
+            "\u00a7ePack Widths",
+            "\u00a77Honor per-glyph widths from the pack's",
+            "\u00a77ascii.properties file (format: width.N=W).",
+            "\u00a77Checks optifine/font, mcpatcher/font, then font/.");
     }
 
     private void saveAndClose() {
@@ -555,12 +664,18 @@ public class GuiLDOGSettings extends GuiScreen {
             // Water opacity/tint is baked into chunk vertex data — must rebuild.
             this.mc.renderGlobal.loadRenderers();
         }
-        if (extBorderSettingsChanged) {
-            // Packing changes — requires a full resource reload to rebuild the atlas.
-            // This subsumes AF refresh (which also re-runs at TextureStitchEvent.Post).
+        if (extBorderSettingsChanged || fontSettingsChanged) {
+            // Packing or font-discovery changes — requires a full resource reload
+            // so Stitcher/FontRenderer pick up the new inputs. Subsumes AF refresh
+            // (TextureStitchEvent.Post re-runs) and font-filter refresh.
             this.mc.refreshResources();
-        } else if (aaSettingsChanged) {
-            com.limitlessdev.ldog.texture.AnisotropicFilteringHandler.refreshMainAtlas();
+        } else {
+            if (aaSettingsChanged) {
+                com.limitlessdev.ldog.texture.AnisotropicFilteringHandler.refreshMainAtlas();
+            }
+            if (fontFilterChanged) {
+                com.limitlessdev.ldog.render.font.SmoothFontHandler.INSTANCE.refreshAntialiasFilter();
+            }
         }
         if (fxaaSettingsChanged) {
             com.limitlessdev.ldog.render.fxaa.FXAAHandler.apply();

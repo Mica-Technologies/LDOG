@@ -19,7 +19,9 @@
     "MixinWorldDynamicLights",
     "MixinEntityRendererLightmap",
     "MixinEntityRendererMSAA",
-    "AccessorEntityRenderer"
+    "AccessorEntityRenderer",
+    "MixinFontRenderer",
+    "FontRendererInvoker"
   ],
   "server": []
 }

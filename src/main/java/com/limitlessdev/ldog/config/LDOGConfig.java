@@ -111,6 +111,34 @@ public class LDOGConfig {
     })
     public static boolean enableExtendedBorderMipmaps = false;
 
+    // ---- Font Rendering (Phase C3: Smooth Font absorption) ----
+
+    @Config.Comment({
+        "Enable LDOG's smooth font rendering (replaces Smooth Font mod functionality).",
+        "Auto-disabled when OptiFine is detected."
+    })
+    public static boolean enableSmoothFont = true;
+
+    @Config.Comment({
+        "Use HD ASCII font PNG from resource pack if available.",
+        "Checks optifine/font/ascii.png and mcpatcher/font/ascii.png.",
+        "Falls back to vanilla textures/font/ascii.png when not present."
+    })
+    public static boolean useHDFontTexture = true;
+
+    @Config.Comment({
+        "Use GL_LINEAR filtering on the font texture for antialiased glyph edges.",
+        "Without this, HD font textures look blocky like the vanilla 16x font."
+    })
+    public static boolean antialiasedFont = true;
+
+    @Config.Comment({
+        "Override per-glyph widths from a pack-provided ascii.properties file.",
+        "Checked paths: optifine/font/ascii.properties, mcpatcher/font/ascii.properties,",
+        "font/ascii.properties. When absent, widths are computed from the PNG as vanilla does."
+    })
+    public static boolean useFontPropertyWidths = true;
+
     @Config.Comment({
         "Enable multi-sample anti-aliasing (MSAA) for world geometry.",
         "Requires a GPU that supports multisampled framebuffers."

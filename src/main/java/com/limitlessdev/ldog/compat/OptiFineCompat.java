@@ -84,6 +84,15 @@ public final class OptiFineCompat {
     }
 
     /**
+     * Returns true if LDOG should handle smooth/HD font rendering.
+     * Defers to OptiFine when present — OptiFine has its own "HD Font" option that
+     * intercepts the same texture paths, and running both would double-bind.
+     */
+    public static boolean shouldHandleSmoothFont() {
+        return !isOptiFineLoaded();
+    }
+
+    /**
      * Returns true if LDOG should handle render optimizations.
      * This is the one area where LDOG may run ALONGSIDE OptiFine,
      * since non-conflicting optimizations can coexist. Individual

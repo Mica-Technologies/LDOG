@@ -42,6 +42,21 @@ public class GuiLDOGSettingsList extends GuiListExtended {
         return entries.size();
     }
 
+    /**
+     * Finds a button across all rows by its {@code id}. Returns {@code null} if no match.
+     * Used by the tooltip layer in {@link GuiLDOGSettings}.
+     */
+    public GuiButton findButton(int id) {
+        for (IGuiListEntry e : entries) {
+            if (e instanceof ButtonRowEntry) {
+                ButtonRowEntry row = (ButtonRowEntry) e;
+                if (row.getLeftButton() != null && row.getLeftButton().id == id) return row.getLeftButton();
+                if (row.getRightButton() != null && row.getRightButton().id == id) return row.getRightButton();
+            }
+        }
+        return null;
+    }
+
     @Override
     protected int getScrollBarX() {
         return this.width / 2 + 160;
