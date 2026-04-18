@@ -553,6 +553,23 @@ public class LDOGConfig {
     })
     public static boolean disablePortalOverlay = false;
 
+    // ---- Info HUD overlays (top-right corner) ----
+
+    @Config.Comment("Show X/Y/Z coordinates HUD overlay (top-right). Hidden when F3 is on.")
+    public static boolean showCoordsHud = false;
+
+    @Config.Comment("Show facing direction (N/S/E/W + cardinal axis) in the info HUD.")
+    public static boolean showFacingHud = false;
+
+    @Config.Comment("Show in-game time of day (HH:MM clock) in the info HUD.")
+    public static boolean showTimeHud = false;
+
+    @Config.Comment("Show current biome name in the info HUD.")
+    public static boolean showBiomeHud = false;
+
+    @Config.Comment("Show block + sky light level at the player's feet in the info HUD.")
+    public static boolean showLightLevelHud = false;
+
     @Config.Comment({
         "Enable entity LOD (Level of Detail).",
         "Distant entities render less frequently to save GPU work.",

@@ -60,6 +60,12 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_HIDE_JUMP          = 547;
     private static final int BTN_HIDE_TOOLTIP       = 548;
     private static final int BTN_NO_PORTAL_OVERLAY  = 549;
+    // Info HUD overlays (top-right)
+    private static final int BTN_HUD_COORDS         = 560;
+    private static final int BTN_HUD_FACING         = 561;
+    private static final int BTN_HUD_TIME           = 562;
+    private static final int BTN_HUD_BIOME          = 563;
+    private static final int BTN_HUD_LIGHT          = 564;
     private static final int BTN_ENTITY_LOD = 14;
     private static final int BTN_FPS_REDUCER = 20;
     private static final int BTN_UNFOCUSED_FPS = 21;
@@ -375,6 +381,23 @@ public class GuiLDOGSettings extends GuiScreen {
                 toggleLabel("Hide Jump Bar", LDOGConfig.hideHorseJumpBar)),
             new GuiButton(BTN_HIDE_TOOLTIP, 0, 0, w, h,
                 toggleLabel("Hide Item Tooltip", LDOGConfig.hideHeldItemTooltip)));
+
+        // -- Info HUD (LDOG-rendered top-right overlay) --
+        settingsList.addHeaderRow("Info HUD");
+        settingsList.addButtonRow(
+            new GuiButton(BTN_HUD_COORDS, 0, 0, w, h,
+                toggleLabel("Coords", LDOGConfig.showCoordsHud)),
+            new GuiButton(BTN_HUD_FACING, 0, 0, w, h,
+                toggleLabel("Facing", LDOGConfig.showFacingHud)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_HUD_TIME, 0, 0, w, h,
+                toggleLabel("Time", LDOGConfig.showTimeHud)),
+            new GuiButton(BTN_HUD_BIOME, 0, 0, w, h,
+                toggleLabel("Biome", LDOGConfig.showBiomeHud)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_HUD_LIGHT, 0, 0, w, h,
+                toggleLabel("Light Level", LDOGConfig.showLightLevelHud)),
+            null);
 
         // -- Font Rendering --
         // Drop-in replacement for the Smooth Font mod. Swaps in HD ascii.png from
@@ -694,6 +717,26 @@ public class GuiLDOGSettings extends GuiScreen {
             case BTN_NO_PORTAL_OVERLAY:
                 LDOGConfig.disablePortalOverlay = !LDOGConfig.disablePortalOverlay;
                 button.displayString = toggleLabel("No Portal Distort", LDOGConfig.disablePortalOverlay);
+                break;
+            case BTN_HUD_COORDS:
+                LDOGConfig.showCoordsHud = !LDOGConfig.showCoordsHud;
+                button.displayString = toggleLabel("Coords", LDOGConfig.showCoordsHud);
+                break;
+            case BTN_HUD_FACING:
+                LDOGConfig.showFacingHud = !LDOGConfig.showFacingHud;
+                button.displayString = toggleLabel("Facing", LDOGConfig.showFacingHud);
+                break;
+            case BTN_HUD_TIME:
+                LDOGConfig.showTimeHud = !LDOGConfig.showTimeHud;
+                button.displayString = toggleLabel("Time", LDOGConfig.showTimeHud);
+                break;
+            case BTN_HUD_BIOME:
+                LDOGConfig.showBiomeHud = !LDOGConfig.showBiomeHud;
+                button.displayString = toggleLabel("Biome", LDOGConfig.showBiomeHud);
+                break;
+            case BTN_HUD_LIGHT:
+                LDOGConfig.showLightLevelHud = !LDOGConfig.showLightLevelHud;
+                button.displayString = toggleLabel("Light Level", LDOGConfig.showLightLevelHud);
                 break;
             case BTN_ENTITY_DIST:
                 LDOGConfig.entityRenderDistance = cycleValue(ENTITY_DIST_VALUES, LDOGConfig.entityRenderDistance);
