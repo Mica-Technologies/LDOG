@@ -20,9 +20,7 @@
     "MixinEntityRendererLightmap",
     "MixinEntityRendererMSAA",
     "MixinEntityRendererPostPipeline",
-    "MixinMinecraftBorderless",
-    "AccessorEntityRenderer",
-    "AccessorMinecraft"
+    "AccessorEntityRenderer"
   ],
   "server": []
 }
