@@ -18,13 +18,14 @@ public final class PostProcessContext {
     private final int sceneWidth;
     private final int sceneHeight;
     private final boolean bindingActive;
+    private final boolean reactiveMaskActive;
     private final int pass;
     private final float partialTicks;
 
     public PostProcessContext(
         int mainFbo, int mainWidth, int mainHeight,
         int sceneFbo, int sceneColorTex, int sceneWidth, int sceneHeight,
-        boolean bindingActive, int pass, float partialTicks) {
+        boolean bindingActive, boolean reactiveMaskActive, int pass, float partialTicks) {
         this.mainFbo = mainFbo;
         this.mainWidth = mainWidth;
         this.mainHeight = mainHeight;
@@ -33,6 +34,7 @@ public final class PostProcessContext {
         this.sceneWidth = sceneWidth;
         this.sceneHeight = sceneHeight;
         this.bindingActive = bindingActive;
+        this.reactiveMaskActive = reactiveMaskActive;
         this.pass = pass;
         this.partialTicks = partialTicks;
     }
@@ -52,6 +54,15 @@ public final class PostProcessContext {
      * false, otherwise they'd composite stale data onto the main framebuffer.
      */
     public boolean bindingActive() { return bindingActive; }
+
+    /**
+     * True when this frame's scene render had MRT + entity-loop colorMaski
+     * wiring active and the reactive-mask attachment of sceneFbo holds a
+     * meaningful "entity drew here" signal. TAA samples the reactive mask
+     * conditionally on this flag — when false, the mask texture may hold
+     * stale data from when the feature was last on, or zeros if never on.
+     */
+    public boolean reactiveMaskActive() { return reactiveMaskActive; }
 
     public int pass() { return pass; }
     public float partialTicks() { return partialTicks; }

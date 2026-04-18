@@ -107,6 +107,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_FXAA_QUALITY = 107;
     private static final int BTN_TAA_ENABLE = 108;
     private static final int BTN_TAA_WEIGHT = 109;
+    private static final int BTN_TAA_REACTIVE_MASK = 113;
     private static final int BTN_AUTO_SCALE = 112;
     private static final int BTN_BORDERLESS_FULLSCREEN = 110;
     private static final int BTN_BLOCK_FSO = 111;
@@ -223,6 +224,10 @@ public class GuiLDOGSettings extends GuiScreen {
                 toggleLabel("TAA (9c.1)", LDOGConfig.enableTAA)),
             new GuiButton(BTN_TAA_WEIGHT, 0, 0, w, h,
                 taaWeightLabel(LDOGConfig.taaHistoryWeight)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_TAA_REACTIVE_MASK, 0, 0, w, h,
+                toggleLabel("Entity Reactive Mask", LDOGConfig.enableEntityReactiveMask)),
+            null);
 
         // -- Display (Phase 10) --
         settingsList.addHeaderRow("Display");
@@ -654,6 +659,10 @@ public class GuiLDOGSettings extends GuiScreen {
                 LDOGConfig.taaHistoryWeight = cycleValue(TAA_WEIGHT_VALUES, LDOGConfig.taaHistoryWeight);
                 button.displayString = taaWeightLabel(LDOGConfig.taaHistoryWeight);
                 break;
+            case BTN_TAA_REACTIVE_MASK:
+                LDOGConfig.enableEntityReactiveMask = !LDOGConfig.enableEntityReactiveMask;
+                button.displayString = toggleLabel("Entity Reactive Mask", LDOGConfig.enableEntityReactiveMask);
+                break;
             case BTN_FXAA_QUALITY: {
                 com.limitlessdev.ldog.render.pipeline.FXAAQuality current =
                     com.limitlessdev.ldog.render.pipeline.FXAAQuality.selected();
@@ -1063,6 +1072,18 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a760.95:\u00a77 maximum smoothing, heavy ghosting on motion.",
             "",
             "\u00a77Live-adjustable. Lower values = less ghosting, less AA.");
+        registerTooltip(BTN_TAA_REACTIVE_MASK,
+            "\u00a7eEntity Reactive Mask (Phase 9c.3-A)",
+            "\u00a77Drops TAA history weight on entity silhouettes so moving",
+            "\u00a77mobs/items don't leave a smear trail. Per-frame entity",
+            "\u00a77instability replaces persistent ghosting — visually less",
+            "\u00a77objectionable than smear, but you'll see slight shimmer",
+            "\u00a77on entity edges during motion.",
+            "",
+            "\u00a77Cost: ~5-10% extra GPU memory + 1 MRT attachment write",
+            "\u00a77per entity fragment. Particles deliberately excluded.",
+            "",
+            "\u00a77Requires TAA + Post Pipeline ON.");
         registerTooltip(BTN_FXAA_QUALITY,
             "\u00a7eFXAA Quality Level",
             "\u00a77Controls search-step count and edge-detection threshold",

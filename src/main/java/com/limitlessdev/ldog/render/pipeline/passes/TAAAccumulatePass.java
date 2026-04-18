@@ -56,11 +56,13 @@ public final class TAAAccumulatePass implements PostProcessPass {
         "uniform sampler2D u_current;\n" +
         "uniform sampler2D u_history;\n" +
         "uniform sampler2D u_sceneDepth;\n" +
+        "uniform sampler2D u_reactiveMask;\n" +
         "uniform vec2 u_invMainDim;\n" +
         "uniform float u_historyWeight;\n" +
         "uniform mat4 u_invCurViewProj;\n" +
         "uniform mat4 u_prevViewProj;\n" +
         "uniform bool u_useMotionVectors;\n" +
+        "uniform bool u_useReactiveMask;\n" +
         "varying vec2 v_texCoord;\n" +
         "\n" +
         "void main() {\n" +
@@ -113,7 +115,25 @@ public final class TAAAccumulatePass implements PostProcessPass {
         "    // moved (not reflected in MV) can't drag stale colour into the blend.\n" +
         "    vec3 clampedHist = clamp(hist, minC, maxC);\n" +
         "\n" +
-        "    vec3 blended = mix(cur, clampedHist, u_historyWeight);\n" +
+        "    // Phase 9c.3-A: read reactive mask. Anywhere an entity drew this\n" +
+        "    // frame, drop history weight toward zero so the smear/ghost trail\n" +
+        "    // disappears (replaced with per-frame instability, which is far\n" +
+        "    // less visually objectionable than persistent ghosting). The mask\n" +
+        "    // is GL_LINEAR-sampled at scaled→main resolution, so silhouette\n" +
+        "    // edges are soft — gives a feathered transition between reactive\n" +
+        "    // and accumulated regions instead of a hard binary cut.\n" +
+        "    float weight = u_historyWeight;\n" +
+        "    if (u_useReactiveMask) {\n" +
+        "        // Mask R is the entity-fragment colour replicated by fixed-\n" +
+        "        // function across MRT attachments; clamp to [0,1] and use as\n" +
+        "        // a confidence value for 'this pixel is reactive'. Scale up\n" +
+        "        // so even dim entity textures (dark mobs) hit the reactive\n" +
+        "        // path — most entities have R>0.05 wherever they draw.\n" +
+        "        float reactive = clamp(texture2D(u_reactiveMask, v_texCoord).r * 4.0, 0.0, 1.0);\n" +
+        "        weight = mix(weight, 0.0, reactive);\n" +
+        "    }\n" +
+        "\n" +
+        "    vec3 blended = mix(cur, clampedHist, weight);\n" +
         "    gl_FragColor = vec4(blended, 1.0);\n" +
         "}\n";
 
@@ -126,6 +146,7 @@ public final class TAAAccumulatePass implements PostProcessPass {
     private boolean hasHistory;
     private boolean loggedFirstExecute;
     private boolean loggedFirstMV;
+    private boolean loggedFirstMask;
 
     private static final FloatBuffer MAT_BUF_INV = BufferUtils.createFloatBuffer(16);
     private static final FloatBuffer MAT_BUF_PREV = BufferUtils.createFloatBuffer(16);
@@ -215,13 +236,25 @@ public final class TAAAccumulatePass implements PostProcessPass {
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, rtm.getSceneDepthTexture());
         }
 
+        // Phase 9c.3-A: bind reactive mask on unit 3. Active only when this
+        // frame's binding actually wired MRT (reactiveMaskActive flag), so
+        // we don't sample stale texels from a prior frame's mask.
+        boolean useMask = ctx.reactiveMaskActive() && rtm.isReady()
+            && rtm.getSceneReactiveMaskTexture() != 0;
+        if (useMask) {
+            GL13.glActiveTexture(GL13.GL_TEXTURE3);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, rtm.getSceneReactiveMaskTexture());
+        }
+
         shader.bind();
         shader.setUniform1i("u_current", 0);
         shader.setUniform1i("u_history", 1);
         shader.setUniform1i("u_sceneDepth", 2);
+        shader.setUniform1i("u_reactiveMask", 3);
         shader.setUniform2f("u_invMainDim", 1.0f / w, 1.0f / h);
         shader.setUniform1f("u_historyWeight", (float) LDOGConfig.taaHistoryWeight);
         shader.setUniform1i("u_useMotionVectors", useMV ? 1 : 0);
+        shader.setUniform1i("u_useReactiveMask", useMask ? 1 : 0);
 
         if (useMV) {
             CameraState.writeCurInvViewProj(MAT_BUF_INV);
@@ -233,6 +266,10 @@ public final class TAAAccumulatePass implements PostProcessPass {
                 LDOGMod.LOGGER.info("LDOG: TAA motion-vector reprojection ACTIVE (9c.2)");
             }
         }
+        if (useMask && !loggedFirstMask) {
+            loggedFirstMask = true;
+            LDOGMod.LOGGER.info("LDOG: TAA entity reactive-mask ACTIVE (9c.3-A)");
+        }
 
         GL11.glBegin(GL11.GL_TRIANGLES);
         GL11.glVertex2f(-1.0f, -1.0f);
@@ -243,6 +280,10 @@ public final class TAAAccumulatePass implements PostProcessPass {
         ShaderProgram.unbind();
 
         // Unbind extra units, leave unit 0 selected.
+        if (useMask) {
+            GL13.glActiveTexture(GL13.GL_TEXTURE3);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+        }
         if (useMV) {
             GL13.glActiveTexture(GL13.GL_TEXTURE2);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);

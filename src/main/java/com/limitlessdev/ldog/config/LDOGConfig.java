@@ -320,6 +320,18 @@ public class LDOGConfig {
     public static boolean enableTAA = false;
 
     @Config.Comment({
+        "Phase 9c.3-A: drop TAA history weight on entity silhouettes to kill",
+        "moving-entity ghosting. When ON, the world render writes an extra",
+        "single-channel mask alongside the colour buffer; entity pixels in",
+        "TAA blend with near-zero history (per-frame instability instead of",
+        "smear trails). Costs ~5-10% extra GPU memory plus one MRT colour",
+        "attachment write per entity fragment. Has no effect when TAA is off.",
+        "Modded entities and TileEntities (TESRs) are covered automatically.",
+        "Particles deliberately excluded — small footprint, ghost is mild."
+    })
+    public static boolean enableEntityReactiveMask = true;
+
+    @Config.Comment({
         "TAA history blend weight. Higher = more temporal smoothing but more",
         "ghosting on motion. 0.0 = no history (identity, TAA does nothing),",
         "0.9 = default, 0.95 = maximum smoothing."

@@ -40,6 +40,13 @@ public final class RenderTargetManager {
     private int sceneFbo;
     private int sceneColorTex;
     private int sceneDepthTex;
+    // Phase 9c.3-A: single-channel R8 attached to sceneFbo as COLOR_ATTACHMENT1.
+    // Holds the "this pixel was drawn by an entity" reactive mask. Always
+    // allocated so the FBO layout is stable — population is gated by the
+    // pipeline binding mixin via glDrawBuffers + glColorMaski. TAA samples
+    // it to drop history weight on entity silhouettes (kills moving-entity
+    // ghosting without per-entity motion-vector emission).
+    private int sceneReactiveMaskTex;
 
     // Ping-pong color-only target for multi-pass filters.
     private int pingFbo;
@@ -65,6 +72,7 @@ public final class RenderTargetManager {
     public int getSceneFbo() { return sceneFbo; }
     public int getSceneColorTexture() { return sceneColorTex; }
     public int getSceneDepthTexture() { return sceneDepthTex; }
+    public int getSceneReactiveMaskTexture() { return sceneReactiveMaskTex; }
     public int getPingPongFbo() { return pingFbo; }
     public int getPingPongColorTexture() { return pingColorTex; }
     public int getScaledWidth() { return scaledWidth; }
@@ -123,6 +131,7 @@ public final class RenderTargetManager {
         sceneFbo = GL30.glGenFramebuffers();
         sceneColorTex = GL11.glGenTextures();
         sceneDepthTex = GL11.glGenTextures();
+        sceneReactiveMaskTex = GL11.glGenTextures();
 
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, sceneColorTex);
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, w, h, 0,
@@ -145,9 +154,26 @@ public final class RenderTargetManager {
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
 
+        // Phase 9c.3-A reactive-mask attachment. R8 single channel — fixed-
+        // function fragment writes replicate gl_FragColor to all bound color
+        // attachments, so the R component of any entity-fragment colour ends
+        // up in this texture. We only care whether it's nonzero (entity drew
+        // here) — the actual value is irrelevant. GL_LINEAR so upsampling in
+        // TAA softens silhouette edges (catches motion-blur fringes).
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, sceneReactiveMaskTex);
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_R8, w, h, 0,
+            GL11.GL_RED, GL11.GL_UNSIGNED_BYTE, (java.nio.ByteBuffer) null);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, sceneFbo);
         GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
             GL11.GL_TEXTURE_2D, sceneColorTex, 0);
+        GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT1,
+            GL11.GL_TEXTURE_2D, sceneReactiveMaskTex, 0);
         GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_STENCIL_ATTACHMENT,
             GL11.GL_TEXTURE_2D, sceneDepthTex, 0);
 
@@ -189,6 +215,7 @@ public final class RenderTargetManager {
     }
 
     private void disposeTargets() {
+        if (sceneReactiveMaskTex != 0) { GL11.glDeleteTextures(sceneReactiveMaskTex); sceneReactiveMaskTex = 0; }
         if (sceneDepthTex != 0) { GL11.glDeleteTextures(sceneDepthTex); sceneDepthTex = 0; }
         if (sceneColorTex != 0) { GL11.glDeleteTextures(sceneColorTex); sceneColorTex = 0; }
         if (sceneFbo != 0)      { GL30.glDeleteFramebuffers(sceneFbo);  sceneFbo = 0; }
