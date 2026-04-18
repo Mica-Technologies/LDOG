@@ -60,7 +60,20 @@ public abstract class MixinEntityRendererJitter {
         applyJitter();
     }
 
-    /** Terrain projection: capture un-jittered matrices first, THEN jitter. */
+    /** Terrain projection: jitter FIRST, then capture JITTERED matrices.
+     *
+     * Initially I had the opposite order (capture before jitter), reasoning
+     * that MV should track the "logical" camera pose. That's wrong for TAA:
+     * the history texture is stored with each frame's jitter baked in
+     * (pixels are at slightly-shifted world positions each frame). If cur
+     * and prev are captured pre-jitter, reprojection unprojects to the
+     * WRONG world position and re-projects to the WRONG history UV,
+     * producing a fractional-pixel offset that swings per-frame with the
+     * Halton cycle — the "drunk / swimming" visual artifact.
+     *
+     * Capturing post-jitter keeps cur/prev self-consistent with what was
+     * actually rendered, so reprojected UVs land on the right history
+     * pixels. Classic TAA gotcha. */
     @Inject(
         method = "renderWorldPass(IFJ)V",
         at = @At(
@@ -68,15 +81,15 @@ public abstract class MixinEntityRendererJitter {
             target = "Lorg/lwjgl/util/glu/Project;gluPerspective(FFFF)V",
             ordinal = 1,
             shift = At.Shift.AFTER))
-    private void ldog$captureAndJitterTerrain(int pass, float partialTicks, long finishTimeNano, CallbackInfo ci) {
+    private void ldog$jitterAndCaptureTerrain(int pass, float partialTicks, long finishTimeNano, CallbackInfo ci) {
         if (pass != 2) return;
         if (!LDOGConfig.enableTAA) return;
 
-        // Capture BEFORE jitter so MV reprojection uses the logical camera
-        // pose, not the sub-pixel-shifted sample-placement projection.
-        CameraState.captureCurrentMatrices();
-
         applyJitter();
+
+        // Capture the jittered state so cur/prev MV reprojection matches the
+        // jitter that was actually applied when rendering + storing history.
+        CameraState.captureCurrentMatrices();
     }
 
     private static void applyJitter() {
