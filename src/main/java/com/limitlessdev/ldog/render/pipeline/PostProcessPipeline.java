@@ -7,6 +7,7 @@ import com.limitlessdev.ldog.render.pipeline.passes.FSR1EASUPass;
 import com.limitlessdev.ldog.render.pipeline.passes.FSR1QualityPass;
 import com.limitlessdev.ldog.render.pipeline.passes.LDOGFXAAPass;
 import com.limitlessdev.ldog.render.pipeline.passes.RCASSharpenPass;
+import com.limitlessdev.ldog.render.pipeline.passes.TAAAccumulatePass;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -48,11 +49,14 @@ public final class PostProcessPipeline {
         passes.add(new BilinearBlitPass());
         passes.add(new FSR1EASUPass());
         passes.add(new FSR1QualityPass());
-        // RCAS runs AFTER whichever upscaler was active, so it sharpens the
-        // final upscaled image rather than the scaled-space source.
+        // TAA runs AFTER the upscaler — temporal accumulation operates on the
+        // native-res upscaled image. Companion MixinEntityRendererJitter
+        // offsets the projection matrix per frame so samples hit different
+        // pixel centers for detail accumulation.
+        passes.add(new TAAAccumulatePass());
+        // RCAS sharpens the blended TAA result (not a noisy pre-blend image).
         passes.add(new RCASSharpenPass());
-        // FXAA runs LAST so it can smooth any aliasing introduced by the
-        // upscaler + RCAS sharpen combo.
+        // FXAA runs LAST so it smooths any aliasing introduced earlier.
         passes.add(new LDOGFXAAPass());
     }
 

@@ -42,9 +42,11 @@ A phased development plan for building out Limitless Development Optigame, from 
 **What's in the tree but UNVERIFIED:**
 - None of the 9a.5 through 9a.8 features have been tested in-game by the user — shipped after user went AFK. Scale change, FSR1-Quality selection, Quality Presets, LDOG global presets, RCAS, FXAA quality levels all need live verification.
 
+**9c.1 jittered-projection TAA shipped 2026-04-17 (unverified in-game):** `JitterHelper` Halton(2, 3), `MixinEntityRendererJitter` (late-config, applies sub-pixel offset to GL_PROJECTION after each gluPerspective), `TAAAccumulatePass` pipeline pass with neighborhood clamping. Config + GUI toggle + weight slider. Ordering: upscaler → TAA → RCAS → FXAA. Expected behavior: smoother static-scene edges, visible ghosting on camera motion (9c.2 needs motion vectors to fix). Requires pipeline ON.
+
 **Key next steps (priority order):**
-1. **Verify 9a.5 — 9a.8 in-game** (one relaunch covers everything).
-2. **Phase 9c.1 — Jittered-projection TAA** — ~3-5 days, low risk. See `docs/PHASE_9C_TEMPORAL_DEEP_DIVE.md`.
+1. **Verify 9a.5 — 9a.8 and 9c.1 in-game** (one relaunch covers everything). For 9c.1 specifically: enable Post Pipeline + TAA, stand still and look at fine detail (distant text, leaf edges). Jitter samples different centers over the Halton cycle so static scenes should accumulate sub-pixel detail.
+2. **Phase 9c.2 — camera motion vectors** — 1-2 wks. See `docs/PHASE_9C_TEMPORAL_DEEP_DIVE.md`.
 3. **Phase 10b** runtime-togglable borderless — medium risk, needs `Display.destroy`/`create` + subsystem coordination.
 4. **Phase C4** (OptiFine Override Mode) — reverse coexistence, reflective writes to `optifine.Config`.
 5. **Phase 6d** custom-sky injection verification (from earlier session, still open).
@@ -237,7 +239,9 @@ A phased development plan for building out Limitless Development Optigame, from 
 - [x] **9a.7 (2026-04-17):** `LDOGPreset` enum — whole-mod presets (Vanilla / Performance / Default / Fancy / Ultra / Custom). Renders at top of settings list. `LDOGPreset.apply()` sets AA/FXAA/ExtBorder/water change flags so `saveAndClose` triggers the right reloads.
 - [x] **9a.8 (2026-04-17):** `LDOGFXAAPass` — LDOG-original FXAA 3.11-inspired shader with 5 quality levels. Pipeline FXAA replaces MC's fixed FXAA when pipeline is on; `FXAAHandler` unloads MC's shader in that case. See Phase 7d for details.
 - [ ] **9b quality tuning + validation (next):** test matrix across resource packs. Doc-only; no code change until user runs the protocol. See `docs/POST_9A4_RESEARCH.md`.
-- [ ] **9c temporal upscaling (staged):** staged plan in `docs/PHASE_9C_TEMPORAL_DEEP_DIVE.md`. 9c.1 (jittered-projection TAA) is the MVP entry point — 3-5 days, low risk. 9c.2 adds camera motion vectors (1-2 wks). Later stages (entity MV, FSR2 reconstruction, reactive mask) are weeks-to-months. Honest finding: neither Super Resolution nor Radiance reference mods apply to our stack; we'd be pioneering temporal on MC 1.12.2 OpenGL 3.0.
+- [x] **9c.1 (2026-04-17):** jittered-projection TAA MVP shipped. `JitterHelper` generates Halton(2, 3) sub-pixel offsets over a 16-frame cycle. `MixinEntityRendererJitter` applies offsets to GL_PROJECTION after each `gluPerspective` call (jitter advances once per renderWorldPass pass=2). `TAAAccumulatePass` pipeline pass captures main FB each frame, 3x3-neighborhood-clamps the history texture to kill ghosting on moving content, blends via `mix(cur, clampedHist, historyWeight)`, then copies result to history for next frame. Config + GUI toggle + weight slider (0.0 — 0.95). Scene target dims (when upscaling) used for jitter basis so sub-pixel detail accumulates at source-render resolution.
+- [ ] **9c.2 (next):** camera motion vectors — depth-based reprojection for history lookup. Eliminates ghosting on camera motion. 1-2 weeks per deep-dive doc.
+- [ ] **9c.3+ (deferred):** entity MV (weeks, invasive), FSR2-style reconstruction (weeks), reactive mask + polish. Evaluate based on 9c.2 results.
 - Deep-dive planning: `docs/P8_RESEARCH_AND_PLAN.md` (spatial family), `docs/POST_9A4_RESEARCH.md` (next-step menu), `docs/PHASE_9C_TEMPORAL_DEEP_DIVE.md` (temporal feasibility).
 
 **Concept:** AMD FidelityFX Super Resolution 1.0 (spatial upscaler). Render the scene at reduced resolution to an FBO, then apply FSR's sharpening/upscale pass to output at native resolution. Works on any GPU (AMD, NVIDIA, Intel) — no vendor lock-in unlike DLSS.

@@ -20,6 +20,7 @@
     "MixinEntityRendererLightmap",
     "MixinEntityRendererMSAA",
     "MixinEntityRendererPostPipeline",
+    "MixinEntityRendererJitter",
     "AccessorEntityRenderer"
   ],
   "server": []

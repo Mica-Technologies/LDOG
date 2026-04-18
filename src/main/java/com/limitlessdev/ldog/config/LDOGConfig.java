@@ -305,6 +305,29 @@ public class LDOGConfig {
     public static String fxaaQuality = "high";
 
     @Config.Comment({
+        "Enable temporal anti-aliasing (TAA) — Phase 9c.1 MVP.",
+        "Applies sub-pixel jitter to the projection matrix and blends each",
+        "frame's render with the previous frame's output for smoother edges",
+        "and accumulated sub-pixel detail on static scenes.",
+        "",
+        "Expected behavior: static scenes get cleaner edges than FXAA alone.",
+        "Moving the camera produces visible ghosting — next stage (9c.2) adds",
+        "motion vectors to fix that. Use neighborhood color clamping to keep",
+        "ghosting manageable in the meantime.",
+        "",
+        "Requires the post-process pipeline to be ON."
+    })
+    public static boolean enableTAA = false;
+
+    @Config.Comment({
+        "TAA history blend weight. Higher = more temporal smoothing but more",
+        "ghosting on motion. 0.0 = no history (identity, TAA does nothing),",
+        "0.9 = default, 0.95 = maximum smoothing."
+    })
+    @Config.RangeDouble(min = 0.0, max = 0.95)
+    public static double taaHistoryWeight = 0.9;
+
+    @Config.Comment({
         "Borderless windowed fullscreen: replaces exclusive fullscreen with an",
         "undecorated window sized to the desktop. Enables instant alt-tab,",
         "functional external overlays, and multi-monitor cursor movement.",

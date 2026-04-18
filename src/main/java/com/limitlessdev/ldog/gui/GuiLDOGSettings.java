@@ -105,6 +105,8 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_RCAS_STRENGTH = 106;
     private static final int BTN_LDOG_PRESET = 300;
     private static final int BTN_FXAA_QUALITY = 107;
+    private static final int BTN_TAA_ENABLE = 108;
+    private static final int BTN_TAA_WEIGHT = 109;
     private static final int BTN_BORDERLESS_FULLSCREEN = 110;
     private static final int BTN_BLOCK_FSO = 111;
 
@@ -113,6 +115,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final double[] PIPELINE_SCALE_VALUES = {1.0, 0.85, 0.75, 0.5};
     private static final double[] FSR1_SHARPNESS_VALUES = {0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0};
     private static final double[] RCAS_STRENGTH_VALUES = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.75, 1.0};
+    private static final double[] TAA_WEIGHT_VALUES = {0.0, 0.5, 0.7, 0.8, 0.85, 0.9, 0.92, 0.95};
     private static final String[] FONT_AA_MODES = {"off", "bilinear", "trilinear"};
     private static final int[] TTF_SIZES = {16, 20, 24, 28, 32, 40, 48};
 
@@ -214,6 +217,11 @@ public class GuiLDOGSettings extends GuiScreen {
                 toggleLabel("FXAA", LDOGConfig.enableFXAA)),
             new GuiButton(BTN_FXAA_QUALITY, 0, 0, w, h,
                 fxaaQualityLabel(com.limitlessdev.ldog.render.pipeline.FXAAQuality.selected())));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_TAA_ENABLE, 0, 0, w, h,
+                toggleLabel("TAA (9c.1)", LDOGConfig.enableTAA)),
+            new GuiButton(BTN_TAA_WEIGHT, 0, 0, w, h,
+                taaWeightLabel(LDOGConfig.taaHistoryWeight)));
 
         // -- Display (Phase 10) --
         settingsList.addHeaderRow("Display");
@@ -632,6 +640,14 @@ public class GuiLDOGSettings extends GuiScreen {
                 button.displayString = toggleLabel("FXAA", LDOGConfig.enableFXAA);
                 fxaaSettingsChanged = true;
                 break;
+            case BTN_TAA_ENABLE:
+                LDOGConfig.enableTAA = !LDOGConfig.enableTAA;
+                button.displayString = toggleLabel("TAA (9c.1)", LDOGConfig.enableTAA);
+                break;
+            case BTN_TAA_WEIGHT:
+                LDOGConfig.taaHistoryWeight = cycleValue(TAA_WEIGHT_VALUES, LDOGConfig.taaHistoryWeight);
+                button.displayString = taaWeightLabel(LDOGConfig.taaHistoryWeight);
+                break;
             case BTN_FXAA_QUALITY: {
                 com.limitlessdev.ldog.render.pipeline.FXAAQuality current =
                     com.limitlessdev.ldog.render.pipeline.FXAAQuality.selected();
@@ -1006,6 +1022,26 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a7cREQUIRES RESTART:\u00a77 LWJGL only reads the undecorated",
             "\u00a77flag at Display creation. Toggle this, click Done to save,",
             "\u00a77then relaunch the game for it to take effect.");
+        registerTooltip(BTN_TAA_ENABLE,
+            "\u00a7eTemporal AA (Phase 9c.1 MVP)",
+            "\u00a77Sub-pixel projection jitter + history-blend for temporal",
+            "\u00a77anti-aliasing. Static scenes get cleaner edges than FXAA",
+            "\u00a77alone, with accumulated sub-pixel detail over time.",
+            "",
+            "\u00a7cKnown limitation:\u00a77 no motion vectors yet, so moving",
+            "\u00a77the camera shows visible ghosting. Neighborhood colour",
+            "\u00a77clamping mitigates but doesn't fully fix. Phase 9c.2 will",
+            "\u00a77add camera MV to resolve.",
+            "",
+            "\u00a77Requires Post Pipeline ON.");
+        registerTooltip(BTN_TAA_WEIGHT,
+            "\u00a7eTAA History Blend Weight",
+            "\u00a770.00 = no history (TAA off effectively).",
+            "\u00a7a0.80:\u00a77 balanced, less ghost-prone.",
+            "\u00a7e0.90:\u00a77 default, strong temporal smoothing.",
+            "\u00a760.95:\u00a77 maximum smoothing, heavy ghosting on motion.",
+            "",
+            "\u00a77Live-adjustable. Lower values = less ghosting, less AA.");
         registerTooltip(BTN_FXAA_QUALITY,
             "\u00a7eFXAA Quality Level",
             "\u00a77Controls search-step count and edge-detection threshold",
@@ -1178,6 +1214,15 @@ public class GuiLDOGSettings extends GuiScreen {
             default:          color = "\u00a77"; break;
         }
         return "Preset: " + color + preset.displayName();
+    }
+
+    static String taaWeightLabel(double w) {
+        String color;
+        if (w < 0.01) color = "\u00a77";
+        else if (w <= 0.8) color = "\u00a7a";
+        else if (w <= 0.9) color = "\u00a7e";
+        else color = "\u00a76";
+        return "TAA Blend: " + color + String.format("%.2f", w);
     }
 
     static String fxaaQualityLabel(com.limitlessdev.ldog.render.pipeline.FXAAQuality q) {
