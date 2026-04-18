@@ -227,6 +227,30 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 ---
 
+## Phase 10: Borderless Windowed Fullscreen
+
+- [ ] Not started
+
+**Concept:** Vanilla MC 1.12.2 only supports exclusive fullscreen (`F11` toggles a true fullscreen mode that grabs the display). Add an LDOG option to switch fullscreen to **borderless windowed** — a maximized frameless window covering the whole screen. Behaves like fullscreen visually but leaves alt-tab instant, multi-monitor cursor movement unbroken, and discord/browser overlays functional.
+
+**Implementation sketch:**
+- Hook `Minecraft.toggleFullscreen()` via mixin.
+- When `LDOGConfig.borderlessFullscreen` is true, instead of calling `Display.setFullscreen(true)`:
+  - `Display.setFullscreen(false)`
+  - `Display.setDisplayMode(desktopDisplayMode)` (match native desktop size)
+  - Use LWJGL `System.setProperty("org.lwjgl.opengl.Window.undecorated", "true")` before the window is recreated, OR recreate the Display with undecorated flag.
+  - Position the window at (0, 0).
+- When toggling back off, restore the pre-fullscreen windowed size/position and re-enable decorations.
+
+**Risks / gotchas:**
+- LWJGL 2.9.4 (what MC 1.12.2 uses) has limited borderless support — `undecorated` is set at Display creation, not toggleable. May need to recreate the Display entirely, which is invasive (reloads GL context, resource packs).
+- Multi-monitor: need to pick the correct monitor (the one MC was on).
+- Aspect ratio: if the user's desktop resolution doesn't match, the pre-fullscreen windowed size should be preserved for toggling back.
+
+**Priority:** quality-of-life, post-Phase 9.
+
+---
+
 ## Phase C1: Mod Absorptions -- COMPLETE
 
 - [x] FPS Reducer -> FpsReducerHandler (AFK + unfocused + mouse tracking + HUD overlay)

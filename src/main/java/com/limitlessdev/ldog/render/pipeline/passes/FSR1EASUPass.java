@@ -55,28 +55,38 @@ public final class FSR1EASUPass implements PostProcessPass {
         "}\n" +
         "\n" +
         "void main() {\n" +
-        "    // 5-tap cross kernel around the bilinear sample.\n" +
-        "    vec3 c = texture2D(u_sceneTex, v_texCoord).rgb;\n" +
-        "    vec3 n = texture2D(u_sceneTex, v_texCoord + vec2(0.0, -u_invSceneDim.y)).rgb;\n" +
-        "    vec3 s = texture2D(u_sceneTex, v_texCoord + vec2(0.0,  u_invSceneDim.y)).rgb;\n" +
-        "    vec3 e = texture2D(u_sceneTex, v_texCoord + vec2( u_invSceneDim.x, 0.0)).rgb;\n" +
-        "    vec3 w = texture2D(u_sceneTex, v_texCoord + vec2(-u_invSceneDim.x, 0.0)).rgb;\n" +
+        "    vec2 off = u_invSceneDim;\n" +
+        "    // 5-tap cross (used for the sharpen kernel).\n" +
+        "    vec3 c  = texture2D(u_sceneTex, v_texCoord).rgb;\n" +
+        "    vec3 n  = texture2D(u_sceneTex, v_texCoord + vec2(0.0, -off.y)).rgb;\n" +
+        "    vec3 s  = texture2D(u_sceneTex, v_texCoord + vec2(0.0,  off.y)).rgb;\n" +
+        "    vec3 e  = texture2D(u_sceneTex, v_texCoord + vec2( off.x, 0.0)).rgb;\n" +
+        "    vec3 w  = texture2D(u_sceneTex, v_texCoord + vec2(-off.x, 0.0)).rgb;\n" +
+        "    // 4 diagonals (only used to widen the clamp range — not sharpen input).\n" +
+        "    vec3 nw = texture2D(u_sceneTex, v_texCoord + vec2(-off.x, -off.y)).rgb;\n" +
+        "    vec3 ne = texture2D(u_sceneTex, v_texCoord + vec2( off.x, -off.y)).rgb;\n" +
+        "    vec3 sw = texture2D(u_sceneTex, v_texCoord + vec2(-off.x,  off.y)).rgb;\n" +
+        "    vec3 se = texture2D(u_sceneTex, v_texCoord + vec2( off.x,  off.y)).rgb;\n" +
         "\n" +
-        "    // Per-channel local min/max for ringing clamp later.\n" +
-        "    vec3 minRGB = min(min(min(n, s), min(e, w)), c);\n" +
-        "    vec3 maxRGB = max(max(max(n, s), max(e, w)), c);\n" +
+        "    // Full 3x3 min/max for the anti-ringing clamp. Using 9 taps rather than 5\n" +
+        "    // widens the allowable overshoot so sharpening actually survives on hard\n" +
+        "    // edges, where the 5-tap center is the local extremum and a 5-tap clamp\n" +
+        "    // would snap it right back to its pre-sharpen value.\n" +
+        "    vec3 minRGB = min(min(min(min(n, s), min(e, w)), min(min(nw, ne), min(sw, se))), c);\n" +
+        "    vec3 maxRGB = max(max(max(max(n, s), max(e, w)), max(max(nw, ne), max(sw, se))), c);\n" +
         "\n" +
-        "    // Adaptive sharpen strength: mild in flat areas, stronger on high-contrast edges.\n" +
-        "    // Contrast is the luma delta across the 5-tap box; sharpness is a user-facing scalar\n" +
-        "    // (0.0 -> pure bilinear, 1.0 -> aggressive).\n" +
+        "    // Adaptive sharpen strength. Contrast is the luma spread across the 9-tap\n" +
+        "    // box; sharpness is a user-facing scalar (0 -> pure bilinear, 1 -> full).\n" +
         "    float contrast = luma(maxRGB) - luma(minRGB);\n" +
-        "    float k = clamp(contrast * 0.5 * u_sharpness, 0.0, 0.4 * u_sharpness);\n" +
+        "    float k = clamp(contrast * u_sharpness, 0.0, 0.6 * u_sharpness);\n" +
         "\n" +
         "    // Standard 5-tap unsharp-mask kernel: center weighted up, neighbors subtracted.\n" +
         "    vec3 sharpened = c * (1.0 + 4.0 * k) - (n + s + e + w) * k;\n" +
         "\n" +
-        "    // Clamp each channel to its local extreme — this is the 'contrast-limited'\n" +
-        "    // part that kills overshoot halos on the bright side of hard edges.\n" +
+        "    // Clamp to 9-tap extremes (wider than the sharpen kernel's own box). This\n" +
+        "    // allows on-edge pixels to overshoot their 5-tap neighbors while still\n" +
+        "    // bounded against any pixel in a 3x3 neighborhood — visible sharpening\n" +
+        "    // on edges without wild ringing halos.\n" +
         "    gl_FragColor = vec4(clamp(sharpened, minRGB, maxRGB), 1.0);\n" +
         "}\n";
 
@@ -143,9 +153,10 @@ public final class FSR1EASUPass implements PostProcessPass {
         shader.bind();
         shader.setUniform1i("u_sceneTex", 0);
         shader.setUniform2f("u_invSceneDim", 1.0f / ctx.sceneWidth(), 1.0f / ctx.sceneHeight());
-        // Sharpness default 0.7 gives a clear quality bump over bilinear without
-        // crunchy artifacts on 16x texture packs. Config-exposed in 9a.3.
-        shader.setUniform1f("u_sharpness", 0.7f);
+        // Sharpness default 0.9. Tuned together with the 9-tap clamp widening
+        // in the fragment shader — with the old 5-tap clamp this would have
+        // been mostly clamped away. Config-exposed in 9a.3.
+        shader.setUniform1f("u_sharpness", 0.9f);
 
         // Fullscreen triangle — bigger than the viewport, GPU clips the overhang.
         // Avoids the 2-triangle diagonal seam and is one fewer edge to rasterize.

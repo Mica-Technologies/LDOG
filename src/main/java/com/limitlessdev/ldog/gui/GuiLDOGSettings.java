@@ -362,19 +362,28 @@ public class GuiLDOGSettings extends GuiScreen {
     }
 
     private void handleListButtonClick(int mouseX, int mouseY) {
-        // Find which button in the list was clicked and dispatch actionPerformed
+        // Find which button in the list was clicked and dispatch actionPerformed.
+        // Returns on the first hit so a single click can only fire one button —
+        // prior behavior iterated through ALL rows and dispatched every hit,
+        // which could double-fire if stale coordinates on off-screen rows
+        // happened to coincide with the click point.
         for (int i = 0; i < settingsList.getSize(); i++) {
             net.minecraft.client.gui.GuiListExtended.IGuiListEntry entry = settingsList.getListEntry(i);
-            if (entry instanceof GuiLDOGSettingsList.ButtonRowEntry) {
-                GuiLDOGSettingsList.ButtonRowEntry row = (GuiLDOGSettingsList.ButtonRowEntry) entry;
-                GuiButton left = row.getLeftButton();
-                GuiButton right = row.getRightButton();
-                if (left != null && left.mousePressed(this.mc, mouseX, mouseY)) {
-                    try { actionPerformed(left); } catch (IOException ignored) {}
-                }
-                if (right != null && right.mousePressed(this.mc, mouseX, mouseY)) {
-                    try { actionPerformed(right); } catch (IOException ignored) {}
-                }
+            if (!(entry instanceof GuiLDOGSettingsList.ButtonRowEntry)) continue;
+            GuiLDOGSettingsList.ButtonRowEntry row = (GuiLDOGSettingsList.ButtonRowEntry) entry;
+            GuiButton left = row.getLeftButton();
+            GuiButton right = row.getRightButton();
+            if (left != null && left.mousePressed(this.mc, mouseX, mouseY)) {
+                com.limitlessdev.ldog.LDOGMod.LOGGER.debug(
+                    "LDOG GUI: dispatching actionPerformed for button id={}", left.id);
+                try { actionPerformed(left); } catch (IOException ignored) {}
+                return;
+            }
+            if (right != null && right.mousePressed(this.mc, mouseX, mouseY)) {
+                com.limitlessdev.ldog.LDOGMod.LOGGER.debug(
+                    "LDOG GUI: dispatching actionPerformed for button id={}", right.id);
+                try { actionPerformed(right); } catch (IOException ignored) {}
+                return;
             }
         }
     }
