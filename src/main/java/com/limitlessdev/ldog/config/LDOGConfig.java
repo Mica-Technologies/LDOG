@@ -10,6 +10,16 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 @Config(modid = Tags.MODID)
 public class LDOGConfig {
 
+    // ---- Global Preset ----
+
+    @Config.Comment({
+        "LDOG config preset: custom, vanilla, performance, default, fancy, or ultra.",
+        "Picking a preset overwrites all major visual + perf toggles at once.",
+        "Font settings, tint colors, FPS limits, and borderless-fullscreen are",
+        "preserved across preset changes since they're user-specific."
+    })
+    public static String globalPreset = "custom";
+
     // ---- Future Features (not yet implemented) ----
 
     @Config.Comment({

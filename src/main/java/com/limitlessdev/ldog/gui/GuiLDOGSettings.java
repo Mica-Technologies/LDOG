@@ -103,6 +103,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_UPSCALER_PRESET = 104;
     private static final int BTN_RCAS_ENABLE = 105;
     private static final int BTN_RCAS_STRENGTH = 106;
+    private static final int BTN_LDOG_PRESET = 300;
     private static final int BTN_BORDERLESS_FULLSCREEN = 110;
     private static final int BTN_BLOCK_FSO = 111;
 
@@ -149,6 +150,13 @@ public class GuiLDOGSettings extends GuiScreen {
         settingsList = new GuiLDOGSettingsList(this.mc, this.width, this.height, 28, this.height - 32);
         buttonTooltips.clear();
         registerTooltips();
+
+        // -- Global Preset --
+        settingsList.addHeaderRow("LDOG Preset");
+        settingsList.addButtonRow(
+            new GuiButton(BTN_LDOG_PRESET, 0, 0, w, h,
+                ldogPresetLabel(com.limitlessdev.ldog.config.LDOGPreset.selected())),
+            null);
 
         // -- Performance --
         settingsList.addHeaderRow("Performance");
@@ -652,6 +660,29 @@ public class GuiLDOGSettings extends GuiScreen {
                 com.limitlessdev.ldog.render.pipeline.UpscalerPreset.markCustom();
                 refreshPresetButton();
                 break;
+            case BTN_LDOG_PRESET: {
+                com.limitlessdev.ldog.config.LDOGPreset current =
+                    com.limitlessdev.ldog.config.LDOGPreset.selected();
+                com.limitlessdev.ldog.config.LDOGPreset[] all =
+                    com.limitlessdev.ldog.config.LDOGPreset.values();
+                com.limitlessdev.ldog.config.LDOGPreset next =
+                    all[(current.ordinal() + 1) % all.length];
+                next.apply();
+
+                // A preset can change AA / FXAA / Ext-Border / water toggles
+                // all at once. Mark the settings-changed flags so saveAndClose
+                // triggers the right reload paths on Done — extBorder triggers
+                // the heavy refreshResources (which also covers AA changes),
+                // fxaa triggers FXAAHandler.apply, water triggers chunk rebuild.
+                extBorderSettingsChanged = true;
+                fxaaSettingsChanged = true;
+                waterSettingsChanged = true;
+
+                // Rebuild the entire settings list so every affected button
+                // picks up its new label. Simpler than chasing 20+ updates.
+                this.initGui();
+                return;
+            }
             case BTN_RCAS_ENABLE:
                 LDOGConfig.enableRcasSharpen = !LDOGConfig.enableRcasSharpen;
                 button.displayString = toggleLabel("RCAS Sharpen", LDOGConfig.enableRcasSharpen);
@@ -789,6 +820,24 @@ public class GuiLDOGSettings extends GuiScreen {
 
     /** Called from {@link #initGui} to populate per-button hover tooltips. */
     private void registerTooltips() {
+        registerTooltip(BTN_LDOG_PRESET,
+            "\u00a7eLDOG Config Preset",
+            "\u00a77One-click bundle for the whole mod. Overwrites ~20 config",
+            "\u00a77toggles at once.",
+            "",
+            "\u00a7fVanilla:\u00a77 LDOG visual features OFF, closest to stock MC.",
+            "\u00a7bPerformance:\u00a77 visuals OFF, perf opts MAX, FSR1 at 0.5.",
+            "\u00a7aDefault:\u00a77 LDOG's opinionated first-install defaults.",
+            "\u00a7eFancy:\u00a77 visuals ON, FXAA + FSR1-Quality upscale + RCAS.",
+            "\u00a76Ultra:\u00a77 everything max — AF 16x, FSR1 Ultra upscale, RCAS.",
+            "\u00a77Custom:\u00a77 your own mix.",
+            "",
+            "\u00a7cNote:\u00a77 MSAA is OFF in Fancy and Ultra because MSAA and the",
+            "\u00a77post-process pipeline conflict — pipeline yields when MSAA",
+            "\u00a77is on. Those presets commit to the upscaling look.",
+            "",
+            "\u00a7cNot included:\u00a77 fonts, tint colors, FPS limits, borderless",
+            "\u00a77(all user-specific / platform-specific, preserved across changes).");
         registerTooltip(BTN_EXT_BORDER,
             "\u00a7eExtended Border Mipmaps",
             "\u00a77Fixes faint block-edge lines at distance when",
@@ -1083,6 +1132,20 @@ public class GuiLDOGSettings extends GuiScreen {
 
     static String upscalerLabel(com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm alg) {
         return "Upscaler: \u00a7a" + alg.displayName();
+    }
+
+    static String ldogPresetLabel(com.limitlessdev.ldog.config.LDOGPreset preset) {
+        String color;
+        switch (preset) {
+            case CUSTOM:      color = "\u00a77"; break;
+            case VANILLA:     color = "\u00a7f"; break;
+            case PERFORMANCE: color = "\u00a7b"; break;
+            case DEFAULT:     color = "\u00a7a"; break;
+            case FANCY:       color = "\u00a7e"; break;
+            case ULTRA:       color = "\u00a76"; break;
+            default:          color = "\u00a77"; break;
+        }
+        return "Preset: " + color + preset.displayName();
     }
 
     static String rcasStrengthLabel(double v) {
