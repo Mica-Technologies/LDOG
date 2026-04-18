@@ -109,6 +109,15 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_TAA_WEIGHT = 109;
     private static final int BTN_TAA_REACTIVE_MASK = 113;
     private static final int BTN_AUTO_SCALE = 112;
+    // Phase C4 OF interop modes — 7 features × 1 button each.
+    // 400+ range to stay clear of BTN_DONE=200 and BTN_LDOG_PRESET=300.
+    private static final int BTN_OF_MODE_CTM             = 400;
+    private static final int BTN_OF_MODE_EMISSIVE        = 401;
+    private static final int BTN_OF_MODE_DYNAMIC_LIGHTS  = 402;
+    private static final int BTN_OF_MODE_CUSTOM_SKY      = 403;
+    private static final int BTN_OF_MODE_HD_TEXTURES     = 404;
+    private static final int BTN_OF_MODE_SMOOTH_FONT     = 405;
+    private static final int BTN_OF_MODE_SHADERS         = 406;
     private static final int BTN_BORDERLESS_FULLSCREEN = 110;
     private static final int BTN_BLOCK_FSO = 111;
 
@@ -385,6 +394,37 @@ public class GuiLDOGSettings extends GuiScreen {
             makeFeatureButton(BTN_SHADERS, w, h, "Shaders",
                 LDOGConfig.enableShaders, OptiFineCompat.shouldHandleShaders()));
 
+        // -- OptiFine Interop (Phase C4) — only shown when OF is detected --
+        if (OptiFineCompat.isOptiFineLoaded()) {
+            settingsList.addHeaderRow("OptiFine Interop");
+            settingsList.addButtonRow(
+                ofInteropButton(BTN_OF_MODE_CTM, w, h,
+                    com.limitlessdev.ldog.compat.OFFeature.CONNECTED_TEXTURES,
+                    LDOGConfig.ofModeCTM),
+                ofInteropButton(BTN_OF_MODE_EMISSIVE, w, h,
+                    com.limitlessdev.ldog.compat.OFFeature.EMISSIVE_TEXTURES,
+                    LDOGConfig.ofModeEmissive));
+            settingsList.addButtonRow(
+                ofInteropButton(BTN_OF_MODE_DYNAMIC_LIGHTS, w, h,
+                    com.limitlessdev.ldog.compat.OFFeature.DYNAMIC_LIGHTS,
+                    LDOGConfig.ofModeDynamicLights),
+                ofInteropButton(BTN_OF_MODE_CUSTOM_SKY, w, h,
+                    com.limitlessdev.ldog.compat.OFFeature.CUSTOM_SKY,
+                    LDOGConfig.ofModeCustomSky));
+            settingsList.addButtonRow(
+                ofInteropButton(BTN_OF_MODE_HD_TEXTURES, w, h,
+                    com.limitlessdev.ldog.compat.OFFeature.HD_TEXTURES,
+                    LDOGConfig.ofModeHDTextures),
+                ofInteropButton(BTN_OF_MODE_SMOOTH_FONT, w, h,
+                    com.limitlessdev.ldog.compat.OFFeature.SMOOTH_FONT,
+                    LDOGConfig.ofModeSmoothFont));
+            settingsList.addButtonRow(
+                ofInteropButton(BTN_OF_MODE_SHADERS, w, h,
+                    com.limitlessdev.ldog.compat.OFFeature.SHADERS,
+                    LDOGConfig.ofModeShaders),
+                null);
+        }
+
         // Done button (fixed at bottom, outside scrollable area)
         this.buttonList.add(new GuiButton(BTN_DONE,
             this.width / 2 - 100, this.height - 27, 200, h,
@@ -658,6 +698,54 @@ public class GuiLDOGSettings extends GuiScreen {
                 button.displayString = autoScaleLabel(next);
                 break;
             }
+            // Phase C4 OF interop mode cycles. Each delegates to cycleOFMode
+            // which: reads current mode from LDOGConfig, advances via .next(),
+            // writes back, recomputes label. Cache invalidation happens on
+            // the settings-screen save event in LDOGConfig.EventHandler so we
+            // don't need to call OptiFineCompat.invalidateCache() per-click
+            // (settings only commit on Done).
+            case BTN_OF_MODE_CTM:
+                LDOGConfig.ofModeCTM = cycleOFMode(LDOGConfig.ofModeCTM);
+                button.displayString = ofInteropLabel(com.limitlessdev.ldog.compat.OFFeature.CONNECTED_TEXTURES,
+                    com.limitlessdev.ldog.compat.OFOverrideMode.fromConfigKey(LDOGConfig.ofModeCTM),
+                    com.limitlessdev.ldog.compat.OFConfigBridge.canControl(com.limitlessdev.ldog.compat.OFFeature.CONNECTED_TEXTURES));
+                break;
+            case BTN_OF_MODE_EMISSIVE:
+                LDOGConfig.ofModeEmissive = cycleOFMode(LDOGConfig.ofModeEmissive);
+                button.displayString = ofInteropLabel(com.limitlessdev.ldog.compat.OFFeature.EMISSIVE_TEXTURES,
+                    com.limitlessdev.ldog.compat.OFOverrideMode.fromConfigKey(LDOGConfig.ofModeEmissive),
+                    com.limitlessdev.ldog.compat.OFConfigBridge.canControl(com.limitlessdev.ldog.compat.OFFeature.EMISSIVE_TEXTURES));
+                break;
+            case BTN_OF_MODE_DYNAMIC_LIGHTS:
+                LDOGConfig.ofModeDynamicLights = cycleOFMode(LDOGConfig.ofModeDynamicLights);
+                button.displayString = ofInteropLabel(com.limitlessdev.ldog.compat.OFFeature.DYNAMIC_LIGHTS,
+                    com.limitlessdev.ldog.compat.OFOverrideMode.fromConfigKey(LDOGConfig.ofModeDynamicLights),
+                    com.limitlessdev.ldog.compat.OFConfigBridge.canControl(com.limitlessdev.ldog.compat.OFFeature.DYNAMIC_LIGHTS));
+                break;
+            case BTN_OF_MODE_CUSTOM_SKY:
+                LDOGConfig.ofModeCustomSky = cycleOFMode(LDOGConfig.ofModeCustomSky);
+                button.displayString = ofInteropLabel(com.limitlessdev.ldog.compat.OFFeature.CUSTOM_SKY,
+                    com.limitlessdev.ldog.compat.OFOverrideMode.fromConfigKey(LDOGConfig.ofModeCustomSky),
+                    com.limitlessdev.ldog.compat.OFConfigBridge.canControl(com.limitlessdev.ldog.compat.OFFeature.CUSTOM_SKY));
+                break;
+            case BTN_OF_MODE_HD_TEXTURES:
+                LDOGConfig.ofModeHDTextures = cycleOFMode(LDOGConfig.ofModeHDTextures);
+                button.displayString = ofInteropLabel(com.limitlessdev.ldog.compat.OFFeature.HD_TEXTURES,
+                    com.limitlessdev.ldog.compat.OFOverrideMode.fromConfigKey(LDOGConfig.ofModeHDTextures),
+                    com.limitlessdev.ldog.compat.OFConfigBridge.canControl(com.limitlessdev.ldog.compat.OFFeature.HD_TEXTURES));
+                break;
+            case BTN_OF_MODE_SMOOTH_FONT:
+                LDOGConfig.ofModeSmoothFont = cycleOFMode(LDOGConfig.ofModeSmoothFont);
+                button.displayString = ofInteropLabel(com.limitlessdev.ldog.compat.OFFeature.SMOOTH_FONT,
+                    com.limitlessdev.ldog.compat.OFOverrideMode.fromConfigKey(LDOGConfig.ofModeSmoothFont),
+                    com.limitlessdev.ldog.compat.OFConfigBridge.canControl(com.limitlessdev.ldog.compat.OFFeature.SMOOTH_FONT));
+                break;
+            case BTN_OF_MODE_SHADERS:
+                LDOGConfig.ofModeShaders = cycleOFMode(LDOGConfig.ofModeShaders);
+                button.displayString = ofInteropLabel(com.limitlessdev.ldog.compat.OFFeature.SHADERS,
+                    com.limitlessdev.ldog.compat.OFOverrideMode.fromConfigKey(LDOGConfig.ofModeShaders),
+                    com.limitlessdev.ldog.compat.OFConfigBridge.canControl(com.limitlessdev.ldog.compat.OFFeature.SHADERS));
+                break;
             case BTN_TAA_WEIGHT:
                 LDOGConfig.taaHistoryWeight = cycleValue(TAA_WEIGHT_VALUES, LDOGConfig.taaHistoryWeight);
                 button.displayString = taaWeightLabel(LDOGConfig.taaHistoryWeight);
@@ -1206,6 +1294,43 @@ public class GuiLDOGSettings extends GuiScreen {
             btn.enabled = false;
         }
         return btn;
+    }
+
+    /**
+     * Phase C4: builds an OF interop cycle button. Greyed when the bridge
+     * couldn't resolve a write target for the feature (per-OF-version field
+     * naming differences), so the user understands why LDOG_OVERRIDE wouldn't
+     * stick if they tried to set it.
+     */
+    private static GuiButton ofInteropButton(int id, int w, int h,
+                                              com.limitlessdev.ldog.compat.OFFeature feature,
+                                              String currentMode) {
+        com.limitlessdev.ldog.compat.OFOverrideMode mode =
+            com.limitlessdev.ldog.compat.OFOverrideMode.fromConfigKey(currentMode);
+        boolean controllable = com.limitlessdev.ldog.compat.OFConfigBridge.canControl(feature);
+        String label = ofInteropLabel(feature, mode, controllable);
+        GuiButton btn = new GuiButton(id, 0, 0, w, h, label);
+        // Don't disable when uncontrollable — user can still pick auto/optifine,
+        // just LDOG_OVERRIDE will fall back. Visual hint via the label colour.
+        return btn;
+    }
+
+    static String ofInteropLabel(com.limitlessdev.ldog.compat.OFFeature feature,
+                                  com.limitlessdev.ldog.compat.OFOverrideMode mode,
+                                  boolean controllable) {
+        String modeColour;
+        switch (mode) {
+            case AUTO:              modeColour = "\u00a77"; break;  // grey
+            case LDOG_OVERRIDE:     modeColour = controllable ? "\u00a7a" : "\u00a7c"; break;  // green if works, red if can't control
+            case OPTIFINE_OVERRIDE: modeColour = "\u00a7e"; break;  // yellow
+            default:                modeColour = "\u00a77"; break;
+        }
+        return feature.displayName() + ": " + modeColour + mode.displayName();
+    }
+
+    /** Cycle an OF interop mode string: auto → ldog → optifine → auto. */
+    static String cycleOFMode(String current) {
+        return com.limitlessdev.ldog.compat.OFOverrideMode.fromConfigKey(current).next().configKey();
     }
 
     static int cycleValue(int[] values, int current) {

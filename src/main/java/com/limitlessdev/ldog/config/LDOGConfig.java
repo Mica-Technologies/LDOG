@@ -468,6 +468,36 @@ public class LDOGConfig {
     @Config.RangeDouble(min = 0.0, max = 2.0)
     public static double waterTintBlue = 0.85;
 
+    // ---- OptiFine Interop (Phase C4) ----
+    // Per-feature override mode. String-backed enum; values: "auto", "ldog", "optifine".
+    //   auto     = legacy behavior (defer to OF when loaded — safe default).
+    //   ldog     = try to disable OF's version via reflective GameSettings write,
+    //              then run LDOG's. Falls back to optifine if the disable fails.
+    //   optifine = explicitly defer to OF (equivalent to auto when OF loaded).
+    // Only consulted when OptiFine is detected. When OF is absent, LDOG runs
+    // its own implementation regardless of these values.
+
+    @Config.Comment("OF interop mode for Connected Textures. Values: auto / ldog / optifine.")
+    public static String ofModeCTM = "auto";
+
+    @Config.Comment("OF interop mode for Emissive Textures. Values: auto / ldog / optifine.")
+    public static String ofModeEmissive = "auto";
+
+    @Config.Comment("OF interop mode for Dynamic Lights. Values: auto / ldog / optifine.")
+    public static String ofModeDynamicLights = "auto";
+
+    @Config.Comment("OF interop mode for Custom Sky. Values: auto / ldog / optifine.")
+    public static String ofModeCustomSky = "auto";
+
+    @Config.Comment("OF interop mode for HD Textures. Values: auto / ldog / optifine.")
+    public static String ofModeHDTextures = "auto";
+
+    @Config.Comment("OF interop mode for Smooth Font. Values: auto / ldog / optifine.")
+    public static String ofModeSmoothFont = "auto";
+
+    @Config.Comment("OF interop mode for Shaders. Values: auto / ldog / optifine.")
+    public static String ofModeShaders = "auto";
+
     @Mod.EventBusSubscriber(modid = Tags.MODID)
     private static class EventHandler {
 
@@ -475,6 +505,11 @@ public class LDOGConfig {
         public static void onConfigChanged(ConfigChangedEvent.OnConfigChangedEvent event) {
             if (event.getModID().equals(Tags.MODID)) {
                 ConfigManager.sync(Tags.MODID, Config.Type.INSTANCE);
+                // Phase C4: drop the cached per-feature OF interop decisions
+                // so a mode change picks up on the next frame's shouldHandle()
+                // call instead of needing a restart. Cheap (clears 7 enum-map
+                // entries) and only runs on actual config-screen save.
+                com.limitlessdev.ldog.compat.OptiFineCompat.invalidateCache();
             }
         }
     }
