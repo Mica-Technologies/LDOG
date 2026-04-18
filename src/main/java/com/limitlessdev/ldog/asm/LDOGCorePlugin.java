@@ -4,6 +4,7 @@ import net.minecraftforge.fml.relauncher.IFMLLoadingPlugin;
 import zone.rong.mixinbooter.IEarlyMixinLoader;
 
 import javax.annotation.Nullable;
+import java.io.File;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -55,6 +56,20 @@ public class LDOGCorePlugin implements IFMLLoadingPlugin, IEarlyMixinLoader {
 
     @Override
     public void injectData(Map<String, Object> data) {
+        // Phase 10: flip LWJGL's undecorated system property BEFORE Minecraft
+        // creates its Display. This is the only place the flag can be set in
+        // time — ConfigManager doesn't exist yet, so we read the .cfg file
+        // directly. Toggling the config requires a game restart for this
+        // reason; the GUI tooltip spells that out.
+        Object mcLocation = data.get("mcLocation");
+        if (mcLocation instanceof File) {
+            File mcDir = (File) mcLocation;
+            if (BorderlessFullscreenConfig.isEnabled(mcDir.toPath())) {
+                System.setProperty("org.lwjgl.opengl.Window.undecorated", "true");
+                // Logger isn't initialized yet in the core-plugin phase.
+                System.out.println("[LDOG] Borderless windowed fullscreen enabled — Display will be created undecorated");
+            }
+        }
     }
 
     @Override

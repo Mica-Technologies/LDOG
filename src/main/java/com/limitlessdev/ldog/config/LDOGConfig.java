@@ -260,6 +260,21 @@ public class LDOGConfig {
     public static double fsr1Sharpness = 1.5;
 
     @Config.Comment({
+        "Borderless windowed fullscreen: replaces exclusive fullscreen with an",
+        "undecorated window sized to the desktop. Enables instant alt-tab,",
+        "functional external overlays, and multi-monitor cursor movement.",
+        "",
+        "Trade-off: the game window has NO decorations in windowed mode either",
+        "(no title bar, no min/max/close buttons, no resize grips). Drag via",
+        "Alt+drag on Windows or move the window by keyboard shortcut.",
+        "",
+        "REQUIRES RESTART to take effect — LWJGL only reads the undecorated",
+        "flag at Display creation time."
+    })
+    @Config.RequiresMcRestart
+    public static boolean borderlessFullscreen = false;
+
+    @Config.Comment({
         "Enable shader support (stretch goal).",
         "Auto-disabled when OptiFine is detected."
     })

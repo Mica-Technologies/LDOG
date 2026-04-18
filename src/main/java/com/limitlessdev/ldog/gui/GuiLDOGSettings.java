@@ -100,6 +100,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_PIPELINE_SCALE = 101;
     private static final int BTN_PIPELINE_UPSCALER = 102;
     private static final int BTN_FSR1_SHARPNESS = 103;
+    private static final int BTN_BORDERLESS_FULLSCREEN = 110;
 
     private static final int[] ANISOTROPIC_VALUES = {2, 4, 8, 16};
     private static final int[] MSAA_VALUES = {2, 4, 8};
@@ -197,6 +198,13 @@ public class GuiLDOGSettings extends GuiScreen {
         settingsList.addButtonRow(
             new GuiButton(BTN_FXAA, 0, 0, w, h,
                 toggleLabel("FXAA", LDOGConfig.enableFXAA)),
+            null);
+
+        // -- Display (Phase 10) --
+        settingsList.addHeaderRow("Display");
+        settingsList.addButtonRow(
+            new GuiButton(BTN_BORDERLESS_FULLSCREEN, 0, 0, w, h,
+                toggleLabel("Borderless Windowed", LDOGConfig.borderlessFullscreen)),
             null);
 
         // -- Post-Process Pipeline (Phase 8, Experimental) --
@@ -623,6 +631,10 @@ public class GuiLDOGSettings extends GuiScreen {
                 LDOGConfig.fsr1Sharpness = cycleValue(FSR1_SHARPNESS_VALUES, LDOGConfig.fsr1Sharpness);
                 button.displayString = fsr1SharpnessLabel(LDOGConfig.fsr1Sharpness);
                 break;
+            case BTN_BORDERLESS_FULLSCREEN:
+                LDOGConfig.borderlessFullscreen = !LDOGConfig.borderlessFullscreen;
+                button.displayString = toggleLabel("Borderless Windowed", LDOGConfig.borderlessFullscreen);
+                break;
             case BTN_EXT_BORDER:
                 LDOGConfig.enableExtendedBorderMipmaps = !LDOGConfig.enableExtendedBorderMipmaps;
                 button.displayString = toggleLabel("Ext Border Mips", LDOGConfig.enableExtendedBorderMipmaps);
@@ -834,6 +846,21 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a77edges than bilinear at the same render scale.",
             "",
             "\u00a77Only applies when render scale is below 1.0.");
+        registerTooltip(BTN_BORDERLESS_FULLSCREEN,
+            "\u00a7eBorderless Windowed Fullscreen",
+            "\u00a77Replaces exclusive fullscreen (F11) with an undecorated",
+            "\u00a77window sized to the desktop. Benefits:",
+            "\u00a77 - instant alt-tab, no display-mode flicker",
+            "\u00a77 - external overlays (Discord, browser, etc.) work",
+            "\u00a77 - cursor moves freely between monitors",
+            "",
+            "\u00a7cTrade-off:\u00a77 the game window has no decorations in",
+            "\u00a77\u00a7owindowed mode\u00a7r\u00a77 either — no title bar, no resize grips.",
+            "\u00a77Drag via Alt+drag on Windows.",
+            "",
+            "\u00a7cREQUIRES RESTART:\u00a77 LWJGL only reads the undecorated",
+            "\u00a77flag at Display creation. Toggle this, click Done to save,",
+            "\u00a77then relaunch the game for it to take effect.");
         registerTooltip(BTN_FSR1_SHARPNESS,
             "\u00a7eFSR1 Sharpness",
             "\u00a77Strength of FSR1's edge-enhancement kernel.",

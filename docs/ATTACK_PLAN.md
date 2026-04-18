@@ -229,7 +229,9 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 ## Phase 10: Borderless Windowed Fullscreen
 
-- [ ] Not started
+- [x] **Shipped 2026-04-17 (restart-required mode):** core plugin reads the LDOG config file directly (before ConfigManager initializes), sets `org.lwjgl.opengl.Window.undecorated=true` if the flag is on, MC's Display is then created undecorated for the session. A mixin on `Minecraft.toggleFullscreen` replaces exclusive fullscreen with resize-to-desktop + position (0,0) when the feature is active. Vanilla behavior is untouched when the config is off.
+- **Known trade-off:** undecorated is a session-level flag, so windowed mode loses title bar / resize grips. Documented clearly in the GUI tooltip. Dragging requires Alt+drag (Windows) or keyboard window movement.
+- **Future work (Phase 10b):** runtime-togglable version via `Display.destroy()` + `Display.create()` + coordinated LDOG subsystem GL cleanup. Higher risk; deferred.
 
 **Concept:** Vanilla MC 1.12.2 only supports exclusive fullscreen (`F11` toggles a true fullscreen mode that grabs the display). Add an LDOG option to switch fullscreen to **borderless windowed** — a maximized frameless window covering the whole screen. Behaves like fullscreen visually but leaves alt-tab instant, multi-monitor cursor movement unbroken, and discord/browser overlays functional.
 
