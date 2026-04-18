@@ -374,13 +374,13 @@ public class GuiLDOGSettings extends GuiScreen {
             GuiButton left = row.getLeftButton();
             GuiButton right = row.getRightButton();
             if (left != null && left.mousePressed(this.mc, mouseX, mouseY)) {
-                com.limitlessdev.ldog.LDOGMod.LOGGER.debug(
+                com.limitlessdev.ldog.LDOGMod.LOGGER.info(
                     "LDOG GUI: dispatching actionPerformed for button id={}", left.id);
                 try { actionPerformed(left); } catch (IOException ignored) {}
                 return;
             }
             if (right != null && right.mousePressed(this.mc, mouseX, mouseY)) {
-                com.limitlessdev.ldog.LDOGMod.LOGGER.debug(
+                com.limitlessdev.ldog.LDOGMod.LOGGER.info(
                     "LDOG GUI: dispatching actionPerformed for button id={}", right.id);
                 try { actionPerformed(right); } catch (IOException ignored) {}
                 return;
