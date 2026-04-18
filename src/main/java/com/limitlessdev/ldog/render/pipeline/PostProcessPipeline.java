@@ -4,6 +4,7 @@ import com.limitlessdev.ldog.LDOGMod;
 import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.pipeline.passes.BilinearBlitPass;
 import com.limitlessdev.ldog.render.pipeline.passes.FSR1EASUPass;
+import com.limitlessdev.ldog.render.pipeline.passes.FSR1QualityPass;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -44,6 +45,7 @@ public final class PostProcessPipeline {
         // (NIS, FSR2, etc.) plug in here alongside the existing ones.
         passes.add(new BilinearBlitPass());
         passes.add(new FSR1EASUPass());
+        passes.add(new FSR1QualityPass());
     }
 
     /**

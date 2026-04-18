@@ -16,7 +16,16 @@ public enum UpscalerAlgorithm {
     BILINEAR("bilinear", "Bilinear"),
 
     /** FSR1-style edge-adaptive spatial upsampling. Sharper than bilinear. */
-    FSR1("fsr1", "FSR1");
+    FSR1("fsr1", "FSR1"),
+
+    /**
+     * FSR1 with direction-biased EASU sampling: Sobel edge detection +
+     * anisotropic taps along the detected edge, plus contrast-adaptive
+     * sharpen on top. Noticeably crisper on diagonal geometry compared to
+     * the plain FSR1 unsharp-mask, at the cost of ~8 extra texture fetches
+     * per pixel. Still cheap enough to enable at any render scale.
+     */
+    FSR1_QUALITY("fsr1_quality", "FSR1-Quality");
 
     private final String configKey;
     private final String displayName;
