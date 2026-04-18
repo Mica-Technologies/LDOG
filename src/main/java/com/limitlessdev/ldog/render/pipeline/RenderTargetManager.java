@@ -33,10 +33,13 @@ public final class RenderTargetManager {
     private int scaledWidth;
     private int scaledHeight;
 
-    // Scene (color + depth) target — receives scaled world rendering.
+    // Scene (color + depth) target — receives scaled world rendering. Depth
+    // is a TEXTURE (not a renderbuffer) since TAA's motion-vector path needs
+    // to sample it in a fragment shader. Moved from RBO → texture in Phase
+    // 9c.2 when depth sampling became a requirement.
     private int sceneFbo;
     private int sceneColorTex;
-    private int sceneDepthRbo;
+    private int sceneDepthTex;
 
     // Ping-pong color-only target for multi-pass filters.
     private int pingFbo;
@@ -61,6 +64,7 @@ public final class RenderTargetManager {
 
     public int getSceneFbo() { return sceneFbo; }
     public int getSceneColorTexture() { return sceneColorTex; }
+    public int getSceneDepthTexture() { return sceneDepthTex; }
     public int getPingPongFbo() { return pingFbo; }
     public int getPingPongColorTexture() { return pingColorTex; }
     public int getScaledWidth() { return scaledWidth; }
@@ -118,7 +122,7 @@ public final class RenderTargetManager {
     private boolean createSceneTarget(int w, int h) {
         sceneFbo = GL30.glGenFramebuffers();
         sceneColorTex = GL11.glGenTextures();
-        sceneDepthRbo = GL30.glGenRenderbuffers();
+        sceneDepthTex = GL11.glGenTextures();
 
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, sceneColorTex);
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, w, h, 0,
@@ -129,14 +133,23 @@ public final class RenderTargetManager {
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
 
+        // Depth-stencil as a TEXTURE (not a renderbuffer) so Phase 9c.2 TAA
+        // can sample it for motion-vector reprojection. GL_NEAREST filter —
+        // interpolating depth values creates non-existent surfaces.
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, sceneDepthTex);
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_DEPTH24_STENCIL8, w, h, 0,
+            GL30.GL_DEPTH_STENCIL, GL30.GL_UNSIGNED_INT_24_8, (java.nio.ByteBuffer) null);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, sceneFbo);
         GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
             GL11.GL_TEXTURE_2D, sceneColorTex, 0);
-
-        GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, sceneDepthRbo);
-        GL30.glRenderbufferStorage(GL30.GL_RENDERBUFFER, GL30.GL_DEPTH24_STENCIL8, w, h);
-        GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_STENCIL_ATTACHMENT,
-            GL30.GL_RENDERBUFFER, sceneDepthRbo);
+        GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_STENCIL_ATTACHMENT,
+            GL11.GL_TEXTURE_2D, sceneDepthTex, 0);
 
         int status = GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER);
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
@@ -176,7 +189,7 @@ public final class RenderTargetManager {
     }
 
     private void disposeTargets() {
-        if (sceneDepthRbo != 0) { GL30.glDeleteRenderbuffers(sceneDepthRbo); sceneDepthRbo = 0; }
+        if (sceneDepthTex != 0) { GL11.glDeleteTextures(sceneDepthTex); sceneDepthTex = 0; }
         if (sceneColorTex != 0) { GL11.glDeleteTextures(sceneColorTex); sceneColorTex = 0; }
         if (sceneFbo != 0)      { GL30.glDeleteFramebuffers(sceneFbo);  sceneFbo = 0; }
         if (pingColorTex != 0)  { GL11.glDeleteTextures(pingColorTex);  pingColorTex = 0; }

@@ -2,14 +2,19 @@ package com.limitlessdev.ldog.render.pipeline.passes;
 
 import com.limitlessdev.ldog.LDOGMod;
 import com.limitlessdev.ldog.config.LDOGConfig;
+import com.limitlessdev.ldog.render.pipeline.CameraState;
 import com.limitlessdev.ldog.render.pipeline.PostProcessContext;
 import com.limitlessdev.ldog.render.pipeline.PostProcessPass;
+import com.limitlessdev.ldog.render.pipeline.RenderTargetManager;
 import com.limitlessdev.ldog.render.pipeline.ShaderProgram;
 import net.minecraft.client.renderer.GlStateManager;
+import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL30;
+
+import java.nio.FloatBuffer;
 
 /**
  * Phase 9c.1 — jittered-projection temporal anti-aliasing.
@@ -50,14 +55,46 @@ public final class TAAAccumulatePass implements PostProcessPass {
         "#version 120\n" +
         "uniform sampler2D u_current;\n" +
         "uniform sampler2D u_history;\n" +
+        "uniform sampler2D u_sceneDepth;\n" +
         "uniform vec2 u_invMainDim;\n" +
         "uniform float u_historyWeight;\n" +
+        "uniform mat4 u_invCurViewProj;\n" +
+        "uniform mat4 u_prevViewProj;\n" +
+        "uniform bool u_useMotionVectors;\n" +
         "varying vec2 v_texCoord;\n" +
         "\n" +
         "void main() {\n" +
         "    vec2 off = u_invMainDim;\n" +
         "    vec3 cur = texture2D(u_current, v_texCoord).rgb;\n" +
-        "    vec3 hist = texture2D(u_history, v_texCoord).rgb;\n" +
+        "\n" +
+        "    // Phase 9c.2: reproject history via depth + camera matrix delta so\n" +
+        "    // camera motion doesn't ghost. Fall back to direct history read\n" +
+        "    // when MV data isn't available (pipeline off or first frame).\n" +
+        "    vec2 histUV = v_texCoord;\n" +
+        "    if (u_useMotionVectors) {\n" +
+        "        float depth = texture2D(u_sceneDepth, v_texCoord).r;\n" +
+        "        // Reconstruct world-space position from NDC + current inverse VP.\n" +
+        "        vec4 ndc = vec4(v_texCoord * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);\n" +
+        "        vec4 worldW = u_invCurViewProj * ndc;\n" +
+        "        if (abs(worldW.w) > 1e-6) {\n" +
+        "            vec3 world = worldW.xyz / worldW.w;\n" +
+        "            // Re-project into previous-frame clip space.\n" +
+        "            vec4 prevClip = u_prevViewProj * vec4(world, 1.0);\n" +
+        "            if (prevClip.w > 0.0) {\n" +
+        "                vec2 prevNdc = prevClip.xy / prevClip.w;\n" +
+        "                histUV = prevNdc * 0.5 + 0.5;\n" +
+        "            }\n" +
+        "        }\n" +
+        "    }\n" +
+        "\n" +
+        "    // Disocclusion: reprojected UV outside screen means the pixel\n" +
+        "    // became visible this frame (no valid history). Use current only.\n" +
+        "    if (histUV.x < 0.0 || histUV.x > 1.0 || histUV.y < 0.0 || histUV.y > 1.0) {\n" +
+        "        gl_FragColor = vec4(cur, 1.0);\n" +
+        "        return;\n" +
+        "    }\n" +
+        "\n" +
+        "    vec3 hist = texture2D(u_history, histUV).rgb;\n" +
         "\n" +
         "    // 3x3 neighborhood of CURRENT for anti-ghost clamping.\n" +
         "    vec3 n  = texture2D(u_current, v_texCoord + vec2(0.0,   -off.y)).rgb;\n" +
@@ -72,8 +109,8 @@ public final class TAAAccumulatePass implements PostProcessPass {
         "    vec3 minC = min(min(min(min(cur, n), min(s, e)), min(min(w, nw), min(ne, sw))), se);\n" +
         "    vec3 maxC = max(max(max(max(cur, n), max(s, e)), max(max(w, nw), max(ne, sw))), se);\n" +
         "\n" +
-        "    // Clamp history to current's local range. Pixels that moved out of\n" +
-        "    // their neighborhood can't drag stale colour into the blend.\n" +
+        "    // Clamp reprojected history to current's local range. Entities that\n" +
+        "    // moved (not reflected in MV) can't drag stale colour into the blend.\n" +
         "    vec3 clampedHist = clamp(hist, minC, maxC);\n" +
         "\n" +
         "    vec3 blended = mix(cur, clampedHist, u_historyWeight);\n" +
@@ -88,6 +125,10 @@ public final class TAAAccumulatePass implements PostProcessPass {
     private int texHeight;
     private boolean hasHistory;
     private boolean loggedFirstExecute;
+    private boolean loggedFirstMV;
+
+    private static final FloatBuffer MAT_BUF_INV = BufferUtils.createFloatBuffer(16);
+    private static final FloatBuffer MAT_BUF_PREV = BufferUtils.createFloatBuffer(16);
 
     @Override
     public String id() {
@@ -163,11 +204,35 @@ public final class TAAAccumulatePass implements PostProcessPass {
         GL13.glActiveTexture(GL13.GL_TEXTURE1);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, historyTex);
 
+        // Phase 9c.2: bind scene depth on unit 2 + supply camera matrices for MV
+        // reprojection. Only enabled when the pipeline is actually binding the
+        // scene target (scene depth is valid) and CameraState has captured two
+        // frames. Falls back to 9c.1 direct-read behavior otherwise.
+        RenderTargetManager rtm = RenderTargetManager.INSTANCE;
+        boolean useMV = ctx.bindingActive() && rtm.isReady() && CameraState.isReady();
+        if (useMV) {
+            GL13.glActiveTexture(GL13.GL_TEXTURE2);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, rtm.getSceneDepthTexture());
+        }
+
         shader.bind();
         shader.setUniform1i("u_current", 0);
         shader.setUniform1i("u_history", 1);
+        shader.setUniform1i("u_sceneDepth", 2);
         shader.setUniform2f("u_invMainDim", 1.0f / w, 1.0f / h);
         shader.setUniform1f("u_historyWeight", (float) LDOGConfig.taaHistoryWeight);
+        shader.setUniform1i("u_useMotionVectors", useMV ? 1 : 0);
+
+        if (useMV) {
+            CameraState.writeCurInvViewProj(MAT_BUF_INV);
+            CameraState.writePrevViewProj(MAT_BUF_PREV);
+            shader.setUniformMatrix4("u_invCurViewProj", MAT_BUF_INV);
+            shader.setUniformMatrix4("u_prevViewProj", MAT_BUF_PREV);
+            if (!loggedFirstMV) {
+                loggedFirstMV = true;
+                LDOGMod.LOGGER.info("LDOG: TAA motion-vector reprojection ACTIVE (9c.2)");
+            }
+        }
 
         GL11.glBegin(GL11.GL_TRIANGLES);
         GL11.glVertex2f(-1.0f, -1.0f);
@@ -177,8 +242,11 @@ public final class TAAAccumulatePass implements PostProcessPass {
 
         ShaderProgram.unbind();
 
-        // Unbind unit 1 and switch back to unit 0 so we don't leave stray
-        // bindings for downstream passes.
+        // Unbind extra units, leave unit 0 selected.
+        if (useMV) {
+            GL13.glActiveTexture(GL13.GL_TEXTURE2);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+        }
         GL13.glActiveTexture(GL13.GL_TEXTURE1);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
         GL13.glActiveTexture(GL13.GL_TEXTURE0);

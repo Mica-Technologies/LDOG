@@ -4,6 +4,7 @@ import com.limitlessdev.ldog.LDOGMod;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL20;
 
+import java.nio.FloatBuffer;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -89,6 +90,12 @@ public final class ShaderProgram {
     public void setUniform4f(String uniform, float x, float y, float z, float w) {
         int loc = locate(uniform);
         if (loc >= 0) GL20.glUniform4f(loc, x, y, z, w);
+    }
+
+    /** Buffer must be positioned at 0 and contain 16 column-major floats. */
+    public void setUniformMatrix4(String uniform, FloatBuffer mat4) {
+        int loc = locate(uniform);
+        if (loc >= 0) GL20.glUniformMatrix4(loc, false, mat4);
     }
 
     public void dispose() {
