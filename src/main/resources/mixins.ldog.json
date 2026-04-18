@@ -24,6 +24,7 @@
     "MixinGuiIngameVignette",
     "MixinItemRendererHand",
     "MixinGuiIngameCrosshair",
+    "MixinGuiIngameHud",
     "MixinRenderItem",
     "MixinRenderLivingBase",
     "MixinWorldDynamicLights",

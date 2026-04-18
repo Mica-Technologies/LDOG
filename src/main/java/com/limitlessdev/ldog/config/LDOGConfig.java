@@ -534,6 +534,25 @@ public class LDOGConfig {
     @Config.Comment("Hide the crosshair / attack indicator. Useful for cinematic shots and screenshots.")
     public static boolean hideCrosshair = false;
 
+    @Config.Comment("Hide the hotbar (action bar). F1 hides the whole HUD; this hides only the hotbar.")
+    public static boolean hideHotbar = false;
+
+    @Config.Comment("Hide the experience bar + level number above the hotbar.")
+    public static boolean hideExperienceBar = false;
+
+    @Config.Comment("Hide the horse / pig jump-charge bar (when riding a mount that supports jumping).")
+    public static boolean hideHorseJumpBar = false;
+
+    @Config.Comment("Hide the floating item name that appears when you swap held items.")
+    public static boolean hideHeldItemTooltip = false;
+
+    @Config.Comment({
+        "Disable the swirling purple distortion overlay shown while standing",
+        "in a nether portal. Gameplay portal-counter still ticks (you'll still",
+        "be sent to the nether after the timeout) — only the visual is suppressed."
+    })
+    public static boolean disablePortalOverlay = false;
+
     @Config.Comment({
         "Enable entity LOD (Level of Detail).",
         "Distant entities render less frequently to save GPU work.",

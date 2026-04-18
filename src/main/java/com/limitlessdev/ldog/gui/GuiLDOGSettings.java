@@ -55,6 +55,11 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_HIDE_HAND          = 542;
     private static final int BTN_FULLBRIGHT         = 543;
     private static final int BTN_HIDE_CROSSHAIR     = 544;
+    private static final int BTN_HIDE_HOTBAR        = 545;
+    private static final int BTN_HIDE_EXP           = 546;
+    private static final int BTN_HIDE_JUMP          = 547;
+    private static final int BTN_HIDE_TOOLTIP       = 548;
+    private static final int BTN_NO_PORTAL_OVERLAY  = 549;
     private static final int BTN_ENTITY_LOD = 14;
     private static final int BTN_FPS_REDUCER = 20;
     private static final int BTN_UNFOCUSED_FPS = 21;
@@ -358,7 +363,18 @@ public class GuiLDOGSettings extends GuiScreen {
         settingsList.addButtonRow(
             new GuiButton(BTN_FULLBRIGHT, 0, 0, w, h,
                 toggleLabel("Fullbright", LDOGConfig.enableFullbright)),
-            null);
+            new GuiButton(BTN_NO_PORTAL_OVERLAY, 0, 0, w, h,
+                toggleLabel("No Portal Distort", LDOGConfig.disablePortalOverlay)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_HIDE_HOTBAR, 0, 0, w, h,
+                toggleLabel("Hide Hotbar", LDOGConfig.hideHotbar)),
+            new GuiButton(BTN_HIDE_EXP, 0, 0, w, h,
+                toggleLabel("Hide XP Bar", LDOGConfig.hideExperienceBar)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_HIDE_JUMP, 0, 0, w, h,
+                toggleLabel("Hide Jump Bar", LDOGConfig.hideHorseJumpBar)),
+            new GuiButton(BTN_HIDE_TOOLTIP, 0, 0, w, h,
+                toggleLabel("Hide Item Tooltip", LDOGConfig.hideHeldItemTooltip)));
 
         // -- Font Rendering --
         // Drop-in replacement for the Smooth Font mod. Swaps in HD ascii.png from
@@ -658,6 +674,26 @@ public class GuiLDOGSettings extends GuiScreen {
             case BTN_HIDE_CROSSHAIR:
                 LDOGConfig.hideCrosshair = !LDOGConfig.hideCrosshair;
                 button.displayString = toggleLabel("Hide Crosshair", LDOGConfig.hideCrosshair);
+                break;
+            case BTN_HIDE_HOTBAR:
+                LDOGConfig.hideHotbar = !LDOGConfig.hideHotbar;
+                button.displayString = toggleLabel("Hide Hotbar", LDOGConfig.hideHotbar);
+                break;
+            case BTN_HIDE_EXP:
+                LDOGConfig.hideExperienceBar = !LDOGConfig.hideExperienceBar;
+                button.displayString = toggleLabel("Hide XP Bar", LDOGConfig.hideExperienceBar);
+                break;
+            case BTN_HIDE_JUMP:
+                LDOGConfig.hideHorseJumpBar = !LDOGConfig.hideHorseJumpBar;
+                button.displayString = toggleLabel("Hide Jump Bar", LDOGConfig.hideHorseJumpBar);
+                break;
+            case BTN_HIDE_TOOLTIP:
+                LDOGConfig.hideHeldItemTooltip = !LDOGConfig.hideHeldItemTooltip;
+                button.displayString = toggleLabel("Hide Item Tooltip", LDOGConfig.hideHeldItemTooltip);
+                break;
+            case BTN_NO_PORTAL_OVERLAY:
+                LDOGConfig.disablePortalOverlay = !LDOGConfig.disablePortalOverlay;
+                button.displayString = toggleLabel("No Portal Distort", LDOGConfig.disablePortalOverlay);
                 break;
             case BTN_ENTITY_DIST:
                 LDOGConfig.entityRenderDistance = cycleValue(ENTITY_DIST_VALUES, LDOGConfig.entityRenderDistance);
