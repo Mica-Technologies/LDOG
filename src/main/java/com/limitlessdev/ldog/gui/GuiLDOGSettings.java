@@ -348,6 +348,9 @@ public class GuiLDOGSettings extends GuiScreen {
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
+        com.limitlessdev.ldog.LDOGMod.LOGGER.info(
+            "LDOG GUI: mouseClicked entry x={} y={} btn={} t={}",
+            mouseX, mouseY, mouseButton, System.currentTimeMillis() % 100000);
         super.mouseClicked(mouseX, mouseY, mouseButton);
         settingsList.mouseClicked(mouseX, mouseY, mouseButton);
 
@@ -375,13 +378,17 @@ public class GuiLDOGSettings extends GuiScreen {
             GuiButton right = row.getRightButton();
             if (left != null && left.mousePressed(this.mc, mouseX, mouseY)) {
                 com.limitlessdev.ldog.LDOGMod.LOGGER.info(
-                    "LDOG GUI: dispatching actionPerformed for button id={}", left.id);
+                    "LDOG GUI: dispatch id={} bounds=({},{})-({},{}) label='{}'",
+                    left.id, left.x, left.y, left.x + left.width, left.y + left.height,
+                    left.displayString);
                 try { actionPerformed(left); } catch (IOException ignored) {}
                 return;
             }
             if (right != null && right.mousePressed(this.mc, mouseX, mouseY)) {
                 com.limitlessdev.ldog.LDOGMod.LOGGER.info(
-                    "LDOG GUI: dispatching actionPerformed for button id={}", right.id);
+                    "LDOG GUI: dispatch id={} bounds=({},{})-({},{}) label='{}'",
+                    right.id, right.x, right.y, right.x + right.width, right.y + right.height,
+                    right.displayString);
                 try { actionPerformed(right); } catch (IOException ignored) {}
                 return;
             }
