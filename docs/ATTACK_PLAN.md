@@ -69,7 +69,7 @@ A phased development plan for building out Limitless Development Optigame, from 
 2. **Phase 9c.3 — entity motion vectors** (2-4 weeks, invasive). Fixes ghosting on moving mobs. Per `docs/PHASE_9C_TEMPORAL_DEEP_DIVE.md` this is the highest-cost stage; needs careful per-entity-render hook strategy.
 3. **Phase 10b** runtime-togglable borderless — `Display.destroy`/`create` + LDOG subsystem GL-state coordination.
 4. **Phase C4** (OptiFine Override Mode) — reverse coexistence via reflective writes to `optifine.Config`.
-5. **Phase 6d** custom-sky injection verification (from earlier session, still open).
+5. ~~**Phase 6d** custom-sky injection verification~~ — verified 2026-04-18; checklist item closed.
 6. **C3 polish** (optional): disk-cached TTF atlas, Unicode pages.
 7. **9a.9 extensions** (if auto-scale proves out): also auto-adjust upscaler algorithm and AA toggles at the tail of the ladder.
 
@@ -189,7 +189,7 @@ A phased development plan for building out Limitless Development Optigame, from 
 - [x] Parse optifine/sky/world0/skyN.properties (texture, HH:MM fade times, rotate, blend, speed, axis)
 - [x] CustomSkyLayer: time-based alpha fade with wrap-around, skybox cube rendering
 - [x] Custom sun/moon already supported by vanilla resource pack system
-- [ ] **BUG**: renderSky mixin had refmap ambiguity (two `renderSky` overloads). Fixed descriptor, regenerated refmap. Diagnostic logging added — needs in-game verification that mixin fires. If it does, may still need GL state or rendering fixes.
+- [x] **Mixin verified in-game (user-confirmed 2026-04-18)**. Earlier issues fixed across `c944b4e` (descriptor + refmap regen), `8ca2f52` (SRG name), `1113a60` (removed inverted pass check, MCPatcher layout). The `ldog$skyMixinConfirmed` one-shot log in `MixinRenderGlobal.renderSky` HEAD remains as a regression detector.
 
 ### 6e: Random Entity Textures
 - [x] RandomEntityTextureHandler: scans optifine/random/entity/ for numbered variants
