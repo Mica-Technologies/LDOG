@@ -214,7 +214,11 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 ## Phase 9: Upscaling (FSR)
 
-- [ ] Not started (requires Phase 8 FBO rendering pipeline)
+- [x] **Phase 9a.1 (2026-04-17):** BilinearBlitPass extracted from the mixin into its own PostProcessPass implementation. Pipeline now registers passes by algorithm with isEnabled() gating.
+- [x] **Phase 9a.2 (2026-04-17):** FSR1-style edge-adaptive upscaler shipped. LDOG-original GLSL (unsharp-mask-on-bilinear with contrast-adaptive strength). Compile path + ShaderProgram utility + fullscreen-triangle draw proven working.
+- [x] **Phase 9a.3 (2026-04-17):** Sharpness slider (0.0 — 2.0) in GUI. Live-tunable, user verified visible edge crispness differences across the range.
+- [ ] **Phase 9a.4 (next):** Direction-biased FSR1-Quality variant — Sobel-based edge detection + anisotropic sampling along the detected edge for meaningfully crisper edges, especially on diagonal geometry. Ships as a separate upscaler option alongside the current FSR1, not a replacement.
+- [ ] Phase 9b quality tuning + 9c temporal research — not started.
 - Deep-dive planning and feasibility reference: `docs/P8_RESEARCH_AND_PLAN.md`
 
 **Concept:** AMD FidelityFX Super Resolution 1.0 (spatial upscaler). Render the scene at reduced resolution to an FBO, then apply FSR's sharpening/upscale pass to output at native resolution. Works on any GPU (AMD, NVIDIA, Intel) — no vendor lock-in unlike DLSS.
@@ -230,8 +234,11 @@ A phased development plan for building out Limitless Development Optigame, from 
 ## Phase 10: Borderless Windowed Fullscreen
 
 - [x] **Shipped 2026-04-17 (restart-required mode):** core plugin reads the LDOG config file directly (before ConfigManager initializes), sets `org.lwjgl.opengl.Window.undecorated=true` if the flag is on, MC's Display is then created undecorated for the session. A mixin on `Minecraft.toggleFullscreen` replaces exclusive fullscreen with resize-to-desktop + position (0,0) when the feature is active. Vanilla behavior is untouched when the config is off.
+- [x] **Flicker fix (2026-04-17):** `Display.setDisplayMode` was being called with the full `DisplayMode` from `Display.getDesktopDisplayMode()` which carries refresh/bpp metadata; LWJGL 2.9.4 on Windows interpreted that as fullscreen mode-switch intent. Stripped to a plain `new DisplayMode(w, h)` and reordered the sequence (setResizable, setLocation, then setDisplayMode) so the window doesn't center-then-jump. Also added per-step timing logs.
+- [x] **Windows Fullscreen Optimizations dodge + user toggle (2026-04-17):** window sized `desktop_h - 1` by default so Win10/11 DWM doesn't auto-transition into optimized-borderless-fullscreen (that transition was the remaining desktop flash). Toggle available in the GUI under `Display → Block FS Optim`. Trade-off: ON = flicker-free but taskbar visible, OFF = clean taskbar-hidden but brief transition flash. Default ON.
+- [~] **Startup sizing still broken (2026-04-17):** when MC launches with `fullScreen=true` already saved in options, the main menu renders with black bars on the right and bottom until the user navigates to another menu and back. Added a `@Redirect` on the `Display.setFullscreen` call inside `Minecraft.setInitialDisplayMode` that routes to `BorderlessFullscreenHandler.setupAtStartup`, but user reports the issue persists. Likely cause: `displayWidth`/`displayHeight` are already set from the pre-create default (854×480) before setInitialDisplayMode runs, and the post-setFullscreen MC code that reads `Display.getDisplayMode()` may not be updating them correctly when the Display isn't yet created. Needs a closer look at the setInitialDisplayMode flow — possibly also needs to override the post-setFullscreen width/height read path. Workaround: user navigates menus once after launch and the resize self-corrects.
 - **Known trade-off:** undecorated is a session-level flag, so windowed mode loses title bar / resize grips. Documented clearly in the GUI tooltip. Dragging requires Alt+drag (Windows) or keyboard window movement.
-- **Future work (Phase 10b):** runtime-togglable version via `Display.destroy()` + `Display.create()` + coordinated LDOG subsystem GL cleanup. Higher risk; deferred.
+- **Future work (Phase 10b):** runtime-togglable version via `Display.destroy()` + `Display.create()` + coordinated LDOG subsystem GL cleanup. Higher risk; deferred. Also: the `blockFullscreenOptimizations` flag is read from `LDOGConfig` defaults at startup time because ConfigManager hasn't synced yet — could be upgraded to use the same early-config read path as `borderlessFullscreen` itself.
 
 **Concept:** Vanilla MC 1.12.2 only supports exclusive fullscreen (`F11` toggles a true fullscreen mode that grabs the display). Add an LDOG option to switch fullscreen to **borderless windowed** — a maximized frameless window covering the whole screen. Behaves like fullscreen visually but leaves alt-tab instant, multi-monitor cursor movement unbroken, and discord/browser overlays functional.
 
