@@ -256,7 +256,7 @@ public class GuiLDOGSettings extends GuiScreen {
             new GuiButton(BTN_FSR1_SHARPNESS, 0, 0, w, h,
                 fsr1SharpnessLabel(LDOGConfig.fsr1Sharpness)),
             new GuiButton(BTN_AUTO_SCALE, 0, 0, w, h,
-                toggleLabel("Auto Scale", LDOGConfig.enableAutoScale)));
+                autoScaleLabel(com.limitlessdev.ldog.render.pipeline.AutoScaleMode.selected())));
         settingsList.addButtonRow(
             new GuiButton(BTN_RCAS_ENABLE, 0, 0, w, h,
                 toggleLabel("RCAS Sharpen", LDOGConfig.enableRcasSharpen)),
@@ -651,10 +651,13 @@ public class GuiLDOGSettings extends GuiScreen {
                 LDOGConfig.enableTAA = !LDOGConfig.enableTAA;
                 button.displayString = toggleLabel("TAA (9c.1)", LDOGConfig.enableTAA);
                 break;
-            case BTN_AUTO_SCALE:
-                LDOGConfig.enableAutoScale = !LDOGConfig.enableAutoScale;
-                button.displayString = toggleLabel("Auto Scale", LDOGConfig.enableAutoScale);
+            case BTN_AUTO_SCALE: {
+                com.limitlessdev.ldog.render.pipeline.AutoScaleMode next =
+                    com.limitlessdev.ldog.render.pipeline.AutoScaleMode.selected().next();
+                LDOGConfig.autoScaleMode = next.configKey();
+                button.displayString = autoScaleLabel(next);
                 break;
+            }
             case BTN_TAA_WEIGHT:
                 LDOGConfig.taaHistoryWeight = cycleValue(TAA_WEIGHT_VALUES, LDOGConfig.taaHistoryWeight);
                 button.displayString = taaWeightLabel(LDOGConfig.taaHistoryWeight);
@@ -1039,17 +1042,22 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a77then relaunch the game for it to take effect.");
         registerTooltip(BTN_AUTO_SCALE,
             "\u00a7eAuto Scale (Dynamic Resolution Scaling)",
-            "\u00a77Automatically steps Render Scale up or down every 2 seconds",
-            "\u00a77to hit your display's refresh rate (or your in-game FPS",
-            "\u00a77limit, whichever is lower).",
+            "\u00a77Three-state cycle: Off / Normal / Aggressive.",
             "",
-            "\u00a77Steps through 1.00x -> 0.85x -> 0.75x -> 0.67x -> 0.50x.",
-            "\u00a77Drops a tier when FPS is below 90% of target. Raises a",
-            "\u00a77tier when FPS is above 110% of target.",
+            "\u00a77\u00a77Off:\u00a77 manual Render Scale honored.",
+            "\u00a7aNormal (Phase 9a.9):\u00a77 only Render Scale auto-adjusts.",
+            "\u00a77 5-tier ladder: 1.00 -> 0.85 -> 0.75 -> 0.67 -> 0.50.",
+            "\u00a76Aggressive (9a.9 ext):\u00a77 also auto-manages Upscaler",
+            "\u00a77 algorithm and FXAA quality + on/off across a 7-tier",
+            "\u00a77 extended ladder. At 0.50x, FSR1-Quality drops to FSR1",
+            "\u00a77 then Bilinear; FXAA Ultra -> High -> Medium -> Low -> off.",
             "",
-            "\u00a7cOverrides manual Render Scale while enabled.\u00a77 The slider",
-            "\u00a77still lets you see the current value but any cycle will be",
-            "\u00a77reset on the next auto-tick.",
+            "\u00a77Decisions every 2s: drops a tier when FPS < 90% of target,",
+            "\u00a77raises when FPS > 110%. Target = min(refresh, FPS limit).",
+            "",
+            "\u00a7cOverrides manual settings it manages.\u00a77 In Aggressive mode,",
+            "\u00a77this includes Upscaler + FXAA — manual GUI changes are reset",
+            "\u00a77on the next auto-tick.",
             "",
             "\u00a77Requires Post Pipeline ON.");
         registerTooltip(BTN_TAA_ENABLE,
@@ -1242,6 +1250,17 @@ public class GuiLDOGSettings extends GuiScreen {
 
     static String upscalerLabel(com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm alg) {
         return "Upscaler: \u00a7a" + alg.displayName();
+    }
+
+    static String autoScaleLabel(com.limitlessdev.ldog.render.pipeline.AutoScaleMode mode) {
+        String color;
+        switch (mode) {
+            case OFF:        color = "\u00a77"; break;  // grey
+            case NORMAL:     color = "\u00a7a"; break;  // green
+            case AGGRESSIVE: color = "\u00a76"; break;  // gold — owns more settings, louder warning colour
+            default:         color = "\u00a77"; break;
+        }
+        return "Auto Scale: " + color + mode.displayName();
     }
 
     static String ldogPresetLabel(com.limitlessdev.ldog.config.LDOGPreset preset) {
