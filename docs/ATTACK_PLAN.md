@@ -249,6 +249,8 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 **Priority:** quality-of-life, post-Phase 9.
 
+**Architectural reference (concept-level only):** `hancin/Fullscreen-Windowed-Minecraft` on GitHub is a long-standing mod solving this exact problem for older MC versions — worth reading for how it handles the Display-recreation flow, monitor selection, and windowed-size restore. **Do not copy code.** Per `docs/P8_RESEARCH_AND_PLAN.md` policy: external projects are design references only; all runtime code stays LDOG-original. Document which concepts were adopted and how LDOG implemented them independently.
+
 ---
 
 ## Phase C1: Mod Absorptions -- COMPLETE
