@@ -8,6 +8,7 @@ import com.limitlessdev.ldog.render.pipeline.passes.FSR1QualityPass;
 import com.limitlessdev.ldog.render.pipeline.passes.LDOGFXAAPass;
 import com.limitlessdev.ldog.render.pipeline.passes.RCASSharpenPass;
 import com.limitlessdev.ldog.render.pipeline.passes.TAAAccumulatePass;
+import com.limitlessdev.ldog.render.pipeline.passes.VignettePass;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -56,8 +57,12 @@ public final class PostProcessPipeline {
         passes.add(new TAAAccumulatePass());
         // RCAS sharpens the blended TAA result (not a noisy pre-blend image).
         passes.add(new RCASSharpenPass());
-        // FXAA runs LAST so it smooths any aliasing introduced earlier.
+        // FXAA runs late so it smooths any aliasing introduced earlier.
         passes.add(new LDOGFXAAPass());
+        // Vignette runs ABSOLUTE LAST — it's a final-image multiplicative
+        // darkening that shouldn't be smoothed by FXAA (FXAA's edge detector
+        // would otherwise treat the vignette gradient as an edge to soften).
+        passes.add(new VignettePass());
     }
 
     /**
