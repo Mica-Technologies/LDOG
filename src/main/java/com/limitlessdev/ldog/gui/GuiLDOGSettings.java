@@ -49,6 +49,12 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_WEATHER_RENDER     = 524;
     private static final int BTN_WEATHER_DENSITY    = 525;
     private static final int BTN_BIOME_BLEND        = 526;
+    // Comfort / Cinematic toggles
+    private static final int BTN_NO_DAMAGE_TILT     = 540;
+    private static final int BTN_NO_HURT_VIGNETTE   = 541;
+    private static final int BTN_HIDE_HAND          = 542;
+    private static final int BTN_FULLBRIGHT         = 543;
+    private static final int BTN_HIDE_CROSSHAIR     = 544;
     private static final int BTN_ENTITY_LOD = 14;
     private static final int BTN_FPS_REDUCER = 20;
     private static final int BTN_UNFOCUSED_FPS = 21;
@@ -337,6 +343,23 @@ public class GuiLDOGSettings extends GuiScreen {
                 biomeBlendLabel(LDOGConfig.biomeBlendRadius)),
             null);
 
+        // -- Comfort / Cinematic --
+        settingsList.addHeaderRow("Comfort / Cinematic");
+        settingsList.addButtonRow(
+            new GuiButton(BTN_NO_DAMAGE_TILT, 0, 0, w, h,
+                toggleLabel("No Damage Tilt", LDOGConfig.disableDamageTilt)),
+            new GuiButton(BTN_NO_HURT_VIGNETTE, 0, 0, w, h,
+                toggleLabel("No Hurt Vignette", LDOGConfig.disableHurtVignette)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_HIDE_HAND, 0, 0, w, h,
+                toggleLabel("Hide Hand", LDOGConfig.hideHand)),
+            new GuiButton(BTN_HIDE_CROSSHAIR, 0, 0, w, h,
+                toggleLabel("Hide Crosshair", LDOGConfig.hideCrosshair)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_FULLBRIGHT, 0, 0, w, h,
+                toggleLabel("Fullbright", LDOGConfig.enableFullbright)),
+            null);
+
         // -- Font Rendering --
         // Drop-in replacement for the Smooth Font mod. Swaps in HD ascii.png from
         // optifine/mcpatcher resource-pack paths and applies GL_LINEAR filtering
@@ -615,6 +638,26 @@ public class GuiLDOGSettings extends GuiScreen {
                 // for the new radius to take effect. Easiest way: trigger a
                 // resource reload, which invalidates chunk meshes.
                 net.minecraft.client.Minecraft.getMinecraft().renderGlobal.loadRenderers();
+                break;
+            case BTN_NO_DAMAGE_TILT:
+                LDOGConfig.disableDamageTilt = !LDOGConfig.disableDamageTilt;
+                button.displayString = toggleLabel("No Damage Tilt", LDOGConfig.disableDamageTilt);
+                break;
+            case BTN_NO_HURT_VIGNETTE:
+                LDOGConfig.disableHurtVignette = !LDOGConfig.disableHurtVignette;
+                button.displayString = toggleLabel("No Hurt Vignette", LDOGConfig.disableHurtVignette);
+                break;
+            case BTN_HIDE_HAND:
+                LDOGConfig.hideHand = !LDOGConfig.hideHand;
+                button.displayString = toggleLabel("Hide Hand", LDOGConfig.hideHand);
+                break;
+            case BTN_FULLBRIGHT:
+                LDOGConfig.enableFullbright = !LDOGConfig.enableFullbright;
+                button.displayString = toggleLabel("Fullbright", LDOGConfig.enableFullbright);
+                break;
+            case BTN_HIDE_CROSSHAIR:
+                LDOGConfig.hideCrosshair = !LDOGConfig.hideCrosshair;
+                button.displayString = toggleLabel("Hide Crosshair", LDOGConfig.hideCrosshair);
                 break;
             case BTN_ENTITY_DIST:
                 LDOGConfig.entityRenderDistance = cycleValue(ENTITY_DIST_VALUES, LDOGConfig.entityRenderDistance);

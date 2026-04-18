@@ -509,6 +509,31 @@ public class LDOGConfig {
     @Config.RangeInt(min = 1, max = 3)
     public static int biomeBlendRadius = 1;
 
+    // ---- Comfort / Cinematic toggles ----
+
+    @Config.Comment("Disable the camera tilt animation when you take damage.")
+    public static boolean disableDamageTilt = false;
+
+    @Config.Comment({
+        "Disable the red screen vignette flash when damaged.",
+        "Note: also disables the worldborder vignette (vanilla draws both",
+        "in the same renderVignette method)."
+    })
+    public static boolean disableHurtVignette = false;
+
+    @Config.Comment("Hide your held items / hand in first-person view.")
+    public static boolean hideHand = false;
+
+    @Config.Comment({
+        "Force the lightmap to full brightness regardless of actual light level.",
+        "Caves and night-time look fully lit. Overrides the lighting-customization",
+        "feature when both are on."
+    })
+    public static boolean enableFullbright = false;
+
+    @Config.Comment("Hide the crosshair / attack indicator. Useful for cinematic shots and screenshots.")
+    public static boolean hideCrosshair = false;
+
     @Config.Comment({
         "Enable entity LOD (Level of Detail).",
         "Distant entities render less frequently to save GPU work.",

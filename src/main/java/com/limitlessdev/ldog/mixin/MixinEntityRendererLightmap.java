@@ -37,6 +37,16 @@ public abstract class MixinEntityRendererLightmap {
         )
     )
     private void ldog$applyLightCustomization(float partialTicks, CallbackInfo ci) {
+        // Fullbright takes priority over color customization. Overwrites the
+        // entire 256-entry lightmap with white before the GPU upload runs,
+        // bypassing the color-temperature path entirely.
+        if (LDOGConfig.enableFullbright) {
+            for (int i = 0; i < lightmapColors.length; i++) {
+                lightmapColors[i] = 0xFFFFFFFF;
+            }
+            return;
+        }
+
         if (!LDOGConfig.enableLightTemperature) return;
 
         float blockR = (float) LDOGConfig.blockLightRed;
