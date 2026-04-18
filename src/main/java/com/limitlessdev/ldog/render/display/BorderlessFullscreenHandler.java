@@ -45,19 +45,32 @@ public final class BorderlessFullscreenHandler {
             hasSavedState = true;
         }
 
+        // Use ONLY width/height of the desktop — don't pass the full DisplayMode
+        // returned by Display.getDesktopDisplayMode(), because that carries
+        // bitsPerPixel + refreshRate and LWJGL 2.9.4 can interpret those fields
+        // as mode-change metadata and trigger a real display-mode switch
+        // (causing the OS desktop-flash even though we're not in exclusive
+        // fullscreen). A plain DisplayMode(w, h) is purely a window-size hint.
         DisplayMode desktop = Display.getDesktopDisplayMode();
-        Display.setDisplayMode(desktop);
+        int w = desktop.getWidth();
+        int h = desktop.getHeight();
+
+        // Order matters: position the window first, then resize it. Reversing
+        // causes LWJGL/OS to center the newly-resized window on its current
+        // monitor, and a subsequent setLocation jumps it to (0,0) — one paint
+        // at the wrong position, one paint at the right position = visible
+        // flicker.
         Display.setResizable(false);
         Display.setLocation(0, 0);
+        Display.setDisplayMode(new DisplayMode(w, h));
 
-        mc.displayWidth = desktop.getWidth();
-        mc.displayHeight = desktop.getHeight();
+        mc.displayWidth = w;
+        mc.displayHeight = h;
         mc.gameSettings.fullScreen = true;
         ((AccessorMinecraft) (Object) mc).ldog$setFullscreen(true);
         ((AccessorMinecraft) (Object) mc).ldog$updateFramebufferSize();
 
-        LDOGMod.LOGGER.info("LDOG: entered borderless fullscreen at {}x{}",
-            desktop.getWidth(), desktop.getHeight());
+        LDOGMod.LOGGER.info("LDOG: entered borderless fullscreen at {}x{}", w, h);
     }
 
     public static void exitBorderless(Minecraft mc) throws LWJGLException {
@@ -67,11 +80,13 @@ public final class BorderlessFullscreenHandler {
         int w = hasSavedState ? savedWidth : 854;
         int h = hasSavedState ? savedHeight : 480;
 
-        Display.setDisplayMode(new DisplayMode(w, h));
+        // Same order as enterBorderless: setResizable first, then position,
+        // then size. Position before size to avoid the center-then-jump flicker.
         Display.setResizable(true);
         if (hasSavedState) {
             Display.setLocation(savedX, savedY);
         }
+        Display.setDisplayMode(new DisplayMode(w, h));
 
         mc.displayWidth = w;
         mc.displayHeight = h;
