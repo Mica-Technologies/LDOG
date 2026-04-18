@@ -453,6 +453,62 @@ public class LDOGConfig {
     @Config.RangeDouble(min = 0.0, max = 1.0)
     public static double vignetteIntensity = 0.5;
 
+    // ---- Atmosphere: Clouds / Fog / Sky / Weather ----
+
+    @Config.Comment({
+        "Override the cloud altitude (Y). -1 = use vanilla default (varies by",
+        "dimension). 0..256 = clamp to that Y. Useful for placing clouds below",
+        "build limits in skybox builds, or above for cinematic shots.",
+        "Live-applied — no reload."
+    })
+    @Config.RangeInt(min = -1, max = 256)
+    public static int cloudHeightOverride = -1;
+
+    @Config.Comment({
+        "Fog distance multiplier. 1.0 = vanilla. Lower = closer fog (more",
+        "atmospheric), higher = farther fog (more visibility).",
+        "Applied to both fog start + end so the gradient stays the same shape."
+    })
+    @Config.RangeDouble(min = 0.25, max = 4.0)
+    public static double fogDistanceMultiplier = 1.0;
+
+    @Config.Comment("Render stars in the night sky. Off saves a small amount of GPU at night.")
+    public static boolean enableStars = true;
+
+    @Config.Comment("Sun visual size multiplier. 1.0 = vanilla, 2.0 = double size, 0.5 = half.")
+    @Config.RangeDouble(min = 0.25, max = 4.0)
+    public static double sunSizeMultiplier = 1.0;
+
+    @Config.Comment("Moon visual size multiplier. 1.0 = vanilla.")
+    @Config.RangeDouble(min = 0.25, max = 4.0)
+    public static double moonSizeMultiplier = 1.0;
+
+    @Config.Comment({
+        "Render rain + snow weather visuals. Off skips the renderRainSnow path",
+        "entirely (gameplay weather still happens — wet entities, lightning,",
+        "etc. — only the visual particles are skipped). Big FPS win in storms",
+        "on lower-end hardware."
+    })
+    public static boolean enableWeatherRender = true;
+
+    @Config.Comment({
+        "Weather (rain/snow) particle density multiplier. 1.0 = vanilla.",
+        "Lower values reduce the radius of rain particle generation around the",
+        "player, which scales count quadratically — 0.5 ≈ 25% the particles."
+    })
+    @Config.RangeDouble(min = 0.1, max = 1.0)
+    public static double weatherDensity = 1.0;
+
+    @Config.Comment({
+        "Biome color blending radius. Vanilla = 1 (3x3 = 9-block average for",
+        "grass/foliage/water tinting). 2 = 5x5 (25 blocks), 3 = 7x7 (49 blocks).",
+        "Higher = smoother color transitions across biome borders, at the cost",
+        "of N² per-pixel work. 2 is usually plenty; 3 only matters on dense",
+        "biome boundaries (e.g., desert ↔ jungle)."
+    })
+    @Config.RangeInt(min = 1, max = 3)
+    public static int biomeBlendRadius = 1;
+
     @Config.Comment({
         "Enable entity LOD (Level of Detail).",
         "Distant entities render less frequently to save GPU work.",

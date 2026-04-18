@@ -41,6 +41,14 @@ public class GuiLDOGSettings extends GuiScreen {
     // Vignette post-process
     private static final int BTN_VIGNETTE_ENABLE    = 510;
     private static final int BTN_VIGNETTE_INTENSITY = 511;
+    // Atmosphere section
+    private static final int BTN_CLOUD_HEIGHT       = 520;
+    private static final int BTN_FOG_DISTANCE       = 521;
+    private static final int BTN_SUN_SIZE           = 522;
+    private static final int BTN_MOON_SIZE          = 523;
+    private static final int BTN_WEATHER_RENDER     = 524;
+    private static final int BTN_WEATHER_DENSITY    = 525;
+    private static final int BTN_BIOME_BLEND        = 526;
     private static final int BTN_ENTITY_LOD = 14;
     private static final int BTN_FPS_REDUCER = 20;
     private static final int BTN_UNFOCUSED_FPS = 21;
@@ -136,6 +144,11 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final double[] FSR1_SHARPNESS_VALUES = {0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0};
     private static final double[] RCAS_STRENGTH_VALUES = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.75, 1.0};
     private static final double[] VIGNETTE_INTENSITY_VALUES = {0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0};
+    private static final int[] CLOUD_HEIGHT_VALUES = {-1, 64, 96, 128, 160, 192, 224, 255};
+    private static final double[] FOG_DISTANCE_VALUES = {0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0};
+    private static final double[] SIZE_MULT_VALUES = {0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0};
+    private static final double[] WEATHER_DENSITY_VALUES = {0.1, 0.25, 0.5, 0.75, 1.0};
+    private static final int[] BIOME_BLEND_VALUES = {1, 2, 3};
     private static final double[] TAA_WEIGHT_VALUES = {0.0, 0.5, 0.7, 0.8, 0.85, 0.9, 0.92, 0.95};
     private static final String[] FONT_AA_MODES = {"off", "bilinear", "trilinear"};
     private static final int[] TTF_SIZES = {16, 20, 24, 28, 32, 40, 48};
@@ -301,6 +314,28 @@ public class GuiLDOGSettings extends GuiScreen {
                 toggleLabel("Vignette", LDOGConfig.enableVignette)),
             new GuiButton(BTN_VIGNETTE_INTENSITY, 0, 0, w, h,
                 vignetteIntensityLabel(LDOGConfig.vignetteIntensity)));
+
+        // -- Atmosphere (clouds / fog / sky / weather / biomes) --
+        settingsList.addHeaderRow("Atmosphere");
+        settingsList.addButtonRow(
+            new GuiButton(BTN_CLOUD_HEIGHT, 0, 0, w, h,
+                cloudHeightLabel(LDOGConfig.cloudHeightOverride)),
+            new GuiButton(BTN_FOG_DISTANCE, 0, 0, w, h,
+                multLabel("Fog Dist", LDOGConfig.fogDistanceMultiplier)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_SUN_SIZE, 0, 0, w, h,
+                multLabel("Sun Size", LDOGConfig.sunSizeMultiplier)),
+            new GuiButton(BTN_MOON_SIZE, 0, 0, w, h,
+                multLabel("Moon Size", LDOGConfig.moonSizeMultiplier)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_WEATHER_RENDER, 0, 0, w, h,
+                toggleLabel("Weather Render", LDOGConfig.enableWeatherRender)),
+            new GuiButton(BTN_WEATHER_DENSITY, 0, 0, w, h,
+                multLabel("Weather Density", LDOGConfig.weatherDensity)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_BIOME_BLEND, 0, 0, w, h,
+                biomeBlendLabel(LDOGConfig.biomeBlendRadius)),
+            null);
 
         // -- Font Rendering --
         // Drop-in replacement for the Smooth Font mod. Swaps in HD ascii.png from
@@ -548,6 +583,38 @@ public class GuiLDOGSettings extends GuiScreen {
             case BTN_VIGNETTE_INTENSITY:
                 LDOGConfig.vignetteIntensity = cycleValue(VIGNETTE_INTENSITY_VALUES, LDOGConfig.vignetteIntensity);
                 button.displayString = vignetteIntensityLabel(LDOGConfig.vignetteIntensity);
+                break;
+            case BTN_CLOUD_HEIGHT:
+                LDOGConfig.cloudHeightOverride = cycleValue(CLOUD_HEIGHT_VALUES, LDOGConfig.cloudHeightOverride);
+                button.displayString = cloudHeightLabel(LDOGConfig.cloudHeightOverride);
+                break;
+            case BTN_FOG_DISTANCE:
+                LDOGConfig.fogDistanceMultiplier = cycleValue(FOG_DISTANCE_VALUES, LDOGConfig.fogDistanceMultiplier);
+                button.displayString = multLabel("Fog Dist", LDOGConfig.fogDistanceMultiplier);
+                break;
+            case BTN_SUN_SIZE:
+                LDOGConfig.sunSizeMultiplier = cycleValue(SIZE_MULT_VALUES, LDOGConfig.sunSizeMultiplier);
+                button.displayString = multLabel("Sun Size", LDOGConfig.sunSizeMultiplier);
+                break;
+            case BTN_MOON_SIZE:
+                LDOGConfig.moonSizeMultiplier = cycleValue(SIZE_MULT_VALUES, LDOGConfig.moonSizeMultiplier);
+                button.displayString = multLabel("Moon Size", LDOGConfig.moonSizeMultiplier);
+                break;
+            case BTN_WEATHER_RENDER:
+                LDOGConfig.enableWeatherRender = !LDOGConfig.enableWeatherRender;
+                button.displayString = toggleLabel("Weather Render", LDOGConfig.enableWeatherRender);
+                break;
+            case BTN_WEATHER_DENSITY:
+                LDOGConfig.weatherDensity = cycleValue(WEATHER_DENSITY_VALUES, LDOGConfig.weatherDensity);
+                button.displayString = multLabel("Weather Density", LDOGConfig.weatherDensity);
+                break;
+            case BTN_BIOME_BLEND:
+                LDOGConfig.biomeBlendRadius = cycleValue(BIOME_BLEND_VALUES, LDOGConfig.biomeBlendRadius);
+                button.displayString = biomeBlendLabel(LDOGConfig.biomeBlendRadius);
+                // Biome color is cached per chunk render — need a chunk re-mesh
+                // for the new radius to take effect. Easiest way: trigger a
+                // resource reload, which invalidates chunk meshes.
+                net.minecraft.client.Minecraft.getMinecraft().renderGlobal.loadRenderers();
                 break;
             case BTN_ENTITY_DIST:
                 LDOGConfig.entityRenderDistance = cycleValue(ENTITY_DIST_VALUES, LDOGConfig.entityRenderDistance);
@@ -1497,6 +1564,29 @@ public class GuiLDOGSettings extends GuiScreen {
         else if (v <= 0.6) color = "\u00a7e";  // yellow — moderate
         else color = "\u00a76";                 // gold — heavy / cinematic
         return "Vignette Str: " + color + String.format("%.2f", v);
+    }
+
+    static String cloudHeightLabel(int y) {
+        if (y < 0) return "Cloud Height: \u00a77Vanilla";
+        return "Cloud Height: \u00a7e" + y;
+    }
+
+    /** Generic "Name: 1.00x" multiplier label, green at 1.0, yellow off-default. */
+    static String multLabel(String name, double v) {
+        String color = Math.abs(v - 1.0) < 0.01 ? "\u00a77" : "\u00a7e";
+        return name + ": " + color + String.format("%.2fx", v);
+    }
+
+    static String biomeBlendLabel(int r) {
+        String color;
+        switch (r) {
+            case 1:  color = "\u00a77"; break;  // grey — vanilla
+            case 2:  color = "\u00a7a"; break;  // green — improvement
+            case 3:  color = "\u00a76"; break;  // gold — heavy
+            default: color = "\u00a77"; break;
+        }
+        int side = 2 * r + 1;
+        return "Biome Blend: " + color + side + "x" + side;
     }
 
     static String upscalerPresetLabel(com.limitlessdev.ldog.render.pipeline.UpscalerPreset preset) {
