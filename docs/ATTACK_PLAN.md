@@ -8,9 +8,85 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 > We're building LDOG (`ldog`), an open-source OptiFine replacement for Minecraft Forge 1.12.2. The project is at `E:\gitRepos\LDOG`. The build system is GregTechCEu Buildscripts (RetroFuturaGradle 1.4.0). Reference projects for conventions are at `E:\gitRepos\minecraft-city-super-mod` and `E:\gitRepos\LDFAWE`. Read `CLAUDE.md`, `docs/ATTACK_PLAN.md`, `docs/ARCHITECTURE.md`, and the deep-dive docs in `docs/` (P8_RESEARCH_AND_PLAN.md, POST_9A4_RESEARCH.md, PHASE_9C_TEMPORAL_DEEP_DIVE.md) to get up to speed, then pick up at the next open checklist item.
 
-### Where We Left Off (end of 2026-04-17 — marathon session)
+### Where We Left Off (end of 2026-04-18 — "more options the merrier" session)
 
-**Phases 0-10 complete, plus Phase 9c.1+9c.2 temporal stack shipped.** Phases 1-7 and C3 done in earlier sessions. Today was a ~12-hour run covering Phase 8, all of 9a, 9c.1+9c.2, and Phase 10.
+**Picked up from the 2026-04-17 marathon state (see "Previous session" below) and shipped six batches:**
+
+1. **9a.9 auto-scale log fix** (`3374a86`) — one-shot INFO on first tick + per-decision DEBUG log. User-verified: log output now visible.
+2. **9c.3-A entity reactive mask** (`14628e1`) — MRT + per-attachment colorMaski to stamp entity pixels into a COLOR1 R8 attachment of sceneFbo; TAA shader drops history weight on flagged pixels. Kills moving-mob ghost trails without per-entity MV emission. User-verified: no visible regression with many auto-spawned mobs. Companion doc `docs/PHASE_9C3_OPTION_C_RESEARCH.md` lays out the full Option C path for future work (Strategy 4: vanilla MV + reactive fallback for modded, ~1 week focused).
+3. **Phase 6d closure** (`2719c53`) — just a doc fix. Custom-sky verification was already completed in earlier session, checklist was stale.
+4. **9a.9 ext — aggressive 3-state mode** (`9d77526`) — `AutoScaleMode` enum replaces the boolean; Off / Normal / Aggressive cycle button. Aggressive adds a 7-tier extended ladder that also manages `upscalerAlgorithm` + `fxaaQuality` + `enableFXAA` at the bottom of the scale ladder (FSR1-Quality → FSR1 → Bilinear, FXAA Ultra → High → Medium → Low → off). Config-schema change: `enableAutoScale` removed, `autoScaleMode` added.
+5. **Phase C4 foundation** (`3b083bc`) — per-feature OptiFine override mode. Three new types: `OFOverrideMode` (AUTO / LDOG_OVERRIDE / OPTIFINE_OVERRIDE), `OFFeature` catalog (7 features with candidate GameSettings field names), `OFConfigBridge` lazy reflective probe + setter on the **GameSettings instance** (discovered OF doesn't use a static Config class — OF's transformer adds `ofXxx` instance fields to vanilla GameSettings). Legacy `shouldHandle*()` methods preserved as wrappers, all existing callers unchanged. New "OptiFine Interop" GUI section rendered only when OF is detected. All 7 features default to AUTO — zero behavior change until user opts in.
+6. **+ "Future Expansion Ideas" doc** (`6ade2fd`, `6749a9c`) — 15 gaps identified by walking the OF jar, plus a **CRITICAL gotcha**: OF's production jar crashes `gradlew runClient` with `NoClassDefFoundError: cer` because production OF is obfuscated against notch MC but dev runs deobfuscated MC. DO NOT put the OF jar in `run/mods/`. In-prod verification path documented.
+
+**Then a "more options" sprint (6 more commits):**
+
+7. **Per-particle toggles** (`e25f1c7`) — 5 categories: Firework / Portal / Potion / Water / Dripping. Cancel at spawn via `MixinParticleManagerFilter`; class-name suffix matching (no hard MC import coupling). Modded particles deliberately unfiltered.
+8. **Vignette pass** (`68d4435`) — new `VignettePass` runs LAST in pipeline. Multiplicative blend (GL_DST_COLOR × src) so only darkens. Cheapest pass on chain — no source-texture copy needed.
+9. **Atmosphere section** (`e25d79d`) — cloud height override (WorldProvider.getCloudHeight), fog distance multiplier (EntityRenderer.setupFog via @Redirect on GlStateManager.setFogStart/End), sun + moon size (@ModifyConstant on 30.0F / 20.0F in renderSky), weather render toggle + density (@Inject HEAD + @ModifyConstant on rain radius 5/10), biome blend radius 1→2→3 (extends vanilla's 3x3 smoothing to 5x5 or 7x7 via `BiomeBlend` helper + three public-method injects on BiomeColorHelper).
+10. **Comfort/Cinematic section** (`39fe2a2`, `9a258bc`) — 10 total toggles: disable damage tilt, disable hurt vignette, hide hand, fullbright, hide crosshair, hide hotbar, hide xp bar, hide horse jump bar, hide item tooltip, disable portal distortion. Each a HEAD-cancellable mixin on an isolated vanilla method.
+11. **Info HUD overlays** (`374789c`) — top-right corner, 5 toggleable rows: coords, facing, time (HH:MM), biome, light level (sky/block). Forge `RenderGameOverlayEvent.Post`, no mixin needed. Hidden when F3 is open.
+
+**Bugs / fixes caught this session:**
+- `EnumLightType` → `EnumSkyBlock` — MC 1.12.2 uses the old enum name; caught at compile.
+- GUI button-ID collision — my OF interop buttons started at 200 which collided with BTN_DONE; bumped to 400+ range.
+
+**Critical gotchas / non-obvious infrastructure (for next reader):**
+- **OF dev-workspace crash**: don't put the OF jar in `run/mods/` — it crashes dev launch with `NoClassDefFoundError: cer` at `FMLClientHandler.detectOptifine`. Production OF is obfuscated against notch MC; dev is deobfuscated. Verification has to go through `gradlew build` → drop into a real MC launcher install's mods folder. Documented in `docs/ATTACK_PLAN.md` Phase C4 section.
+- **OF settings live on GameSettings, not a static Config class.** The Config class at the JAR root (`optifine.Config`) holds platform state (openGlVersion, initGameSettings). Gameplay toggles are added as instance fields to vanilla GameSettings via OF's bytecode transformer. Bridge reflects on `Minecraft.getMinecraft().gameSettings`, walks the class hierarchy, tries candidate field names per OFFeature.
+- **Reactive mask via MRT + per-attachment colorMaski.** sceneFbo gets a COLOR1 R8 attachment always-allocated; the binding mixin glDrawBuffers to [COLOR0, COLOR1] and glColorMaski(1, false) around non-entity draws, MixinRenderGlobal opens colorMaski(1, true) around renderEntities HEAD/RETURN. Legacy fixed-function replicates gl_FragColor across bound attachments so no custom entity shader needed.
+- **Vignette pipeline placement**: absolute last in chain (after FXAA) so FXAA doesn't see the gradient as an edge to smooth.
+- **Biome blend requires chunk re-mesh** on radius change — GUI click handler calls `renderGlobal.loadRenderers()` to invalidate cached meshes so the new radius takes effect immediately.
+
+**Previous session gotchas (still true):**
+- `Minecraft` and `FontRenderer` mixins MUST be in `mixins.ldog.vanilla.json` (early config loaded via `IEarlyMixinLoader`).
+- `Display.setDisplayMode` in LWJGL 2.9.4 must be called with `new DisplayMode(w, h)` — full desktop mode triggers mode-switch semantics.
+- TAA matrix capture must happen AFTER jitter, not before.
+- `renderWorldPass` with `pass != 2` is anaglyph-only.
+- Auto-scale overrides manual Render Scale cycling (documented in tooltip).
+
+**Pending verification (deferred to later sessions):**
+- **C4 OptiFine interop**: needs in-prod test with real OF in a real MC launcher install. When run, look at `<.minecraft>/logs/latest.log` for `LDOG: OF interop bridge ready — N feature(s) controllable, M unmapped (...)`. That tells us which `OFFeature.candidateFieldNames` are right vs. need updating. User tried in a modpack of 100+ mods and hit compat errors unrelated to LDOG — deferred to cleaner test environment.
+- **This session's new features**: particle filter, vignette, atmosphere (clouds/fog/sky/weather/biome), comfort toggles, HUD hides, info overlays — all in `Comfort / Cinematic`, `Atmosphere`, `Info HUD` GUI sections. Need an in-game run to smoke-test.
+
+**Deferred "more options" backlog (do these next when feature-request mood returns):**
+
+Tier A — high user value, clean hooks:
+- [ ] **Always-show advanced item tooltips** — Forge ItemTooltipEvent listener appends the vanilla-F3+H details when toggle is on.
+- [ ] **Reduce / disable nausea distortion** — EntityRenderer handles the portal/nausea screen warp. Needs careful hook to avoid breaking gameplay portal counter.
+- [ ] **World time speed multiplier (clientside-only)** — mixin into `World.getWorldTime` client-side to scale the visual day/night rate without affecting server-side gameplay. Risky: many client systems read getWorldTime (lighting, sky color, mob spawning visuals). Flag for careful scoping.
+- [ ] **Ping HUD** (multiplayer) — `NetHandlerPlayClient.getPlayerInfo(...).getResponseTime()`. Add as a 6th Info HUD row.
+- [ ] **Day counter HUD** — floor(world.getTotalWorldTime() / 24000). Add as 7th Info HUD row.
+- [ ] **CPS counter** — track InputUpdate ticks per second. Useful for PvP users.
+
+Tier B — entangled vanilla method, needs profiler-section ordinal injection or careful splitting:
+- [ ] **Hide armor bar** — inside `GuiIngame.renderPlayerStats`, "armor" profiler section.
+- [ ] **Hide hunger bar** — same method, "food" profiler section.
+- [ ] **Hide air bar** — same method, "air" profiler section.
+- [ ] **Hide boss health bars** — separate class `GuiBossOverlay.renderBossHealth`; mixin the call site in `renderGameOverlay` at the INVOKE target.
+
+Tier C — more invasive, deferred per `docs/PHASE_9C3_OPTION_C_RESEARCH.md` + others:
+- [ ] **Smart Animations** — skip ticking texture animations for sprites not currently visible. Needs hook into `TextureAtlasSprite.updateAnimation` + screen-visibility tracking per sprite.
+- [ ] **Lagometer** — per-stage frame-time graph overlay (chunk meshing vs render vs lighting vs ticks). Needs Profiler API hooks + a rolling-window display renderer.
+- [ ] **Cloud 2D/3D mode + opacity** — extra toggles beyond what vanilla + this session covers.
+- [ ] **Per-bar HUD hide (armor/hunger/air)** — see Tier B above, same work.
+- [ ] **Translucent block blending** — correct color compositing for stacked transparent blocks (stained glass towers). Order-dependent transparent rendering is a big architectural change.
+- [ ] **9c.3 Option C (full per-entity MV)** — follow `docs/PHASE_9C3_OPTION_C_RESEARCH.md` §5 day-by-day plan. ~1 focused week.
+- [ ] **9c.4 FSR2-style reconstruction** — needs Option C first.
+- [ ] **Phase 10b runtime-togglable borderless** — `Display.destroy()` + `Display.create()` + GL state coordination across all LDOG subsystems.
+- [ ] **Phase C4 in-prod verification** — see above.
+- [ ] **Phase C4 field-name corrections** — based on in-prod bridge probe log output.
+- [ ] **Phase C4 per-feature parity benchmarking** — before flipping any default to LDOG_OVERRIDE.
+- [ ] **Phase C4 tooltips** — I shipped the OF Interop GUI rows without tooltips.
+- [ ] **C3 polish** — disk-cached TTF atlas, Unicode glyph pages.
+
+See also: `## Future Expansion Ideas (from OptiFine inspection)` section lower in this file for the "big new features" catalog (shaders, CEM, multi-core chunk loading, etc.) — a separate list from the above "small options" backlog.
+
+---
+
+### Previous session (end of 2026-04-17 — marathon session)
+
+**Phases 0-10 complete, plus Phase 9c.1+9c.2 temporal stack shipped.** Phases 1-7 and C3 done in earlier sessions. That day was a ~12-hour run covering Phase 8, all of 9a, 9c.1+9c.2, and Phase 10.
 
 **Phase 8 (Shader Pipeline) — full stack shipped + verified:**
 - 8a framework: `PostProcessPass`, `PostProcessPipeline`, `RenderTargetManager`, `PipelineDebugStats`. Fault-tolerant pass removal on exception.
@@ -57,21 +133,7 @@ A phased development plan for building out Limitless Development Optigame, from 
 - Auto scale handler (`AutoScaleHandler`) uses `@Mod.EventBusSubscriber` with `modid = Tags.MODID, value = Side.CLIENT` — matches the pattern used by `FXAAHandler` and `PerformanceOverlayRenderer`. Registration should be automatic at mod load.
 - Preset changes require setting `extBorderSettingsChanged`, `fxaaSettingsChanged`, `waterSettingsChanged` on the GUI instance so `saveAndClose` triggers the right reload paths.
 
-**Open issues / pending verification:**
-- **9a.9 Auto Scale — no log output in user test.** Two hypotheses, untested:
-  1. FPS stayed inside the dead zone (0.9x — 1.1x target), so no tier change fired → no log. Current code only logs on actual changes.
-  2. Handler didn't register, or guards (`pipeline off`, `world == null`) short-circuited every tick.
-  - **Fix approach (next session):** add a one-shot "AutoScale handler tick running" log on first invocation to distinguish registration failure from no-op due to dead-zone. Also consider logging each decision at DEBUG level so the user can set log level to see "AutoScale hold (fps=144, target=144, scale=1.00)" even when no adjustment fires.
-- **9a.9 design limitation:** auto-scale overrides manual Render Scale cycling. User can see the current value in the GUI slider but the next auto-tick will override. Documented in the tooltip. Better UX would be "auto-scale within manual's max bound" but adds complexity.
-
-**Key next steps (priority order):**
-1. **Debug 9a.9 auto-scale logging.** Add tick-confirmation log, retry, decide if fix is needed or if behavior is actually correct-but-invisible.
-2. **Phase 9c.3 — entity motion vectors** (2-4 weeks, invasive). Fixes ghosting on moving mobs. Per `docs/PHASE_9C_TEMPORAL_DEEP_DIVE.md` this is the highest-cost stage; needs careful per-entity-render hook strategy.
-3. **Phase 10b** runtime-togglable borderless — `Display.destroy`/`create` + LDOG subsystem GL-state coordination.
-4. **Phase C4** (OptiFine Override Mode) — reverse coexistence via reflective writes to `optifine.Config`.
-5. ~~**Phase 6d** custom-sky injection verification~~ — verified 2026-04-18; checklist item closed.
-6. **C3 polish** (optional): disk-cached TTF atlas, Unicode pages.
-7. **9a.9 extensions** (if auto-scale proves out): also auto-adjust upscaler algorithm and AA toggles at the tail of the ladder.
+**Open issues / pending verification from 2026-04-17:** all closed during 2026-04-18 session (see above) — 9a.9 log fix shipped and verified, 9c.3-A shipped, 6d doc closed, 9a.9 extensions shipped, C4 foundation shipped (in-prod verification pending).
 
 **Test resource packs (already in run/resourcepacks/):**
 - `default-1-12` (extracted) — CTM glass + glass panes (47-tile)
