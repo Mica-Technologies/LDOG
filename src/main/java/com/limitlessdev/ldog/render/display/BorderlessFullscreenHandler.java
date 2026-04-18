@@ -45,24 +45,24 @@ public final class BorderlessFullscreenHandler {
             hasSavedState = true;
         }
 
-        // Use ONLY width/height of the desktop — don't pass the full DisplayMode
-        // returned by Display.getDesktopDisplayMode(), because that carries
-        // bitsPerPixel + refreshRate and LWJGL 2.9.4 can interpret those fields
-        // as mode-change metadata and trigger a real display-mode switch
-        // (causing the OS desktop-flash even though we're not in exclusive
-        // fullscreen). A plain DisplayMode(w, h) is purely a window-size hint.
         DisplayMode desktop = Display.getDesktopDisplayMode();
         int w = desktop.getWidth();
-        int h = desktop.getHeight();
+        // Windows 10/11's Fullscreen Optimizations feature detects a borderless
+        // window sized EXACTLY to the monitor at (0,0) and auto-transitions the
+        // DWM into an optimized borderless-fullscreen compositor path. That
+        // transition has a brief desktop flash. Making the window 1 pixel
+        // shorter than the desktop avoids the detection — the missing row sits
+        // behind the taskbar or at the screen edge and is visually
+        // indistinguishable from true fullscreen.
+        int h = desktop.getHeight() - 1;
 
-        // Order matters: position the window first, then resize it. Reversing
-        // causes LWJGL/OS to center the newly-resized window on its current
-        // monitor, and a subsequent setLocation jumps it to (0,0) — one paint
-        // at the wrong position, one paint at the right position = visible
-        // flicker.
+        long t0 = System.nanoTime();
         Display.setResizable(false);
+        long t1 = System.nanoTime();
         Display.setLocation(0, 0);
+        long t2 = System.nanoTime();
         Display.setDisplayMode(new DisplayMode(w, h));
+        long t3 = System.nanoTime();
 
         mc.displayWidth = w;
         mc.displayHeight = h;
@@ -70,7 +70,10 @@ public final class BorderlessFullscreenHandler {
         ((AccessorMinecraft) (Object) mc).ldog$setFullscreen(true);
         ((AccessorMinecraft) (Object) mc).ldog$updateFramebufferSize();
 
-        LDOGMod.LOGGER.info("LDOG: entered borderless fullscreen at {}x{}", w, h);
+        LDOGMod.LOGGER.info(
+            "LDOG: entered borderless fullscreen at {}x{} (setResizable={}ms, setLocation={}ms, setDisplayMode={}ms)",
+            w, h,
+            (t1 - t0) / 1_000_000, (t2 - t1) / 1_000_000, (t3 - t2) / 1_000_000);
     }
 
     public static void exitBorderless(Minecraft mc) throws LWJGLException {
@@ -80,13 +83,15 @@ public final class BorderlessFullscreenHandler {
         int w = hasSavedState ? savedWidth : 854;
         int h = hasSavedState ? savedHeight : 480;
 
-        // Same order as enterBorderless: setResizable first, then position,
-        // then size. Position before size to avoid the center-then-jump flicker.
+        long t0 = System.nanoTime();
         Display.setResizable(true);
+        long t1 = System.nanoTime();
         if (hasSavedState) {
             Display.setLocation(savedX, savedY);
         }
+        long t2 = System.nanoTime();
         Display.setDisplayMode(new DisplayMode(w, h));
+        long t3 = System.nanoTime();
 
         mc.displayWidth = w;
         mc.displayHeight = h;
@@ -94,6 +99,9 @@ public final class BorderlessFullscreenHandler {
         ((AccessorMinecraft) (Object) mc).ldog$setFullscreen(false);
         ((AccessorMinecraft) (Object) mc).ldog$updateFramebufferSize();
 
-        LDOGMod.LOGGER.info("LDOG: exited borderless fullscreen back to {}x{}", w, h);
+        LDOGMod.LOGGER.info(
+            "LDOG: exited borderless fullscreen back to {}x{} (setResizable={}ms, setLocation={}ms, setDisplayMode={}ms)",
+            w, h,
+            (t1 - t0) / 1_000_000, (t2 - t1) / 1_000_000, (t3 - t2) / 1_000_000);
     }
 }
