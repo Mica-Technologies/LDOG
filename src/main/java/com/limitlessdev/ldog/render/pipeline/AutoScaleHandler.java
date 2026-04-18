@@ -54,12 +54,24 @@ public final class AutoScaleHandler {
     private static final int FALLBACK_TARGET_FPS = 60;
 
     private static int tickCounter = 0;
+    private static boolean firstTickLogged = false;
 
     private AutoScaleHandler() {}
 
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
+
+        // One-shot: prove the @EventBusSubscriber wiring landed and we're being invoked.
+        // Fires regardless of the feature toggle so a "no log at all" symptom can
+        // distinguish "handler never registered" from "handler registered but disabled".
+        if (!firstTickLogged) {
+            firstTickLogged = true;
+            LDOGMod.LOGGER.info(
+                "LDOG: AutoScale handler registered and ticking (enableAutoScale={}, enablePostProcessPipeline={})",
+                LDOGConfig.enableAutoScale, LDOGConfig.enablePostProcessPipeline);
+        }
+
         if (!LDOGConfig.enableAutoScale) return;
         if (!LDOGConfig.enablePostProcessPipeline) return;
 
@@ -76,18 +88,34 @@ public final class AutoScaleHandler {
 
         int currentIdx = findLadderIdx(LDOGConfig.internalRenderScale);
         int newIdx = currentIdx;
+        String decision;
 
         if (fps < target * DOWNSHIFT_THRESHOLD && currentIdx < LADDER.length - 1) {
             newIdx = currentIdx + 1;
+            decision = "DOWN";
         } else if (fps > target * UPSHIFT_THRESHOLD && currentIdx > 0) {
             newIdx = currentIdx - 1;
+            decision = "UP";
+        } else {
+            // No change: either inside the dead zone, or already at a ladder boundary.
+            decision = "HOLD";
         }
 
         if (newIdx != currentIdx) {
             LDOGConfig.internalRenderScale = LADDER[newIdx];
             LDOGMod.LOGGER.info(
                 "LDOG: AutoScale {} to {} (fps={}, target={})",
-                newIdx > currentIdx ? "DOWN" : "UP",
+                decision,
+                String.format("%.2fx", LDOGConfig.internalRenderScale),
+                fps, target);
+        } else {
+            // Per-decision visibility for diagnosing "no log output" complaints
+            // when FPS sits in the dead zone or is pinned at a ladder boundary.
+            // DEBUG level so it doesn't spam normal logs; user enables log4j
+            // DEBUG (or sets `-Dlog4j.configurationFile=...`) to see it.
+            LDOGMod.LOGGER.debug(
+                "LDOG: AutoScale {} at {} (fps={}, target={})",
+                decision,
                 String.format("%.2fx", LDOGConfig.internalRenderScale),
                 fps, target);
         }
