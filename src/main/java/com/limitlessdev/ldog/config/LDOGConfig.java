@@ -275,6 +275,19 @@ public class LDOGConfig {
     public static boolean borderlessFullscreen = false;
 
     @Config.Comment({
+        "Block Windows Fullscreen Optimizations when in borderless mode.",
+        "ON  = window is 1 pixel shorter than the desktop. Windows doesn't",
+        "      detect it as fullscreen, so toggling is flicker-free — but the",
+        "      taskbar stays visible at the bottom of the screen.",
+        "OFF = window matches the desktop exactly. Windows auto-hides the",
+        "      taskbar (clean look) but shows a brief desktop flash during",
+        "      the DWM compositor transition each time you toggle fullscreen.",
+        "",
+        "Only consumed when borderlessFullscreen is true. Live-toggleable."
+    })
+    public static boolean blockFullscreenOptimizations = true;
+
+    @Config.Comment({
         "Enable shader support (stretch goal).",
         "Auto-disabled when OptiFine is detected."
     })

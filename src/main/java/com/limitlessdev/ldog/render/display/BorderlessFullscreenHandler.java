@@ -1,6 +1,7 @@
 package com.limitlessdev.ldog.render.display;
 
 import com.limitlessdev.ldog.LDOGMod;
+import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.mixin.AccessorMinecraft;
 import net.minecraft.client.Minecraft;
 import org.lwjgl.LWJGLException;
@@ -49,12 +50,17 @@ public final class BorderlessFullscreenHandler {
         int w = desktop.getWidth();
         // Windows 10/11's Fullscreen Optimizations feature detects a borderless
         // window sized EXACTLY to the monitor at (0,0) and auto-transitions the
-        // DWM into an optimized borderless-fullscreen compositor path. That
-        // transition has a brief desktop flash. Making the window 1 pixel
-        // shorter than the desktop avoids the detection — the missing row sits
-        // behind the taskbar or at the screen edge and is visually
-        // indistinguishable from true fullscreen.
-        int h = desktop.getHeight() - 1;
+        // DWM into an optimized borderless-fullscreen compositor path. The
+        // transition briefly flashes the desktop.
+        //
+        // Config toggle: when blockFullscreenOptimizations is ON, size the
+        // window 1px shorter than the desktop so Windows doesn't trigger the
+        // detection (no flicker, but taskbar stays visible in that 1px gap).
+        // When OFF, match the desktop exactly — cleaner look (taskbar auto-
+        // hides via DWM), at the cost of the transition flash on each toggle.
+        int h = LDOGConfig.blockFullscreenOptimizations
+            ? desktop.getHeight() - 1
+            : desktop.getHeight();
 
         long t0 = System.nanoTime();
         Display.setResizable(false);

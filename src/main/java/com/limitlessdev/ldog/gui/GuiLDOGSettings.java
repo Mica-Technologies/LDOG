@@ -101,6 +101,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_PIPELINE_UPSCALER = 102;
     private static final int BTN_FSR1_SHARPNESS = 103;
     private static final int BTN_BORDERLESS_FULLSCREEN = 110;
+    private static final int BTN_BLOCK_FSO = 111;
 
     private static final int[] ANISOTROPIC_VALUES = {2, 4, 8, 16};
     private static final int[] MSAA_VALUES = {2, 4, 8};
@@ -205,7 +206,8 @@ public class GuiLDOGSettings extends GuiScreen {
         settingsList.addButtonRow(
             new GuiButton(BTN_BORDERLESS_FULLSCREEN, 0, 0, w, h,
                 toggleLabel("Borderless Windowed", LDOGConfig.borderlessFullscreen)),
-            null);
+            new GuiButton(BTN_BLOCK_FSO, 0, 0, w, h,
+                toggleLabel("Block FS Optim", LDOGConfig.blockFullscreenOptimizations)));
 
         // -- Post-Process Pipeline (Phase 8, Experimental) --
         // Scaffold only today: allocates an offscreen scene target but does not
@@ -635,6 +637,10 @@ public class GuiLDOGSettings extends GuiScreen {
                 LDOGConfig.borderlessFullscreen = !LDOGConfig.borderlessFullscreen;
                 button.displayString = toggleLabel("Borderless Windowed", LDOGConfig.borderlessFullscreen);
                 break;
+            case BTN_BLOCK_FSO:
+                LDOGConfig.blockFullscreenOptimizations = !LDOGConfig.blockFullscreenOptimizations;
+                button.displayString = toggleLabel("Block FS Optim", LDOGConfig.blockFullscreenOptimizations);
+                break;
             case BTN_EXT_BORDER:
                 LDOGConfig.enableExtendedBorderMipmaps = !LDOGConfig.enableExtendedBorderMipmaps;
                 button.displayString = toggleLabel("Ext Border Mips", LDOGConfig.enableExtendedBorderMipmaps);
@@ -846,6 +852,19 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a77edges than bilinear at the same render scale.",
             "",
             "\u00a77Only applies when render scale is below 1.0.");
+        registerTooltip(BTN_BLOCK_FSO,
+            "\u00a7eBlock Windows Fullscreen Optimizations",
+            "\u00a77Windows 10/11 auto-detects borderless windows sized to",
+            "\u00a77the whole desktop and switches the DWM compositor into an",
+            "\u00a77optimized path. That transition flashes the desktop briefly.",
+            "",
+            "\u00a7aON:\u00a77 window is 1 pixel shorter than the desktop — Windows",
+            "\u00a77doesn't trigger detection. Flicker-free toggle, but the",
+            "\u00a77taskbar remains visible at the bottom.",
+            "\u00a7eOFF:\u00a77 window matches the desktop exactly. Taskbar auto-",
+            "\u00a77hides (clean look), but you get the flash each toggle.",
+            "",
+            "\u00a77Only consumed when Borderless Windowed is on. Live-toggle.");
         registerTooltip(BTN_BORDERLESS_FULLSCREEN,
             "\u00a7eBorderless Windowed Fullscreen",
             "\u00a77Replaces exclusive fullscreen (F11) with an undecorated",
