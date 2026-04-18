@@ -267,6 +267,22 @@ public class LDOGConfig {
     public static String upscalerPreset = "custom";
 
     @Config.Comment({
+        "Enable RCAS-style post-upscale sharpening. Runs AFTER the upscaler pass",
+        "and operates at native resolution, so it works even at render scale 1.0",
+        "(pure sharpening, no upscaling). Complements the upscaler rather than",
+        "replacing its internal sharpen."
+    })
+    public static boolean enableRcasSharpen = false;
+
+    @Config.Comment({
+        "RCAS post-upscale sharpening strength. 0.0 = no effect, 1.0 = maximum.",
+        "Typical sweet spot is 0.3 — 0.6. Values above 0.8 start to show halos.",
+        "Only consumed when enableRcasSharpen is true."
+    })
+    @Config.RangeDouble(min = 0.0, max = 1.0)
+    public static double rcasSharpness = 0.4;
+
+    @Config.Comment({
         "Borderless windowed fullscreen: replaces exclusive fullscreen with an",
         "undecorated window sized to the desktop. Enables instant alt-tab,",
         "functional external overlays, and multi-monitor cursor movement.",

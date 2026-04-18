@@ -101,6 +101,8 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_PIPELINE_UPSCALER = 102;
     private static final int BTN_FSR1_SHARPNESS = 103;
     private static final int BTN_UPSCALER_PRESET = 104;
+    private static final int BTN_RCAS_ENABLE = 105;
+    private static final int BTN_RCAS_STRENGTH = 106;
     private static final int BTN_BORDERLESS_FULLSCREEN = 110;
     private static final int BTN_BLOCK_FSO = 111;
 
@@ -108,6 +110,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int[] MSAA_VALUES = {2, 4, 8};
     private static final double[] PIPELINE_SCALE_VALUES = {1.0, 0.85, 0.75, 0.5};
     private static final double[] FSR1_SHARPNESS_VALUES = {0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0};
+    private static final double[] RCAS_STRENGTH_VALUES = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.75, 1.0};
     private static final String[] FONT_AA_MODES = {"off", "bilinear", "trilinear"};
     private static final int[] TTF_SIZES = {16, 20, 24, 28, 32, 40, 48};
 
@@ -229,6 +232,11 @@ public class GuiLDOGSettings extends GuiScreen {
             new GuiButton(BTN_FSR1_SHARPNESS, 0, 0, w, h,
                 fsr1SharpnessLabel(LDOGConfig.fsr1Sharpness)),
             null);
+        settingsList.addButtonRow(
+            new GuiButton(BTN_RCAS_ENABLE, 0, 0, w, h,
+                toggleLabel("RCAS Sharpen", LDOGConfig.enableRcasSharpen)),
+            new GuiButton(BTN_RCAS_STRENGTH, 0, 0, w, h,
+                rcasStrengthLabel(LDOGConfig.rcasSharpness)));
 
         // -- Font Rendering --
         // Drop-in replacement for the Smooth Font mod. Swaps in HD ascii.png from
@@ -644,6 +652,14 @@ public class GuiLDOGSettings extends GuiScreen {
                 com.limitlessdev.ldog.render.pipeline.UpscalerPreset.markCustom();
                 refreshPresetButton();
                 break;
+            case BTN_RCAS_ENABLE:
+                LDOGConfig.enableRcasSharpen = !LDOGConfig.enableRcasSharpen;
+                button.displayString = toggleLabel("RCAS Sharpen", LDOGConfig.enableRcasSharpen);
+                break;
+            case BTN_RCAS_STRENGTH:
+                LDOGConfig.rcasSharpness = cycleValue(RCAS_STRENGTH_VALUES, LDOGConfig.rcasSharpness);
+                button.displayString = rcasStrengthLabel(LDOGConfig.rcasSharpness);
+                break;
             case BTN_UPSCALER_PRESET: {
                 com.limitlessdev.ldog.render.pipeline.UpscalerPreset current =
                     com.limitlessdev.ldog.render.pipeline.UpscalerPreset.selected();
@@ -922,6 +938,24 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a7cREQUIRES RESTART:\u00a77 LWJGL only reads the undecorated",
             "\u00a77flag at Display creation. Toggle this, click Done to save,",
             "\u00a77then relaunch the game for it to take effect.");
+        registerTooltip(BTN_RCAS_ENABLE,
+            "\u00a7eRCAS Post-Upscale Sharpen",
+            "\u00a77Contrast-adaptive sharpening applied AFTER the upscaler,",
+            "\u00a77at native resolution. Complements the upscaler's built-in",
+            "\u00a77sharpen — not a replacement.",
+            "",
+            "\u00a7aWorks at scale 1.0 too:\u00a77 pure sharpening mode, no",
+            "\u00a77upscaling. Useful for HD resource packs at native res.",
+            "",
+            "\u00a77Requires Post Pipeline to be ON.");
+        registerTooltip(BTN_RCAS_STRENGTH,
+            "\u00a7eRCAS Strength",
+            "\u00a770.0 = no sharpening, 1.0 = maximum.",
+            "",
+            "\u00a7aSweet spot is 0.3 — 0.6.\u00a77 Above 0.8 you'll see halos",
+            "\u00a77on high-contrast edges.",
+            "",
+            "\u00a77Live-adjustable.");
         registerTooltip(BTN_FSR1_SHARPNESS,
             "\u00a7eFSR1 Sharpness",
             "\u00a77Strength of FSR1's edge-enhancement kernel.",
@@ -1049,6 +1083,15 @@ public class GuiLDOGSettings extends GuiScreen {
 
     static String upscalerLabel(com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm alg) {
         return "Upscaler: \u00a7a" + alg.displayName();
+    }
+
+    static String rcasStrengthLabel(double v) {
+        String color;
+        if (v < 0.01) color = "\u00a77";
+        else if (v <= 0.4) color = "\u00a7a";
+        else if (v <= 0.6) color = "\u00a7e";
+        else color = "\u00a76";
+        return "RCAS Str: " + color + String.format("%.2f", v);
     }
 
     static String upscalerPresetLabel(com.limitlessdev.ldog.render.pipeline.UpscalerPreset preset) {
