@@ -328,6 +328,17 @@ public class LDOGConfig {
     public static double taaHistoryWeight = 0.9;
 
     @Config.Comment({
+        "Auto-adjust internalRenderScale to hit the display's refresh rate (or",
+        "the MC FPS limit if lower). When FPS falls below ~90% of target for",
+        "2 seconds, steps scale down one tier (e.g. 1.0 -> 0.85 -> 0.75 ->",
+        "0.67 -> 0.5). When FPS is above ~110% of target, steps back up.",
+        "",
+        "Requires Post Pipeline ON. Overrides any manual Render Scale setting",
+        "while active."
+    })
+    public static boolean enableAutoScale = false;
+
+    @Config.Comment({
         "Borderless windowed fullscreen: replaces exclusive fullscreen with an",
         "undecorated window sized to the desktop. Enables instant alt-tab,",
         "functional external overlays, and multi-monitor cursor movement.",
