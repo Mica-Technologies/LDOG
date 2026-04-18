@@ -8,6 +8,7 @@ import org.lwjgl.opengl.Display;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
@@ -20,6 +21,34 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(Minecraft.class)
 public abstract class MixinMinecraftBorderless {
+
+    /**
+     * Startup fullscreen interception. MC's setInitialDisplayMode is called
+     * BEFORE Display.create() and calls Display.setFullscreen(true) directly
+     * (not via toggleFullscreen) when gameSettings.fullScreen is on at launch.
+     * Without this redirect, users with fullscreen already saved would enter
+     * true exclusive fullscreen at startup — our toggleFullscreen mixin only
+     * intercepts later F11 presses. That's why the last test showed a
+     * badly-sized main menu right after load: MC went into exclusive
+     * fullscreen, resized displayWidth/Height, but the main-menu GuiScreen
+     * didn't re-layout until the user navigated away and back.
+     *
+     * When borderless mode is active, redirect the setFullscreen call to our
+     * startup-setup path instead. MC's subsequent code reads
+     * Display.getDisplayMode() and updates displayWidth/Height itself, so
+     * the framebuffer that gets created on the next line has the right
+     * dimensions.
+     */
+    @Redirect(
+        method = "setInitialDisplayMode",
+        at = @At(value = "INVOKE", target = "Lorg/lwjgl/opengl/Display;setFullscreen(Z)V"))
+    private void ldog$startupFullscreen(boolean fullscreen) throws LWJGLException {
+        if (fullscreen && BorderlessFullscreenHandler.isActive()) {
+            BorderlessFullscreenHandler.setupAtStartup();
+        } else {
+            Display.setFullscreen(fullscreen);
+        }
+    }
 
     @Inject(method = "toggleFullscreen", at = @At("HEAD"), cancellable = true)
     private void ldog$borderlessToggle(CallbackInfo ci) {

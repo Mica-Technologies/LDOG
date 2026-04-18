@@ -37,6 +37,34 @@ public final class BorderlessFullscreenHandler {
         return "true".equalsIgnoreCase(System.getProperty("org.lwjgl.opengl.Window.undecorated"));
     }
 
+    /**
+     * Startup path. Called before Display.create() while MC's
+     * setInitialDisplayMode is running — the Display isn't created yet, and
+     * MC's framebufferMc doesn't exist. We can't touch mc.displayWidth/Height
+     * or updateFramebufferSize here; MC's own post-setFullscreen code reads
+     * Display.getDisplayMode() afterward and sets those fields, then creates
+     * the framebuffer with the correct dimensions on the next line.
+     *
+     * LDOGConfig may not yet be synced from disk at this point (FML preInit
+     * hasn't run), so blockFullscreenOptimizations reads as the class default
+     * (true). On first launch after the user toggles the config off, they'll
+     * get dodge behavior at startup and their strict-fullscreen preference
+     * only on F11 toggle afterward — acceptable edge case.
+     */
+    public static void setupAtStartup() throws LWJGLException {
+        DisplayMode desktop = Display.getDesktopDisplayMode();
+        int w = desktop.getWidth();
+        int h = LDOGConfig.blockFullscreenOptimizations
+            ? desktop.getHeight() - 1
+            : desktop.getHeight();
+
+        Display.setResizable(false);
+        Display.setLocation(0, 0);
+        Display.setDisplayMode(new DisplayMode(w, h));
+
+        LDOGMod.LOGGER.info("LDOG: startup borderless prep — {}x{} (Display not yet created)", w, h);
+    }
+
     public static void enterBorderless(Minecraft mc) throws LWJGLException {
         if (!hasSavedState) {
             savedWidth = Display.getWidth();
