@@ -32,6 +32,15 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_ENTITY_DIST = 11;
     private static final int BTN_TE_DIST = 12;
     private static final int BTN_PARTICLE_CULL = 13;
+    // Per-type particle toggles (5 categories)
+    private static final int BTN_PARTICLE_FIREWORK  = 500;
+    private static final int BTN_PARTICLE_PORTAL    = 501;
+    private static final int BTN_PARTICLE_POTION    = 502;
+    private static final int BTN_PARTICLE_WATER     = 503;
+    private static final int BTN_PARTICLE_DRIPPING  = 504;
+    // Vignette post-process
+    private static final int BTN_VIGNETTE_ENABLE    = 510;
+    private static final int BTN_VIGNETTE_INTENSITY = 511;
     private static final int BTN_ENTITY_LOD = 14;
     private static final int BTN_FPS_REDUCER = 20;
     private static final int BTN_UNFOCUSED_FPS = 21;
@@ -126,6 +135,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final double[] PIPELINE_SCALE_VALUES = {1.0, 0.85, 0.75, 0.5};
     private static final double[] FSR1_SHARPNESS_VALUES = {0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0};
     private static final double[] RCAS_STRENGTH_VALUES = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.75, 1.0};
+    private static final double[] VIGNETTE_INTENSITY_VALUES = {0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0};
     private static final double[] TAA_WEIGHT_VALUES = {0.0, 0.5, 0.7, 0.8, 0.85, 0.9, 0.92, 0.95};
     private static final String[] FONT_AA_MODES = {"off", "bilinear", "trilinear"};
     private static final int[] TTF_SIZES = {16, 20, 24, 28, 32, 40, 48};
@@ -180,6 +190,21 @@ public class GuiLDOGSettings extends GuiScreen {
                 toggleLabel("Render Opts", LDOGConfig.enableRenderOptimizations)),
             new GuiButton(BTN_PARTICLE_CULL, 0, 0, w, h,
                 toggleLabel("Particle Culling", LDOGConfig.enableParticleCulling)));
+        // Per-type particle filter — kills specific particle categories at spawn.
+        settingsList.addButtonRow(
+            new GuiButton(BTN_PARTICLE_FIREWORK, 0, 0, w, h,
+                toggleLabel("Firework Particles", LDOGConfig.enableParticleFirework)),
+            new GuiButton(BTN_PARTICLE_PORTAL, 0, 0, w, h,
+                toggleLabel("Portal Particles", LDOGConfig.enableParticlePortal)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_PARTICLE_POTION, 0, 0, w, h,
+                toggleLabel("Potion Particles", LDOGConfig.enableParticlePotion)),
+            new GuiButton(BTN_PARTICLE_WATER, 0, 0, w, h,
+                toggleLabel("Water Particles", LDOGConfig.enableParticleWater)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_PARTICLE_DRIPPING, 0, 0, w, h,
+                toggleLabel("Dripping Particles", LDOGConfig.enableParticleDripping)),
+            null);
         settingsList.addButtonRow(
             new GuiButton(BTN_ENTITY_DIST, 0, 0, w, h,
                 distLabel("Entity Dist", LDOGConfig.entityRenderDistance)),
@@ -271,6 +296,11 @@ public class GuiLDOGSettings extends GuiScreen {
                 toggleLabel("RCAS Sharpen", LDOGConfig.enableRcasSharpen)),
             new GuiButton(BTN_RCAS_STRENGTH, 0, 0, w, h,
                 rcasStrengthLabel(LDOGConfig.rcasSharpness)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_VIGNETTE_ENABLE, 0, 0, w, h,
+                toggleLabel("Vignette", LDOGConfig.enableVignette)),
+            new GuiButton(BTN_VIGNETTE_INTENSITY, 0, 0, w, h,
+                vignetteIntensityLabel(LDOGConfig.vignetteIntensity)));
 
         // -- Font Rendering --
         // Drop-in replacement for the Smooth Font mod. Swaps in HD ascii.png from
@@ -490,6 +520,34 @@ public class GuiLDOGSettings extends GuiScreen {
             case BTN_PARTICLE_CULL:
                 LDOGConfig.enableParticleCulling = !LDOGConfig.enableParticleCulling;
                 button.displayString = toggleLabel("Particle Culling", LDOGConfig.enableParticleCulling);
+                break;
+            case BTN_PARTICLE_FIREWORK:
+                LDOGConfig.enableParticleFirework = !LDOGConfig.enableParticleFirework;
+                button.displayString = toggleLabel("Firework Particles", LDOGConfig.enableParticleFirework);
+                break;
+            case BTN_PARTICLE_PORTAL:
+                LDOGConfig.enableParticlePortal = !LDOGConfig.enableParticlePortal;
+                button.displayString = toggleLabel("Portal Particles", LDOGConfig.enableParticlePortal);
+                break;
+            case BTN_PARTICLE_POTION:
+                LDOGConfig.enableParticlePotion = !LDOGConfig.enableParticlePotion;
+                button.displayString = toggleLabel("Potion Particles", LDOGConfig.enableParticlePotion);
+                break;
+            case BTN_PARTICLE_WATER:
+                LDOGConfig.enableParticleWater = !LDOGConfig.enableParticleWater;
+                button.displayString = toggleLabel("Water Particles", LDOGConfig.enableParticleWater);
+                break;
+            case BTN_PARTICLE_DRIPPING:
+                LDOGConfig.enableParticleDripping = !LDOGConfig.enableParticleDripping;
+                button.displayString = toggleLabel("Dripping Particles", LDOGConfig.enableParticleDripping);
+                break;
+            case BTN_VIGNETTE_ENABLE:
+                LDOGConfig.enableVignette = !LDOGConfig.enableVignette;
+                button.displayString = toggleLabel("Vignette", LDOGConfig.enableVignette);
+                break;
+            case BTN_VIGNETTE_INTENSITY:
+                LDOGConfig.vignetteIntensity = cycleValue(VIGNETTE_INTENSITY_VALUES, LDOGConfig.vignetteIntensity);
+                button.displayString = vignetteIntensityLabel(LDOGConfig.vignetteIntensity);
                 break;
             case BTN_ENTITY_DIST:
                 LDOGConfig.entityRenderDistance = cycleValue(ENTITY_DIST_VALUES, LDOGConfig.entityRenderDistance);
@@ -1431,6 +1489,14 @@ public class GuiLDOGSettings extends GuiScreen {
         else if (v <= 0.6) color = "\u00a7e";
         else color = "\u00a76";
         return "RCAS Str: " + color + String.format("%.2f", v);
+    }
+
+    static String vignetteIntensityLabel(double v) {
+        String color;
+        if (v <= 0.3) color = "\u00a7a";       // green — subtle
+        else if (v <= 0.6) color = "\u00a7e";  // yellow — moderate
+        else color = "\u00a76";                 // gold — heavy / cinematic
+        return "Vignette Str: " + color + String.format("%.2f", v);
     }
 
     static String upscalerPresetLabel(com.limitlessdev.ldog.render.pipeline.UpscalerPreset preset) {

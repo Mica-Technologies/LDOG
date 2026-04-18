@@ -417,6 +417,42 @@ public class LDOGConfig {
     @Config.Comment("Enable frustum culling for particles (skip rendering off-screen particles).")
     public static boolean enableParticleCulling = true;
 
+    // ---- Per-type particle toggles (inspired by OF's per-particle controls) ----
+    // Each disables a category of vanilla particles at SPAWN time — no tick or
+    // render cost for filtered particles. Hot-toggleable, no reload required.
+
+    @Config.Comment("Enable Firework particles (sparks, starter, overlay glow).")
+    public static boolean enableParticleFirework = true;
+
+    @Config.Comment("Enable Portal particles (end portal swirls + enchantment table glyphs).")
+    public static boolean enableParticlePortal = true;
+
+    @Config.Comment("Enable Potion-effect particles (beacons, splash potions, witch magic).")
+    public static boolean enableParticlePotion = true;
+
+    @Config.Comment("Enable Water particles (splash, bubbles, suspended water dust).")
+    public static boolean enableParticleWater = true;
+
+    @Config.Comment("Enable Dripping particles (water/lava drops from blocks above).")
+    public static boolean enableParticleDripping = true;
+
+    // ---- Vignette post-process ----
+
+    @Config.Comment({
+        "Radial vignette darkening at the edges of the screen.",
+        "Cinematic / immersion polish. Multiplicative blend so it never",
+        "brightens — only darkens corners + edges.",
+        "Requires Post Pipeline ON."
+    })
+    public static boolean enableVignette = false;
+
+    @Config.Comment({
+        "Vignette intensity. 0.0 = no darkening (effectively off),",
+        "0.5 = corners dim by 50%, 1.0 = corners go fully black."
+    })
+    @Config.RangeDouble(min = 0.0, max = 1.0)
+    public static double vignetteIntensity = 0.5;
+
     @Config.Comment({
         "Enable entity LOD (Level of Detail).",
         "Distant entities render less frequently to save GPU work.",
