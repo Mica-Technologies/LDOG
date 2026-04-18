@@ -252,6 +252,14 @@ public class LDOGConfig {
     public static String upscalerAlgorithm = "bilinear";
 
     @Config.Comment({
+        "FSR1 sharpening strength. 0.0 = no sharpening (pure bilinear behavior),",
+        "1.0 = moderate, 1.5 = aggressive (default), 2.0 = very aggressive (may show halos).",
+        "Only consumed when upscalerAlgorithm=fsr1."
+    })
+    @Config.RangeDouble(min = 0.0, max = 2.0)
+    public static double fsr1Sharpness = 1.5;
+
+    @Config.Comment({
         "Enable shader support (stretch goal).",
         "Auto-disabled when OptiFine is detected."
     })

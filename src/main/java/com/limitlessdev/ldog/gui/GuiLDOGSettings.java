@@ -99,10 +99,12 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_PIPELINE = 100;
     private static final int BTN_PIPELINE_SCALE = 101;
     private static final int BTN_PIPELINE_UPSCALER = 102;
+    private static final int BTN_FSR1_SHARPNESS = 103;
 
     private static final int[] ANISOTROPIC_VALUES = {2, 4, 8, 16};
     private static final int[] MSAA_VALUES = {2, 4, 8};
     private static final double[] PIPELINE_SCALE_VALUES = {1.0, 0.85, 0.75, 0.5};
+    private static final double[] FSR1_SHARPNESS_VALUES = {0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0};
     private static final String[] FONT_AA_MODES = {"off", "bilinear", "trilinear"};
     private static final int[] TTF_SIZES = {16, 20, 24, 28, 32, 40, 48};
 
@@ -210,7 +212,8 @@ public class GuiLDOGSettings extends GuiScreen {
         settingsList.addButtonRow(
             new GuiButton(BTN_PIPELINE_UPSCALER, 0, 0, w, h,
                 upscalerLabel(com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm.selected())),
-            null);
+            new GuiButton(BTN_FSR1_SHARPNESS, 0, 0, w, h,
+                fsr1SharpnessLabel(LDOGConfig.fsr1Sharpness)));
 
         // -- Font Rendering --
         // Drop-in replacement for the Smooth Font mod. Swaps in HD ascii.png from
@@ -348,9 +351,6 @@ public class GuiLDOGSettings extends GuiScreen {
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
-        com.limitlessdev.ldog.LDOGMod.LOGGER.info(
-            "LDOG GUI: mouseClicked entry x={} y={} btn={} t={}",
-            mouseX, mouseY, mouseButton, System.currentTimeMillis() % 100000);
         super.mouseClicked(mouseX, mouseY, mouseButton);
         settingsList.mouseClicked(mouseX, mouseY, mouseButton);
 
@@ -377,18 +377,10 @@ public class GuiLDOGSettings extends GuiScreen {
             GuiButton left = row.getLeftButton();
             GuiButton right = row.getRightButton();
             if (left != null && left.mousePressed(this.mc, mouseX, mouseY)) {
-                com.limitlessdev.ldog.LDOGMod.LOGGER.info(
-                    "LDOG GUI: dispatch id={} bounds=({},{})-({},{}) label='{}'",
-                    left.id, left.x, left.y, left.x + left.width, left.y + left.height,
-                    left.displayString);
                 try { actionPerformed(left); } catch (IOException ignored) {}
                 return;
             }
             if (right != null && right.mousePressed(this.mc, mouseX, mouseY)) {
-                com.limitlessdev.ldog.LDOGMod.LOGGER.info(
-                    "LDOG GUI: dispatch id={} bounds=({},{})-({},{}) label='{}'",
-                    right.id, right.x, right.y, right.x + right.width, right.y + right.height,
-                    right.displayString);
                 try { actionPerformed(right); } catch (IOException ignored) {}
                 return;
             }
@@ -627,6 +619,10 @@ public class GuiLDOGSettings extends GuiScreen {
                 button.displayString = upscalerLabel(next);
                 break;
             }
+            case BTN_FSR1_SHARPNESS:
+                LDOGConfig.fsr1Sharpness = cycleValue(FSR1_SHARPNESS_VALUES, LDOGConfig.fsr1Sharpness);
+                button.displayString = fsr1SharpnessLabel(LDOGConfig.fsr1Sharpness);
+                break;
             case BTN_EXT_BORDER:
                 LDOGConfig.enableExtendedBorderMipmaps = !LDOGConfig.enableExtendedBorderMipmaps;
                 button.displayString = toggleLabel("Ext Border Mips", LDOGConfig.enableExtendedBorderMipmaps);
@@ -838,6 +834,16 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a77edges than bilinear at the same render scale.",
             "",
             "\u00a77Only applies when render scale is below 1.0.");
+        registerTooltip(BTN_FSR1_SHARPNESS,
+            "\u00a7eFSR1 Sharpness",
+            "\u00a77Strength of FSR1's edge-enhancement kernel.",
+            "",
+            "\u00a770.00:\u00a77 no sharpening (matches bilinear).",
+            "\u00a7a1.00:\u00a77 moderate — safe on any content.",
+            "\u00a7e1.50:\u00a77 aggressive (default) — clear crispness win.",
+            "\u00a762.00:\u00a77 very aggressive — may show halos on hard edges.",
+            "",
+            "\u00a77Live-adjustable. Only applies when Upscaler is FSR1.");
     }
 
     private void saveAndClose() {
@@ -955,6 +961,15 @@ public class GuiLDOGSettings extends GuiScreen {
 
     static String upscalerLabel(com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm alg) {
         return "Upscaler: \u00a7a" + alg.displayName();
+    }
+
+    static String fsr1SharpnessLabel(double value) {
+        String color;
+        if (value < 0.01) color = "\u00a77";           // gray — effectively off
+        else if (value <= 1.0) color = "\u00a7a";      // green — safe range
+        else if (value <= 1.5) color = "\u00a7e";      // yellow — default/aggressive
+        else color = "\u00a76";                         // gold — very aggressive
+        return "Sharpness: " + color + String.format("%.2f", value);
     }
 
     static String betterGrassLabel(String mode) {

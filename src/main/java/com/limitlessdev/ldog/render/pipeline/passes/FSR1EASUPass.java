@@ -1,6 +1,7 @@
 package com.limitlessdev.ldog.render.pipeline.passes;
 
 import com.limitlessdev.ldog.LDOGMod;
+import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.pipeline.PostProcessContext;
 import com.limitlessdev.ldog.render.pipeline.PostProcessPass;
 import com.limitlessdev.ldog.render.pipeline.ShaderProgram;
@@ -145,13 +146,10 @@ public final class FSR1EASUPass implements PostProcessPass {
         shader.bind();
         shader.setUniform1i("u_sceneTex", 0);
         shader.setUniform2f("u_invSceneDim", 1.0f / ctx.sceneWidth(), 1.0f / ctx.sceneHeight());
-        // Sharpness default 1.5. Aggressive — the anti-ringing clamp was the
-        // real reason the effect was invisible in earlier tests, not a weak
-        // default. With the clamp removed this value delivers a clearly visible
-        // edge-enhancement delta vs plain bilinear. If it looks over-sharpened
-        // (crunchy halos on very high-contrast block edges), dial back in 9a.3
-        // once the config slider ships.
-        shader.setUniform1f("u_sharpness", 1.5f);
+        // Sharpness is live-configurable via LDOGConfig.fsr1Sharpness — read
+        // fresh every frame so the in-game slider feels responsive without
+        // any reload.
+        shader.setUniform1f("u_sharpness", (float) LDOGConfig.fsr1Sharpness);
 
         // Fullscreen triangle — bigger than the viewport, GPU clips the overhang.
         // Avoids the 2-triangle diagonal seam and is one fewer edge to rasterize.
