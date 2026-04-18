@@ -399,6 +399,30 @@ At full maturity, LDOG replaces **5-7 separate mods** in the alto modpack.
 
 ---
 
+## Future Expansion Ideas (from OptiFine inspection)
+
+Catalogued 2026-04-18 by walking the OptiFine 1.12.2 HD U G5 jar that lives at `run/mods/`. Each item is something OF supports that LDOG does not yet — a candidate for future phases beyond what's currently planned. **Not commitments**, just visibility into the gap. Items are sorted by an estimate of user impact (high → low).
+
+- [ ] **Real shader pack support**: load and run external `.zip` shader packs (vertex + fragment + composite stages). Phase 8 framework is in place; the missing piece is shader-pack file format parsing and the multi-program compositor stage.
+- [ ] **CEM (Custom Entity Models)**: pack-supplied JSON model overrides for unique mob geometry (not just textures).
+- [ ] **Smart Animations**: skip ticking texture animations for sprites not currently visible — meaningful FPS gain on heavy-animation modpacks.
+- [ ] **Multi-core / Smooth chunk loading**: chunk mesh build + upload spread across worker threads + frame budget; reduces stutter on world-load and chunk-cross.
+- [ ] **Smooth World**: distribute single-player tick work across frames so spikes don't drop FPS.
+- [ ] **Smooth Biomes**: blend grass/foliage/water colors at biome borders rather than hard cuts.
+- [ ] **Per-particle-type toggles**: Firework / Portal / Potion / Water / Void / Dripping particle disable switches (independent of overall particle limits).
+- [ ] **Vignette effect**: post-process darkening of screen edges. Trivial fragment shader; ships immersion polish.
+- [ ] **Cloud quality + height controls**: 2D / 3D cloud rendering modes + adjustable Y altitude.
+- [ ] **Fog customization**: fancy fog toggle + adjustable fog start distance.
+- [ ] **Translucent block blending**: correct color compositing when stacking transparent blocks (stained glass towers, etc.).
+- [ ] **Custom GUIs**: texture-pack-replaceable GUI backgrounds + button skins.
+- [ ] **Lagometer**: per-stage frame-time visualization overlay (chunk meshing vs render vs lighting vs ticks).
+- [ ] **Render Regions**: group nearby chunks into single VBO uploads to reduce draw-call count.
+- [ ] **Custom loading screens / panorama**: pack-supplied splash + background panorama.
+
+Everything above is captured for future planning. None block the current Phase C4 OptiFine-replacement track — that work converts existing LDOG features into preferred-over-OF mode; this list grows the LDOG feature surface to eventually stand alone without OF for power-user packs.
+
+---
+
 ## Git History (key commits)
 
 | Tag/Hash | What |
