@@ -8,52 +8,70 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 > We're building LDOG (`ldog`), an open-source OptiFine replacement for Minecraft Forge 1.12.2. The project is at `E:\gitRepos\LDOG`. The build system is GregTechCEu Buildscripts (RetroFuturaGradle 1.4.0). Reference projects for conventions are at `E:\gitRepos\minecraft-city-super-mod` and `E:\gitRepos\LDFAWE`. Read `CLAUDE.md`, `docs/ATTACK_PLAN.md`, `docs/ARCHITECTURE.md`, and the deep-dive docs in `docs/` (P8_RESEARCH_AND_PLAN.md, POST_9A4_RESEARCH.md, PHASE_9C_TEMPORAL_DEEP_DIVE.md) to get up to speed, then pick up at the next open checklist item.
 
-### Where We Left Off (2026-04-17, late evening)
+### Where We Left Off (end of 2026-04-17 — marathon session)
 
-**Phases 0-10 shipped.** Phases 1-7 and C3 done in earlier sessions (see older commit history). Today's session shipped:
+**Phases 0-10 complete, plus Phase 9c.1+9c.2 temporal stack shipped.** Phases 1-7 and C3 done in earlier sessions. Today was a ~12-hour run covering Phase 8, all of 9a, 9c.1+9c.2, and Phase 10.
 
-**Phase 8 (Shader Pipeline) — full stack:**
-- Phase 8a post-process pipeline framework: `PostProcessPass` contract, `PostProcessPipeline` orchestrator with fault-tolerant pass disabling, `RenderTargetManager` (scaled scene target + ping-pong), `PipelineDebugStats`.
-- Phase 8b observability: perf overlay row showing binding status + scale + pass timings, one-shot watchdog logs.
-- Phase 8c binding hook: redirect world render into scaled scene target, `@Redirect` on the vanilla viewport call, blit back to main FB. Yields to MSAA (which owns the FBO swap). Parity tested at 1.0 scale + scaled scenes confirmed visibly softer by user.
-- `ShaderProgram` utility class for compile/link/uniform across all pipeline passes.
+**Phase 8 (Shader Pipeline) — full stack shipped + verified:**
+- 8a framework: `PostProcessPass`, `PostProcessPipeline`, `RenderTargetManager`, `PipelineDebugStats`. Fault-tolerant pass removal on exception.
+- 8b observability: perf-overlay row showing binding state + scale + pass timings, watchdog log if binding never activates.
+- 8c binding hook: redirects world render into scaled scene target, `@Redirect` on vanilla viewport, blits back to main FB. Yields to MSAA. Parity verified at 1.0 + scaled scenes visibly softer.
+- `ShaderProgram` utility for compile/link/uniform across all pipeline passes. `setUniformMatrix4` added for 9c.2.
 
-**Phase 9 (Upscaling) — three upscalers + post-processing chain:**
-- 9a.1 `BilinearBlitPass` extracted from mixin into its own pass.
-- 9a.2 `FSR1EASUPass` — LDOG-original unsharp-mask-on-bilinear with contrast-adaptive strength. User verified live sharpness deltas across scales.
-- 9a.3 FSR1 sharpness slider (0.0—2.0) in GUI.
-- 9a.4 `FSR1QualityPass` — direction-biased EASU variant: Sobel edge detection + anisotropic sampling along detected edge + contrast-adaptive sharpen. Noticeably crisper than basic FSR1 on diagonal geometry.
-- 9a.5 `UpscalerPreset` — one-click bundles (Native / Ultra / Quality / Balanced / Performance / Custom).
-- 9a.6 `RCASSharpenPass` — post-upscale sharpen, works at scale 1.0 too. Uses `glCopyTexSubImage2D` to sample main FB.
-- 9a.7 `LDOGPreset` — whole-mod presets (Vanilla / Performance / Default / Fancy / Ultra / Custom).
-- 9a.8 `LDOGFXAAPass` — LDOG-original FXAA 3.11-inspired shader with 5 quality levels (Low / Medium / High / Ultra / Extreme). `FXAAHandler` yields MC's fixed FXAA when pipeline is on so only one runs.
+**Phase 9 (Upscaling) — three upscalers + post-processing chain, all shipped:**
+- 9a.1 `BilinearBlitPass` extracted from mixin.
+- 9a.2 `FSR1EASUPass` — LDOG-original unsharp-mask-on-bilinear. **User-verified.**
+- 9a.3 FSR1 sharpness slider 0-2.0. **User-verified.**
+- 9a.4 `FSR1QualityPass` — direction-biased EASU (Sobel + anisotropic). **User-verified** ("really good").
+- 9a.5 `UpscalerPreset` enum (Native/Ultra/Quality/Balanced/Performance/Custom). **User-verified.**
+- 9a.6 `RCASSharpenPass` — post-upscale sharpen via `glCopyTexSubImage2D`. **User-verified.**
+- 9a.7 `LDOGPreset` enum — whole-mod presets. **User-verified.**
+- 9a.8 `LDOGFXAAPass` — 5 quality levels. **User-verified.**
+- 9a.9 `AutoScaleHandler` — target-FPS dynamic resolution scaling. **Unverified: user's test didn't produce log output** (see "Open issues" below).
 
-**Phase 10 (Borderless Windowed Fullscreen):**
-- Restart-required mode via core-plugin setting `org.lwjgl.opengl.Window.undecorated=true` before Display.create. Config + GUI toggle.
-- Flicker fix (plain `DisplayMode` + `setLocation` before `setDisplayMode`).
-- Windows Fullscreen Optimizations dodge + user toggle (`blockFullscreenOptimizations`).
-- Startup sizing fix: `mc.resize()` not `updateFramebufferSize` so currentScreen relayouts.
+**Phase 9c (Temporal upscaling) — MVP + camera MV:**
+- 9c.1 `JitterHelper` (Halton 2,3) + `TAAAccumulatePass` — **verified** after bug fix (see below).
+- 9c.2 Camera motion vectors — `CameraState` + depth-texture attachment + reprojection in TAA shader — **verified** after "drunk visuals" bug fix (see below).
 
-**Critical gotchas / non-obvious infrastructure:**
-- **`Minecraft` and `FontRenderer` mixins MUST be in `mixins.ldog.vanilla.json`** (the early config loaded by `LDOGCorePlugin` via `IEarlyMixinLoader`). They're pulled into the classloader during FML bootstrap before the late `mixins.ldog.json` registers. Mixins on these targets in the late config will fatally error with "loaded too early".
-- `Display.setDisplayMode` in LWJGL 2.9.4 must be called with `new DisplayMode(w, h)` (no bpp/refresh metadata) — the full desktop mode triggers mode-switch semantics.
-- Quality preset changes require setting `extBorderSettingsChanged`, `fxaaSettingsChanged`, `waterSettingsChanged` so `saveAndClose` triggers the right reload paths.
+**Phase 10 (Borderless Windowed Fullscreen) — shipped + verified:**
+- Restart-required mode: core-plugin sets `org.lwjgl.opengl.Window.undecorated=true` before Display creation.
+- Flicker fix (plain `DisplayMode`, reorder operations).
+- Windows Fullscreen Optimizations dodge with user toggle.
+- Startup sizing fix: `mc.resize()` instead of `updateFramebufferSize` so `currentScreen.onResize` fires.
 
-**What's in the tree but UNVERIFIED:**
-- None of the 9a.5 through 9a.8 features have been tested in-game by the user — shipped after user went AFK. Scale change, FSR1-Quality selection, Quality Presets, LDOG global presets, RCAS, FXAA quality levels all need live verification.
+**Bugs caught during this session (all fixed):**
+1. **9a.1→9a.2 FSR1 anti-ringing clamp killed sharpening.** 5-tap clamp to local min/max trapped edge peaks back to input. Widened clamp neighborhood, then dropped it entirely. Fixed.
+2. **8c `pass != 2` guard wrong.** Originally `pass != 0`; that's anaglyph-only. Non-anaglyph uses `pass == 2`. 8c binding never activated on default config before this fix.
+3. **Borderless flicker** on F11 caused by `Display.getDesktopDisplayMode()`'s bpp/refresh metadata triggering mode-switch semantics in LWJGL. Fixed with plain `new DisplayMode(w, h)`.
+4. **Windows Fullscreen Optimizations flash** when window exactly matches desktop. Workaround: window is `desktop_h - 1` by default (user toggle).
+5. **Borderless startup sizing** — game launched into fullscreen had a tiny main menu in the corner. Root cause: our handler called `updateFramebufferSize` but not `mc.resize()`, so `currentScreen.onResize` never fired. Fixed.
+6. **Minecraft/FontRenderer mixin class-load race.** `Minecraft` is pulled into the classloader during FML bootstrap BEFORE late mixin configs register. Mixins targeting it must go in `mixins.ldog.vanilla.json` (early config loaded by `LDOGCorePlugin` via `IEarlyMixinLoader`). Affected `MixinMinecraftBorderless` + `AccessorMinecraft`.
+7. **9c.1 jitter was a no-op.** Mixin injected jitter in `setupCameraTransform` but `renderWorldPass` overwrites `GL_PROJECTION` twice afterward (sky + terrain gluPerspective calls). Moved injection to `renderWorldPass` on both ordinals.
+8. **9c.2 "drunk / swimming" visuals.** Captured un-jittered camera matrices while history stored jittered pixel positions — reprojection UVs swung with the Halton cycle. Fixed: capture AFTER `applyJitter()` so cur/prev matrices match what was actually rendered.
 
-**9c.2 camera motion vectors shipped 2026-04-17 (verified + refined).** `CameraState` captures viewProj + invCurViewProj + prevViewProj. Scene depth moved from RBO to texture for sampling. TAA shader reconstructs world-space, reprojects via prevViewProj, samples history at reprojected UV. Two bug fixes along the way: (1) **9c.1 jitter was a no-op** — original injection in `setupCameraTransform` was erased by renderWorldPass's own gluPerspective overrides. Moved to renderWorldPass. (2) **"Drunk / swimming" visuals** after 9c.2 were caused by capturing un-jittered matrices while history stored jittered pixels. Fixed by capturing AFTER `applyJitter()` so cur/prev matrices match what was actually rendered — classic TAA math gotcha, one-line swap.
+**Critical gotchas / non-obvious infrastructure (for next reader):**
+- **`Minecraft` and `FontRenderer` mixins MUST be in `mixins.ldog.vanilla.json`** (early config loaded via `IEarlyMixinLoader`). Mixin targets pulled into the classloader during FML bootstrap before late configs register.
+- `Display.setDisplayMode` in LWJGL 2.9.4 must be called with `new DisplayMode(w, h)` — passing the full desktop mode (with bpp/refresh) triggers mode-switch semantics even when not in exclusive fullscreen.
+- TAA matrix capture must happen AFTER jitter, not before. History stores jittered pixel positions; reprojection needs matrices that match that jitter.
+- `renderWorldPass` with `pass != 2` is anaglyph-only (red/cyan eyes). Default MC always uses `pass == 2`. Don't gate on `pass == 0` unless you actually want anaglyph only.
+- Auto scale handler (`AutoScaleHandler`) uses `@Mod.EventBusSubscriber` with `modid = Tags.MODID, value = Side.CLIENT` — matches the pattern used by `FXAAHandler` and `PerformanceOverlayRenderer`. Registration should be automatic at mod load.
+- Preset changes require setting `extBorderSettingsChanged`, `fxaaSettingsChanged`, `waterSettingsChanged` on the GUI instance so `saveAndClose` triggers the right reload paths.
 
-**9a.9 Auto Scale shipped 2026-04-17 (unverified in-game).** `AutoScaleHandler` subscribes to ClientTickEvent; every 2s compares `getDebugFPS()` against min(refresh rate, MC FPS limit) and steps `internalRenderScale` through a 5-tier ladder based on 0.9x/1.1x thresholds. Overrides manual scale while active.
+**Open issues / pending verification:**
+- **9a.9 Auto Scale — no log output in user test.** Two hypotheses, untested:
+  1. FPS stayed inside the dead zone (0.9x — 1.1x target), so no tier change fired → no log. Current code only logs on actual changes.
+  2. Handler didn't register, or guards (`pipeline off`, `world == null`) short-circuited every tick.
+  - **Fix approach (next session):** add a one-shot "AutoScale handler tick running" log on first invocation to distinguish registration failure from no-op due to dead-zone. Also consider logging each decision at DEBUG level so the user can set log level to see "AutoScale hold (fps=144, target=144, scale=1.00)" even when no adjustment fires.
+- **9a.9 design limitation:** auto-scale overrides manual Render Scale cycling. User can see the current value in the GUI slider but the next auto-tick will override. Documented in the tooltip. Better UX would be "auto-scale within manual's max bound" but adds complexity.
 
 **Key next steps (priority order):**
-1. **Verify 9a.9 Auto Scale in-game** — enable under Post-Process; stand in a perf-heavy area (dense forest, entities) and watch the log for `LDOG: AutoScale DOWN to 0.85x (fps=..., target=...)`. Climb to a low-density area and verify it ramps back up. 2s interval; requires world loaded.
-2. **Phase 9c.3 — entity motion vectors** (2-4 weeks, invasive). Needed if user wants ghost-free moving mobs.
-3. **Phase 10b** runtime-togglable borderless — medium risk, needs `Display.destroy`/`create` + subsystem coordination.
-4. **Phase C4** (OptiFine Override Mode) — reverse coexistence, reflective writes to `optifine.Config`.
+1. **Debug 9a.9 auto-scale logging.** Add tick-confirmation log, retry, decide if fix is needed or if behavior is actually correct-but-invisible.
+2. **Phase 9c.3 — entity motion vectors** (2-4 weeks, invasive). Fixes ghosting on moving mobs. Per `docs/PHASE_9C_TEMPORAL_DEEP_DIVE.md` this is the highest-cost stage; needs careful per-entity-render hook strategy.
+3. **Phase 10b** runtime-togglable borderless — `Display.destroy`/`create` + LDOG subsystem GL-state coordination.
+4. **Phase C4** (OptiFine Override Mode) — reverse coexistence via reflective writes to `optifine.Config`.
 5. **Phase 6d** custom-sky injection verification (from earlier session, still open).
 6. **C3 polish** (optional): disk-cached TTF atlas, Unicode pages.
-7. **9a.9 extensions (if auto-scale proves out):** also auto-adjust upscaler algorithm (FSR1-Quality → FSR1 → Bilinear as FPS drops further), auto-adjust TAA/RCAS/FXAA toggles at the tail of the ladder.
+7. **9a.9 extensions** (if auto-scale proves out): also auto-adjust upscaler algorithm and AA toggles at the tail of the ladder.
 
 **Test resource packs (already in run/resourcepacks/):**
 - `default-1-12` (extracted) — CTM glass + glass panes (47-tile)
@@ -241,11 +259,11 @@ A phased development plan for building out Limitless Development Optigame, from 
 - [x] **9a.6 (2026-04-17):** `RCASSharpenPass` — post-upscale sharpen via `glCopyTexSubImage2D` approach. Works at any scale including 1.0 (pure sharpen mode for native-res users). Config + slider.
 - [x] **9a.7 (2026-04-17):** `LDOGPreset` enum — whole-mod presets (Vanilla / Performance / Default / Fancy / Ultra / Custom). Renders at top of settings list. `LDOGPreset.apply()` sets AA/FXAA/ExtBorder/water change flags so `saveAndClose` triggers the right reloads.
 - [x] **9a.8 (2026-04-17):** `LDOGFXAAPass` — LDOG-original FXAA 3.11-inspired shader with 5 quality levels. Pipeline FXAA replaces MC's fixed FXAA when pipeline is on; `FXAAHandler` unloads MC's shader in that case. See Phase 7d for details.
-- [x] **9a.9 (2026-04-17):** `AutoScaleHandler` — target-FPS dynamic resolution scaling. Every 2s (40 client ticks), compares `Minecraft.getDebugFPS()` against `min(Display.getDesktopDisplayMode().getFrequency(), gameSettings.limitFramerate)` and steps `internalRenderScale` through a 5-tier ladder {1.00, 0.85, 0.75, 0.67, 0.50}. 0.9x/1.1x threshold dead-zone prevents tier-bouncing at target. One-tier-per-interval for visually smooth transitions. Config + GUI toggle. Requires pipeline ON; only runs while a world is loaded. Logs each adjustment.
+- [~] **9a.9 (2026-04-17, UNVERIFIED):** `AutoScaleHandler` — target-FPS dynamic resolution scaling. Every 2s (40 client ticks), compares `Minecraft.getDebugFPS()` against `min(Display.getDesktopDisplayMode().getFrequency(), gameSettings.limitFramerate)` and steps `internalRenderScale` through a 5-tier ladder {1.00, 0.85, 0.75, 0.67, 0.50}. 0.9x/1.1x threshold dead-zone prevents tier-bouncing at target. Config + GUI toggle. **Open: user's test showed no `LDOG: AutoScale …` log output.** Either FPS stayed in the dead zone (no tier change = no log under current implementation) or the handler isn't firing. Next-session action: add a one-shot "AutoScale handler tick running" log on first invocation to distinguish the two cases.
 - [ ] **9b quality tuning + validation (next):** test matrix across resource packs. Doc-only; no code change until user runs the protocol. See `docs/POST_9A4_RESEARCH.md`.
-- [x] **9c.1 (2026-04-17):** jittered-projection TAA MVP shipped. `JitterHelper` generates Halton(2, 3) sub-pixel offsets over a 16-frame cycle. `TAAAccumulatePass` captures main FB each frame, 3x3-neighborhood-clamps history to kill ghosting, blends via `mix(cur, clampedHist, historyWeight)`. Config + GUI toggle + weight slider. **Bug caught during 9c.2 work:** the original jitter injection was in `setupCameraTransform`, but `renderWorldPass` overwrites the projection matrix twice afterward (sky + terrain), erasing the jitter. Fixed in the 9c.2 commit by moving the jitter injection to `renderWorldPass` at both gluPerspective ordinals.
-- [x] **9c.2 (2026-04-17):** camera motion vectors. `CameraState` singleton captures un-jittered projection × modelview at the terrain-projection injection point, shifts prev → cur atomically, pre-computes the inverse. Scene depth attachment moved from renderbuffer to texture (`GL_DEPTH24_STENCIL8` texture, GL_NEAREST filter) in `RenderTargetManager` so the shader can sample it. TAA shader reconstructs world-space position from NDC + current inverse viewProj, reprojects with previous viewProj, samples history at the reprojected UV. Disocclusion check: reprojected UV outside [0,1] screen range → skip history (pixel became visible this frame). `ShaderProgram.setUniformMatrix4` added for mat4 uniforms. Falls back to 9c.1 direct-read when pipeline is off or CameraState hasn't captured two frames yet.
-- [ ] **9c.3+ (deferred):** entity MV (weeks, invasive), FSR2-style reconstruction (weeks), reactive mask + polish. Evaluate based on 9c.2 results.
+- [x] **9c.1 (2026-04-17, verified):** jittered-projection TAA MVP. `JitterHelper` generates Halton(2, 3) sub-pixel offsets over a 16-frame cycle. `TAAAccumulatePass` with neighborhood-clamped history blend. **Initial bug:** jitter injection targeted `setupCameraTransform`, but `renderWorldPass` overwrites projection afterward — jitter was a no-op. Fixed by moving the injection to `renderWorldPass` at both sky + terrain gluPerspective ordinals. User-verified post-fix.
+- [x] **9c.2 (2026-04-17, verified):** camera motion vectors. `CameraState` singleton captures jittered viewProj + invCurViewProj + prevViewProj at the terrain-projection injection point (after jitter is applied). Scene depth attachment moved from RBO to `GL_DEPTH24_STENCIL8` texture (GL_NEAREST) for shader sampling. TAA shader reconstructs world-space from NDC + depth + invCurViewProj, reprojects via prevViewProj, samples history at the reprojected UV. Disocclusion check: reprojected UV outside [0,1] → skip history. `ShaderProgram.setUniformMatrix4` added. **Initial bug:** captured un-jittered matrices while history stored jittered pixels — classic TAA math error producing "drunk / swimming" visuals. Fixed by capturing AFTER `applyJitter()` so cur/prev matrices align with stored history. User-verified post-fix: camera pan is much smoother, static-scene detail accumulates correctly.
+- [ ] **9c.3+ (deferred):** entity MV (2-4 weeks, invasive), FSR2-style reconstruction (weeks), reactive mask + polish. 9c.3 is the natural next step for ghost-free mobs. Evaluate against `docs/PHASE_9C_TEMPORAL_DEEP_DIVE.md` risk matrix before committing.
 - Deep-dive planning: `docs/P8_RESEARCH_AND_PLAN.md` (spatial family), `docs/POST_9A4_RESEARCH.md` (next-step menu), `docs/PHASE_9C_TEMPORAL_DEEP_DIVE.md` (temporal feasibility).
 
 **Concept:** AMD FidelityFX Super Resolution 1.0 (spatial upscaler). Render the scene at reduced resolution to an FBO, then apply FSR's sharpening/upscale pass to output at native resolution. Works on any GPU (AMD, NVIDIA, Intel) — no vendor lock-in unlike DLSS.
