@@ -260,6 +260,13 @@ public class LDOGConfig {
     public static double fsr1Sharpness = 1.5;
 
     @Config.Comment({
+        "Active upscaler preset name: native, ultra, quality, balanced, performance, or custom.",
+        "Choosing a named preset overwrites internalRenderScale + upscalerAlgorithm + fsr1Sharpness.",
+        "Editing any of those three directly flips this back to 'custom'."
+    })
+    public static String upscalerPreset = "custom";
+
+    @Config.Comment({
         "Borderless windowed fullscreen: replaces exclusive fullscreen with an",
         "undecorated window sized to the desktop. Enables instant alt-tab,",
         "functional external overlays, and multi-monitor cursor movement.",

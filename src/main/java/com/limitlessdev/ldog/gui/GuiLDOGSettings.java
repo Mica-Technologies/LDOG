@@ -100,6 +100,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_PIPELINE_SCALE = 101;
     private static final int BTN_PIPELINE_UPSCALER = 102;
     private static final int BTN_FSR1_SHARPNESS = 103;
+    private static final int BTN_UPSCALER_PRESET = 104;
     private static final int BTN_BORDERLESS_FULLSCREEN = 110;
     private static final int BTN_BLOCK_FSO = 111;
 
@@ -217,13 +218,17 @@ public class GuiLDOGSettings extends GuiScreen {
         settingsList.addButtonRow(
             new GuiButton(BTN_PIPELINE, 0, 0, w, h,
                 toggleLabel("Post Pipeline", LDOGConfig.enablePostProcessPipeline)),
-            new GuiButton(BTN_PIPELINE_SCALE, 0, 0, w, h,
-                pipelineScaleLabel(LDOGConfig.internalRenderScale)));
+            new GuiButton(BTN_UPSCALER_PRESET, 0, 0, w, h,
+                upscalerPresetLabel(com.limitlessdev.ldog.render.pipeline.UpscalerPreset.selected())));
         settingsList.addButtonRow(
+            new GuiButton(BTN_PIPELINE_SCALE, 0, 0, w, h,
+                pipelineScaleLabel(LDOGConfig.internalRenderScale)),
             new GuiButton(BTN_PIPELINE_UPSCALER, 0, 0, w, h,
-                upscalerLabel(com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm.selected())),
+                upscalerLabel(com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm.selected())));
+        settingsList.addButtonRow(
             new GuiButton(BTN_FSR1_SHARPNESS, 0, 0, w, h,
-                fsr1SharpnessLabel(LDOGConfig.fsr1Sharpness)));
+                fsr1SharpnessLabel(LDOGConfig.fsr1Sharpness)),
+            null);
 
         // -- Font Rendering --
         // Drop-in replacement for the Smooth Font mod. Swaps in HD ascii.png from
@@ -617,6 +622,8 @@ public class GuiLDOGSettings extends GuiScreen {
                 LDOGConfig.internalRenderScale = cycleValue(
                     PIPELINE_SCALE_VALUES, LDOGConfig.internalRenderScale);
                 button.displayString = pipelineScaleLabel(LDOGConfig.internalRenderScale);
+                com.limitlessdev.ldog.render.pipeline.UpscalerPreset.markCustom();
+                refreshPresetButton();
                 break;
             case BTN_PIPELINE_UPSCALER: {
                 com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm current =
@@ -627,12 +634,31 @@ public class GuiLDOGSettings extends GuiScreen {
                     all[(current.ordinal() + 1) % all.length];
                 LDOGConfig.upscalerAlgorithm = next.configKey();
                 button.displayString = upscalerLabel(next);
+                com.limitlessdev.ldog.render.pipeline.UpscalerPreset.markCustom();
+                refreshPresetButton();
                 break;
             }
             case BTN_FSR1_SHARPNESS:
                 LDOGConfig.fsr1Sharpness = cycleValue(FSR1_SHARPNESS_VALUES, LDOGConfig.fsr1Sharpness);
                 button.displayString = fsr1SharpnessLabel(LDOGConfig.fsr1Sharpness);
+                com.limitlessdev.ldog.render.pipeline.UpscalerPreset.markCustom();
+                refreshPresetButton();
                 break;
+            case BTN_UPSCALER_PRESET: {
+                com.limitlessdev.ldog.render.pipeline.UpscalerPreset current =
+                    com.limitlessdev.ldog.render.pipeline.UpscalerPreset.selected();
+                com.limitlessdev.ldog.render.pipeline.UpscalerPreset[] all =
+                    com.limitlessdev.ldog.render.pipeline.UpscalerPreset.values();
+                com.limitlessdev.ldog.render.pipeline.UpscalerPreset next =
+                    all[(current.ordinal() + 1) % all.length];
+                next.apply();
+                button.displayString = upscalerPresetLabel(next);
+                // Update the individual controls' labels to reflect the
+                // preset's applied values. Preset=CUSTOM applies nothing,
+                // so those labels stay as they were.
+                refreshIndividualButtons();
+                break;
+            }
             case BTN_BORDERLESS_FULLSCREEN:
                 LDOGConfig.borderlessFullscreen = !LDOGConfig.borderlessFullscreen;
                 button.displayString = toggleLabel("Borderless Windowed", LDOGConfig.borderlessFullscreen);
@@ -821,6 +847,22 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a77Honor per-glyph widths from the pack's",
             "\u00a77ascii.properties file (format: width.N=W).",
             "\u00a77Checks optifine/font, mcpatcher/font, then font/.");
+        registerTooltip(BTN_UPSCALER_PRESET,
+            "\u00a7eQuality Preset",
+            "\u00a77One-click bundle of render scale + upscaler + sharpness.",
+            "",
+            "\u00a7bNative:\u00a77 scale 1.00, Bilinear, sharp 0.0 — baseline.",
+            "\u00a7aUltra:\u00a77 scale 0.85, FSR1-Quality, sharp 0.75 — near-",
+            "\u00a77native quality with a light perf win.",
+            "\u00a7aQuality:\u00a77 scale 0.75, FSR1-Quality, sharp 1.00 — good",
+            "\u00a77balance.",
+            "\u00a7eBalanced:\u00a77 scale 0.67, FSR1, sharp 1.25 — noticeable",
+            "\u00a77perf gain, accept softer edges.",
+            "\u00a76Performance:\u00a77 scale 0.50, FSR1, sharp 1.50 — max perf,",
+            "\u00a77visibly softer.",
+            "\u00a77Custom:\u00a77 you're driving the individual controls.",
+            "",
+            "\u00a77Editing any individual control flips back to Custom.");
         registerTooltip(BTN_PIPELINE,
             "\u00a7ePost-Process Pipeline (Phase 8 scaffold)",
             "\u00a77Experimental. Allocates an offscreen scene target so",
@@ -1007,6 +1049,38 @@ public class GuiLDOGSettings extends GuiScreen {
 
     static String upscalerLabel(com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm alg) {
         return "Upscaler: \u00a7a" + alg.displayName();
+    }
+
+    static String upscalerPresetLabel(com.limitlessdev.ldog.render.pipeline.UpscalerPreset preset) {
+        String color;
+        switch (preset) {
+            case CUSTOM:      color = "\u00a77"; break;
+            case NATIVE:      color = "\u00a7b"; break;
+            case ULTRA:       color = "\u00a7a"; break;
+            case QUALITY:     color = "\u00a7a"; break;
+            case BALANCED:    color = "\u00a7e"; break;
+            case PERFORMANCE: color = "\u00a76"; break;
+            default:          color = "\u00a77"; break;
+        }
+        return "Preset: " + color + preset.displayName();
+    }
+
+    /** After a preset is applied, refresh scale/upscaler/sharpness labels. */
+    private void refreshIndividualButtons() {
+        GuiButton scale = settingsList.findButton(BTN_PIPELINE_SCALE);
+        if (scale != null) scale.displayString = pipelineScaleLabel(LDOGConfig.internalRenderScale);
+        GuiButton upscaler = settingsList.findButton(BTN_PIPELINE_UPSCALER);
+        if (upscaler != null) upscaler.displayString =
+            upscalerLabel(com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm.selected());
+        GuiButton sharp = settingsList.findButton(BTN_FSR1_SHARPNESS);
+        if (sharp != null) sharp.displayString = fsr1SharpnessLabel(LDOGConfig.fsr1Sharpness);
+    }
+
+    /** After an individual control changes, refresh the preset label (usually to Custom). */
+    private void refreshPresetButton() {
+        GuiButton preset = settingsList.findButton(BTN_UPSCALER_PRESET);
+        if (preset != null) preset.displayString =
+            upscalerPresetLabel(com.limitlessdev.ldog.render.pipeline.UpscalerPreset.selected());
     }
 
     static String fsr1SharpnessLabel(double value) {
