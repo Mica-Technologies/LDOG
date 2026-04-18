@@ -350,15 +350,36 @@ Replaces the Smooth Font mod's functionality: antialiased TrueType font renderin
 
 Today's compat model: if OptiFine is detected, LDOG auto-disables its overlapping features (CTM, emissive, sky, etc.) and lets OptiFine handle them. This is the safe default. Once LDOG's implementation of a given feature is demonstrably *as good or better* than OptiFine's (faster, lower memory, better-looking, more configurable), we want the ability to flip it: LDOG disables OptiFine's version and takes over.
 
-- [ ] **Research feasibility**: OptiFine's settings live in `optifine.OptiFineConfig` / `Config` (class names vary by version). Investigate whether those fields are reflectively writable at runtime. If yes, we can toggle individual features off. If no (final fields, package-private methods with bytecode checks), fall back to editing `options.txt` before MC reads it, or CoreMod-level bytecode patching of the relevant Config initializer.
-- [ ] **Per-feature override flag**: extend `OptiFineCompat` so every feature has three modes rather than two:
-  - `AUTO` (current default): detect OptiFine, let it handle this feature
-  - `LDOG_OVERRIDE`: detect OptiFine, forcibly disable OptiFine's version, use LDOG's
-  - `OPTIFINE_OVERRIDE`: detect OptiFine, disable LDOG's version (current `AUTO` behavior)
-- [ ] **Conservative defaults**: ship with `AUTO` as the default for every feature; only flip individual ones to `LDOG_OVERRIDE` after benchmarked parity (FPS delta, memory footprint, visual equivalence).
-- [ ] **Graceful failure**: if the OptiFine toggle fails (reflection blocked, field renamed across OptiFine versions), log a warning and fall back to `OPTIFINE_OVERRIDE` — never leave both systems fighting over the same feature.
-- [ ] **GUI section**: "OptiFine Interop" with a per-feature dropdown (only visible when OptiFine is detected).
-- [ ] **Version-aware**: OptiFine field/class names drift across versions. Probe at startup, build a feature-to-field map for the detected OptiFine version, log what LDOG can and can't control.
+### Status (2026-04-18, foundation shipped — `3b083bc`)
+
+- [x] **Research feasibility**: discovered OF stores feature toggles as **instance fields on vanilla `GameSettings`** (added by OF's bytecode transformer), NOT as static fields on `optifine.Config`. The Config class at JAR root holds only platform state (openGlVersion, etc.). `OFConfigBridge.java` resolves fields via reflection on the GameSettings instance with class-hierarchy walk + multi-candidate fallback.
+- [x] **Per-feature override flag**: `OFOverrideMode` enum (AUTO / LDOG_OVERRIDE / OPTIFINE_OVERRIDE), one `ofModeXxx` config string per feature.
+- [x] **Conservative defaults**: every feature defaults to `AUTO`. Existing users see zero behavior change.
+- [x] **Graceful failure**: `OFConfigBridge` returns false on every error path; `OptiFineCompat.computeDecision` falls back to `OPTIFINE_OVERRIDE` with a logged warning when LDOG_OVERRIDE can't be honored.
+- [x] **GUI section**: "OptiFine Interop" with 7 cycle buttons, only rendered when OF is detected. Color-coded labels (grey/green/yellow with red for "uncontrollable").
+- [x] **Version-aware**: candidate field-name lists per feature; bridge logs probe results so unmapped features are visible without crashing.
+
+### Remaining work
+
+- [ ] **In-production verification with real OF** (see "OF in dev workspace" gotcha below).
+- [ ] **Field-name corrections** for any features the bridge logs as unmapped.
+- [ ] **Per-feature parity benchmarking** before flipping any default to `LDOG_OVERRIDE`.
+- [ ] **Tooltip polish** for the 7 OF Interop GUI rows.
+
+### CRITICAL gotcha: OF cannot run in `gradlew runClient` (2026-04-18)
+
+Dropping the official OptiFine production jar (`OptiFine_1.12.2_HD_U_G5.jar`) into `run/mods/` and launching via `gradlew runClient` **crashes immediately** at `FMLClientHandler.detectOptifine` with `NoClassDefFoundError: cer`. Root cause: OF's jar is obfuscated against production-Minecraft (notch) class names, but the dev workspace runs deobfuscated MC — so OF's class transformer references obfuscated class names like `cer` that don't exist in dev.
+
+**Implication**: in-game OF interop verification CAN'T happen in `gradlew runClient`. The verification path is:
+
+1. `./gradlew build` → produces `build/libs/LimitlessDevelopmentOptigame-vX.X.X.jar`.
+2. Copy that jar to a real production MC 1.12.2 + Forge installation's `mods/` folder (e.g., the alto modpack instance).
+3. Make sure OF is also in that production mods folder.
+4. Launch via the normal Minecraft launcher (NOT `gradlew runClient`).
+5. Look at `<.minecraft>/logs/latest.log` for `LDOG: OF interop bridge ready — N feature(s) controllable, M unmapped (...)` — that's the proof of life. The unmapped list tells us which `OFFeature.candidateFieldNames` need adjusting.
+6. Toggle the OF interop GUI rows; confirm OF features actually go off when set to LDOG.
+
+**Don't put OF in `run/mods/` again.** It only works in production launcher. If the JAR is needed for inspection (e.g., `unzip -p` on `Config.class`), keep it outside the project tree (e.g., `Downloads/`).
 
 **Why this is its own phase**: requires every LDOG feature to already be implemented and benchmarked vs OptiFine's equivalent, so it naturally comes after the core phases settle. Think of it as the switch-over point where LDOG transitions from "coexists with OptiFine" to "replaces OptiFine" — users with both installed can progressively migrate.
 
