@@ -98,11 +98,16 @@ public final class BorderlessFullscreenHandler {
         Display.setDisplayMode(new DisplayMode(w, h));
         long t3 = System.nanoTime();
 
-        mc.displayWidth = w;
-        mc.displayHeight = h;
         mc.gameSettings.fullScreen = true;
         ((AccessorMinecraft) (Object) mc).ldog$setFullscreen(true);
-        ((AccessorMinecraft) (Object) mc).ldog$updateFramebufferSize();
+        // mc.resize(w, h) rather than direct dim-assignment + updateFramebufferSize:
+        // resize() also invokes currentScreen.onResize, which is what lets an
+        // already-displayed GuiScreen (the main menu on startup, or any open
+        // settings screen during an F11) relayout itself for the new
+        // dimensions. Without this the framebuffer is correct but the GUI
+        // stays stuck at the pre-resize size, producing the 'menu in corner
+        // with black bars' bug the user saw at launch with fullScreen=true.
+        mc.resize(w, h);
 
         LDOGMod.LOGGER.info(
             "LDOG: entered borderless fullscreen at {}x{} (setResizable={}ms, setLocation={}ms, setDisplayMode={}ms)",
@@ -127,11 +132,10 @@ public final class BorderlessFullscreenHandler {
         Display.setDisplayMode(new DisplayMode(w, h));
         long t3 = System.nanoTime();
 
-        mc.displayWidth = w;
-        mc.displayHeight = h;
         mc.gameSettings.fullScreen = false;
         ((AccessorMinecraft) (Object) mc).ldog$setFullscreen(false);
-        ((AccessorMinecraft) (Object) mc).ldog$updateFramebufferSize();
+        // See enterBorderless comment — mc.resize relayouts currentScreen.
+        mc.resize(w, h);
 
         LDOGMod.LOGGER.info(
             "LDOG: exited borderless fullscreen back to {}x{} (setResizable={}ms, setLocation={}ms, setDisplayMode={}ms)",
