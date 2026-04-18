@@ -293,6 +293,18 @@ public class LDOGConfig {
     public static double rcasSharpness = 0.4;
 
     @Config.Comment({
+        "FXAA quality level when the post-process pipeline is active.",
+        "  low      = 4 search steps, threshold 0.200 — cheapest, coarse.",
+        "  medium   = 6 steps, threshold 0.125.",
+        "  high     = 8 steps, threshold 0.100 (default).",
+        "  ultra    = 12 steps, threshold 0.080.",
+        "  extreme  = 24 steps, threshold 0.063 — most refined, most samples.",
+        "When the pipeline is OFF, MC's fixed-quality FXAA is used regardless",
+        "of this setting (it's only controlled by enableFXAA)."
+    })
+    public static String fxaaQuality = "high";
+
+    @Config.Comment({
         "Borderless windowed fullscreen: replaces exclusive fullscreen with an",
         "undecorated window sized to the desktop. Enables instant alt-tab,",
         "functional external overlays, and multi-monitor cursor movement.",

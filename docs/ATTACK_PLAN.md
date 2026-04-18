@@ -6,45 +6,58 @@ A phased development plan for building out Limitless Development Optigame, from 
 
 ## Resume Prompt
 
-> We're building LDOG (`ldog`), an open-source OptiFine replacement for Minecraft Forge 1.12.2. The project is at `E:\gitRepos\LDOG`. The build system is GregTechCEu Buildscripts (RetroFuturaGradle 1.4.0). Reference projects for conventions are at `E:\gitRepos\minecraft-city-super-mod` and `E:\gitRepos\LDFAWE`. Read `CLAUDE.md`, `docs/ATTACK_PLAN.md`, and `docs/ARCHITECTURE.md` to get up to speed, then check off what's been completed and pick up the next unchecked item.
+> We're building LDOG (`ldog`), an open-source OptiFine replacement for Minecraft Forge 1.12.2. The project is at `E:\gitRepos\LDOG`. The build system is GregTechCEu Buildscripts (RetroFuturaGradle 1.4.0). Reference projects for conventions are at `E:\gitRepos\minecraft-city-super-mod` and `E:\gitRepos\LDFAWE`. Read `CLAUDE.md`, `docs/ATTACK_PLAN.md`, `docs/ARCHITECTURE.md`, and the deep-dive docs in `docs/` (P8_RESEARCH_AND_PLAN.md, POST_9A4_RESEARCH.md, PHASE_9C_TEMPORAL_DEEP_DIVE.md) to get up to speed, then pick up at the next open checklist item.
 
-### Where We Left Off (2026-04-17, end of day)
+### Where We Left Off (2026-04-17, late evening)
 
-**Phases 1-7 implemented** (Phase 7a/b with known caveats, 7c done 2026-04-17; 7d done). **Phase C3 complete 2026-04-17** — full font system:
-- HD font texture swap (OptiFine/MCPatcher paths), pack-provided `ascii.properties` width overrides (with the `+1` spacing convention vanilla uses)
-- 3-level AA (off / bilinear / trilinear), with LOD bias (default `-0.5`) and anisotropic (default 16x) polish applied to the trilinear path
-- TTF runtime rasterization via Java AWT `Graphics2D` — ASCII page rasterized into a 16×16 grid atlas at a configurable cell size, widths computed from `FontMetrics.charWidth(ch)` straight into `FontRenderer.charWidth[]`
-- User-supplied fonts: drop `.ttf`/`.otf` files into `config/ldog/fonts/`, they're loaded via `Font.createFont` + registered with `GraphicsEnvironment` at preInit, and appear in the GUI family cycle highlighted in yellow. Rescanned on each resource reload so add/remove without restart.
-- Drop-shadow toggle — `@ModifyVariable` on the `dropShadow` param of `FontRenderer.drawString`, flips live.
-- Moved FontRenderer mixins to a core-plugin early loader (`IEarlyMixinLoader` via `LDOGCorePlugin` + `mixins.ldog.vanilla.json`) because vanilla/Forge pulls FontRenderer in ahead of the normal late-loader window.
-- Subclass pass-through in the bind redirect so Forge's `SplashFontRenderer` (which has its own private texture pool + separate GL context) doesn't crash.
+**Phases 0-10 shipped.** Phases 1-7 and C3 done in earlier sessions (see older commit history). Today's session shipped:
 
-- **Phase 1** (rendering optimizations, FPS reducer, clear water): complete
-- **Phase 2** (HD textures): complete — tested with 256x resource pack
-- **Phase 3** (CTM): complete — glass blocks, glass panes, bookshelf horizontal CTM
-- **Phase 4** (emissive textures): complete — block + item emissive with fullbright lightmap
-- **Phase 5** (dynamic lights + lighting): complete — dynamic lights, full lightmap customization (13 presets)
-- **Phase 6** (resource pack features): complete — better grass/snow, natural textures, custom colors, custom sky, random entity textures
-- **Phase 7a+b** (AF + MSAA): complete but experimental (see caveats below)
-- **Phase 7d** (FXAA): complete — wraps MC's shipped fxaa.json shader pass
+**Phase 8 (Shader Pipeline) — full stack:**
+- Phase 8a post-process pipeline framework: `PostProcessPass` contract, `PostProcessPipeline` orchestrator with fault-tolerant pass disabling, `RenderTargetManager` (scaled scene target + ping-pong), `PipelineDebugStats`.
+- Phase 8b observability: perf overlay row showing binding status + scale + pass timings, one-shot watchdog logs.
+- Phase 8c binding hook: redirect world render into scaled scene target, `@Redirect` on the vanilla viewport call, blit back to main FB. Yields to MSAA (which owns the FBO swap). Parity tested at 1.0 scale + scaled scenes confirmed visibly softer by user.
+- `ShaderProgram` utility class for compile/link/uniform across all pipeline passes.
 
-**Phase 7 known caveats:**
-- **AF atlas bleed**: Enabling AF shows faint block-edge lines at distance. Cause: vanilla MC atlas has only 1px sprite border at mip 0, which halves each mip level. At grazing angles AF samples along an elongated line that crosses sprite boundaries in the smaller mips. OptiFine solves this by extending each mip level's sprite border (sometimes called "anisotropic-safe mipmaps" or "extended border mipmaps"). Tracked as **Phase 7c**.
-- **MSAA edge lines**: MSAA reveals sub-pixel rasterization gaps at chunk/block-face seams on distant geometry (adjacent faces' edges are mathematically coincident but FP imprecision creates microscopic gaps that pre-MSAA rasterization didn't sample). OptiFine avoids this by setting display-level MSAA via `PixelFormat.withSamples()` and disabling MC's intermediate FBO — which loses spectator outlines. Not worth the tradeoff; recommend FXAA instead.
+**Phase 9 (Upscaling) — three upscalers + post-processing chain:**
+- 9a.1 `BilinearBlitPass` extracted from mixin into its own pass.
+- 9a.2 `FSR1EASUPass` — LDOG-original unsharp-mask-on-bilinear with contrast-adaptive strength. User verified live sharpness deltas across scales.
+- 9a.3 FSR1 sharpness slider (0.0—2.0) in GUI.
+- 9a.4 `FSR1QualityPass` — direction-biased EASU variant: Sobel edge detection + anisotropic sampling along detected edge + contrast-adaptive sharpen. Noticeably crisper than basic FSR1 on diagonal geometry.
+- 9a.5 `UpscalerPreset` — one-click bundles (Native / Ultra / Quality / Balanced / Performance / Custom).
+- 9a.6 `RCASSharpenPass` — post-upscale sharpen, works at scale 1.0 too. Uses `glCopyTexSubImage2D` to sample main FB.
+- 9a.7 `LDOGPreset` — whole-mod presets (Vanilla / Performance / Default / Fancy / Ultra / Custom).
+- 9a.8 `LDOGFXAAPass` — LDOG-original FXAA 3.11-inspired shader with 5 quality levels (Low / Medium / High / Ultra / Extreme). `FXAAHandler` yields MC's fixed FXAA when pipeline is on so only one runs.
 
-**Key next steps:**
-1. **Phase C4** (OptiFine Override Mode) — reverse the coexistence once parity is proven; research-heavy (reflective writes against `optifine.Config`).
-2. **Phase 6d** custom-sky mixin verification — landed but needs in-game confirmation the injection fires.
-3. **Phase 8** (Shaders) + **Phase 9** (FSR): stretch goals, see Super Resolution + Radiance mods for reference.
-4. **C3 polish** (optional): disk-cached TTF atlas, async rasterization, Unicode glyph pages.
+**Phase 10 (Borderless Windowed Fullscreen):**
+- Restart-required mode via core-plugin setting `org.lwjgl.opengl.Window.undecorated=true` before Display.create. Config + GUI toggle.
+- Flicker fix (plain `DisplayMode` + `setLocation` before `setDisplayMode`).
+- Windows Fullscreen Optimizations dodge + user toggle (`blockFullscreenOptimizations`).
+- Startup sizing fix: `mc.resize()` not `updateFramebufferSize` so currentScreen relayouts.
+
+**Critical gotchas / non-obvious infrastructure:**
+- **`Minecraft` and `FontRenderer` mixins MUST be in `mixins.ldog.vanilla.json`** (the early config loaded by `LDOGCorePlugin` via `IEarlyMixinLoader`). They're pulled into the classloader during FML bootstrap before the late `mixins.ldog.json` registers. Mixins on these targets in the late config will fatally error with "loaded too early".
+- `Display.setDisplayMode` in LWJGL 2.9.4 must be called with `new DisplayMode(w, h)` (no bpp/refresh metadata) — the full desktop mode triggers mode-switch semantics.
+- Quality preset changes require setting `extBorderSettingsChanged`, `fxaaSettingsChanged`, `waterSettingsChanged` so `saveAndClose` triggers the right reload paths.
+
+**What's in the tree but UNVERIFIED:**
+- None of the 9a.5 through 9a.8 features have been tested in-game by the user — shipped after user went AFK. Scale change, FSR1-Quality selection, Quality Presets, LDOG global presets, RCAS, FXAA quality levels all need live verification.
+
+**Key next steps (priority order):**
+1. **Verify 9a.5 — 9a.8 in-game** (one relaunch covers everything).
+2. **Phase 9c.1 — Jittered-projection TAA** — ~3-5 days, low risk. See `docs/PHASE_9C_TEMPORAL_DEEP_DIVE.md`.
+3. **Phase 10b** runtime-togglable borderless — medium risk, needs `Display.destroy`/`create` + subsystem coordination.
+4. **Phase C4** (OptiFine Override Mode) — reverse coexistence, reflective writes to `optifine.Config`.
+5. **Phase 6d** custom-sky injection verification (from earlier session, still open).
+6. **C3 polish** (optional): disk-cached TTF atlas, Unicode pages.
 
 **Test resource packs (already in run/resourcepacks/):**
-- `default-1-12` (extracted) -- CTM glass + glass panes (47-tile)
-- `Faithful 32x - 1.12.2` (extracted) -- CTM glass + bookshelf + custom sun/moon
-- `emissive-ores-1-12-2` (extracted) -- emissive ore textures
-- `Dramatic Skys Demo 1.5.3.36.3.zip` -- custom sky layers (optifine + mcpatcher paths)
-- `Affinity-HD-Bundle-x256.zip` -- custom sky + random mob textures + colormaps
-- `alto-resource-pack.zip` -- modpack resource pack
+- `default-1-12` (extracted) — CTM glass + glass panes (47-tile)
+- `Faithful 32x - 1.12.2` (extracted) — CTM glass + bookshelf + custom sun/moon
+- `emissive-ores-1-12-2` (extracted) — emissive ore textures
+- `Dramatic Skys Demo 1.5.3.36.3.zip` — custom sky layers (optifine + mcpatcher paths)
+- `Affinity-HD-Bundle-x256.zip` — custom sky + random mob textures + colormaps
+- `alto-resource-pack.zip` — modpack resource pack
+- `Stratum 256x (1.12.2).zip` — HD test pack
 
 ---
 
@@ -198,28 +211,34 @@ A phased development plan for building out Limitless Development Optigame, from 
 - [x] `AccessorEntityRenderer` mixin for clearing shaderGroup+useShader on disable
 - [x] First-tick reconciliation so launching with FXAA pre-enabled picks it up
 - [x] GUI row
-- Notes: Leverages MC 1.12.2's shipped FXAA shader assets (Super Secret Settings remnant) — no GLSL authoring needed. Effect subtle on 16x vanilla textures by design; more visible on HD packs and alpha-test foliage.
+- [x] **(2026-04-17) LDOG pipeline FXAA with quality levels (Phase 9a.8):** `LDOGFXAAPass` ships an LDOG-original FXAA 3.11-inspired shader with tunable search-step count + edge threshold. When the post-process pipeline is on, `FXAAHandler` yields MC's fixed shader and the pipeline pass runs instead. Five quality levels (Low/Medium/High/Ultra/Extreme) via the `FXAAQuality` enum, live-adjustable in GUI.
+- Notes: When the pipeline is OFF, MC's shipped fxaa.json runs as before (no quality levels). When pipeline is ON, LDOG's pass runs and the quality slider applies.
 
 ---
 
 ## Phase 8: Shader Pipeline
 
-- [x] **Phase 8a code-complete (2026-04-17):** pass contract, pipeline shell, no-op pass, mixin lifecycle hook on `EntityRenderer.renderWorldPass`, `RenderTargetManager` (scaled color texture + depth RBO + ping-pong target), lifecycle wiring, fault-tolerant pass disabling, and off-by-default `enablePostProcessPipeline` + experimental `internalRenderScale` (0.5..1.0) config. No visual change yet — target is allocated but not bound for world rendering.
-- [~] **Phase 8b initial observability landed (2026-04-17):** `PipelineDebugStats` surfaces target readiness/scale/dims, first-enable log reports coexistence posture (MSAA yields the binding slot, FXAA composites after). Full hardening + lifecycle validation is re-scoped to after 8c.
-- [ ] **Phase 8c binding hook + parity validation — next:** redirect world rendering into the scene target, bilinear blit-back to main FB, parity test matrix. Design captured in `docs/P8_RESEARCH_AND_PLAN.md`.
-- [ ] Phase 9a FSR1 MVP (EASU+RCAS GLSL), 9b tuning, 9c temporal research — not started.
+- [x] **Phase 8a (2026-04-17):** pass contract, pipeline shell, no-op pass, mixin lifecycle hook on `EntityRenderer.renderWorldPass`, `RenderTargetManager` (scaled color texture + depth RBO + ping-pong target), lifecycle wiring, fault-tolerant pass disabling, config + GUI toggle for `enablePostProcessPipeline` + `internalRenderScale`.
+- [x] **Phase 8b (2026-04-17):** `PipelineDebugStats`, perf overlay row, first-enable log with coexistence posture, watchdog WARN if binding guards never pass.
+- [x] **Phase 8c (2026-04-17):** binding hook redirects world rendering into scaled scene target, `@Redirect` on vanilla viewport call, RETURN-time blit-back to main framebuffer. Yields to MSAA (MSAA owns its own FBO swap). Parity tested at 1.0 and scaled; user confirmed visible softness at 0.5 scale before 9a shader passes landed.
+- [x] **`ShaderProgram` utility shipped (2026-04-17):** compile + link + uniform setters + cached location lookups, used by all 9a.2+ shader passes.
 - Deep-dive planning and feasibility reference: `docs/P8_RESEARCH_AND_PLAN.md`
 
 ---
 
-## Phase 9: Upscaling (FSR)
+## Phase 9: Upscaling (FSR) + Post-Process Chain
 
-- [x] **Phase 9a.1 (2026-04-17):** BilinearBlitPass extracted from the mixin into its own PostProcessPass implementation. Pipeline now registers passes by algorithm with isEnabled() gating.
-- [x] **Phase 9a.2 (2026-04-17):** FSR1-style edge-adaptive upscaler shipped. LDOG-original GLSL (unsharp-mask-on-bilinear with contrast-adaptive strength). Compile path + ShaderProgram utility + fullscreen-triangle draw proven working.
-- [x] **Phase 9a.3 (2026-04-17):** Sharpness slider (0.0 — 2.0) in GUI. Live-tunable, user verified visible edge crispness differences across the range.
-- [ ] **Phase 9a.4 (next):** Direction-biased FSR1-Quality variant — Sobel-based edge detection + anisotropic sampling along the detected edge for meaningfully crisper edges, especially on diagonal geometry. Ships as a separate upscaler option alongside the current FSR1, not a replacement.
-- [ ] Phase 9b quality tuning + 9c temporal research — not started.
-- Deep-dive planning and feasibility reference: `docs/P8_RESEARCH_AND_PLAN.md`
+- [x] **9a.1 (2026-04-17):** `BilinearBlitPass` extracted from mixin into its own pass. Pipeline registers passes by algorithm with `isEnabled()` gating.
+- [x] **9a.2 (2026-04-17):** `FSR1EASUPass` shipped — LDOG-original unsharp-mask-on-bilinear with contrast-adaptive strength. GLSL 120.
+- [x] **9a.3 (2026-04-17):** FSR1 sharpness slider (0.0 — 2.0) live-tunable in GUI. User-verified edge crispness deltas.
+- [x] **9a.4 (2026-04-17):** `FSR1QualityPass` — direction-biased EASU variant. Sobel edge detection + anisotropic sampling along detected edge + contrast-adaptive sharpen. Noticeably crisper on diagonals. Third upscaler option alongside Bilinear and basic FSR1.
+- [x] **9a.5 (2026-04-17):** `UpscalerPreset` enum — one-click bundles (Native / Ultra / Quality / Balanced / Performance / Custom). Auto-flips to Custom when individual controls are edited.
+- [x] **9a.6 (2026-04-17):** `RCASSharpenPass` — post-upscale sharpen via `glCopyTexSubImage2D` approach. Works at any scale including 1.0 (pure sharpen mode for native-res users). Config + slider.
+- [x] **9a.7 (2026-04-17):** `LDOGPreset` enum — whole-mod presets (Vanilla / Performance / Default / Fancy / Ultra / Custom). Renders at top of settings list. `LDOGPreset.apply()` sets AA/FXAA/ExtBorder/water change flags so `saveAndClose` triggers the right reloads.
+- [x] **9a.8 (2026-04-17):** `LDOGFXAAPass` — LDOG-original FXAA 3.11-inspired shader with 5 quality levels. Pipeline FXAA replaces MC's fixed FXAA when pipeline is on; `FXAAHandler` unloads MC's shader in that case. See Phase 7d for details.
+- [ ] **9b quality tuning + validation (next):** test matrix across resource packs. Doc-only; no code change until user runs the protocol. See `docs/POST_9A4_RESEARCH.md`.
+- [ ] **9c temporal upscaling (staged):** staged plan in `docs/PHASE_9C_TEMPORAL_DEEP_DIVE.md`. 9c.1 (jittered-projection TAA) is the MVP entry point — 3-5 days, low risk. 9c.2 adds camera motion vectors (1-2 wks). Later stages (entity MV, FSR2 reconstruction, reactive mask) are weeks-to-months. Honest finding: neither Super Resolution nor Radiance reference mods apply to our stack; we'd be pioneering temporal on MC 1.12.2 OpenGL 3.0.
+- Deep-dive planning: `docs/P8_RESEARCH_AND_PLAN.md` (spatial family), `docs/POST_9A4_RESEARCH.md` (next-step menu), `docs/PHASE_9C_TEMPORAL_DEEP_DIVE.md` (temporal feasibility).
 
 **Concept:** AMD FidelityFX Super Resolution 1.0 (spatial upscaler). Render the scene at reduced resolution to an FBO, then apply FSR's sharpening/upscale pass to output at native resolution. Works on any GPU (AMD, NVIDIA, Intel) — no vendor lock-in unlike DLSS.
 

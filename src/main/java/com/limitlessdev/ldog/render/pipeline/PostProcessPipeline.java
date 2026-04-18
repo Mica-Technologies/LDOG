@@ -5,6 +5,7 @@ import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.pipeline.passes.BilinearBlitPass;
 import com.limitlessdev.ldog.render.pipeline.passes.FSR1EASUPass;
 import com.limitlessdev.ldog.render.pipeline.passes.FSR1QualityPass;
+import com.limitlessdev.ldog.render.pipeline.passes.LDOGFXAAPass;
 import com.limitlessdev.ldog.render.pipeline.passes.RCASSharpenPass;
 
 import java.util.ArrayList;
@@ -50,6 +51,9 @@ public final class PostProcessPipeline {
         // RCAS runs AFTER whichever upscaler was active, so it sharpens the
         // final upscaled image rather than the scaled-space source.
         passes.add(new RCASSharpenPass());
+        // FXAA runs LAST so it can smooth any aliasing introduced by the
+        // upscaler + RCAS sharpen combo.
+        passes.add(new LDOGFXAAPass());
     }
 
     /**

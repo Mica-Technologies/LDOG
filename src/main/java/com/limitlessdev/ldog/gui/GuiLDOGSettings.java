@@ -104,6 +104,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_RCAS_ENABLE = 105;
     private static final int BTN_RCAS_STRENGTH = 106;
     private static final int BTN_LDOG_PRESET = 300;
+    private static final int BTN_FXAA_QUALITY = 107;
     private static final int BTN_BORDERLESS_FULLSCREEN = 110;
     private static final int BTN_BLOCK_FSO = 111;
 
@@ -211,7 +212,8 @@ public class GuiLDOGSettings extends GuiScreen {
         settingsList.addButtonRow(
             new GuiButton(BTN_FXAA, 0, 0, w, h,
                 toggleLabel("FXAA", LDOGConfig.enableFXAA)),
-            null);
+            new GuiButton(BTN_FXAA_QUALITY, 0, 0, w, h,
+                fxaaQualityLabel(com.limitlessdev.ldog.render.pipeline.FXAAQuality.selected())));
 
         // -- Display (Phase 10) --
         settingsList.addHeaderRow("Display");
@@ -630,9 +632,26 @@ public class GuiLDOGSettings extends GuiScreen {
                 button.displayString = toggleLabel("FXAA", LDOGConfig.enableFXAA);
                 fxaaSettingsChanged = true;
                 break;
+            case BTN_FXAA_QUALITY: {
+                com.limitlessdev.ldog.render.pipeline.FXAAQuality current =
+                    com.limitlessdev.ldog.render.pipeline.FXAAQuality.selected();
+                com.limitlessdev.ldog.render.pipeline.FXAAQuality[] all =
+                    com.limitlessdev.ldog.render.pipeline.FXAAQuality.values();
+                com.limitlessdev.ldog.render.pipeline.FXAAQuality next =
+                    all[(current.ordinal() + 1) % all.length];
+                LDOGConfig.fxaaQuality = next.configKey();
+                button.displayString = fxaaQualityLabel(next);
+                // Only the pipeline FXAA honors the quality uniform; MC's
+                // fixed shader doesn't. Live-adjustable without reload.
+                break;
+            }
             case BTN_PIPELINE:
                 LDOGConfig.enablePostProcessPipeline = !LDOGConfig.enablePostProcessPipeline;
                 button.displayString = toggleLabel("Post Pipeline", LDOGConfig.enablePostProcessPipeline);
+                // Pipeline state gates which FXAA runs — MC's when off, LDOG's
+                // when on. Force FXAAHandler.apply on Done so MC's shader is
+                // unloaded/reloaded to match.
+                fxaaSettingsChanged = true;
                 break;
             case BTN_PIPELINE_SCALE:
                 LDOGConfig.internalRenderScale = cycleValue(
@@ -987,6 +1006,19 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a7cREQUIRES RESTART:\u00a77 LWJGL only reads the undecorated",
             "\u00a77flag at Display creation. Toggle this, click Done to save,",
             "\u00a77then relaunch the game for it to take effect.");
+        registerTooltip(BTN_FXAA_QUALITY,
+            "\u00a7eFXAA Quality Level",
+            "\u00a77Controls search-step count and edge-detection threshold",
+            "\u00a77of LDOG's pipeline FXAA.",
+            "",
+            "\u00a77Low:\u00a77 4 steps, fastest, coarsest.",
+            "\u00a7aMedium:\u00a77 6 steps.",
+            "\u00a7aHigh:\u00a77 8 steps (default).",
+            "\u00a7eUltra:\u00a77 12 steps, refined.",
+            "\u00a76Extreme:\u00a77 24 steps, maximum quality, most samples.",
+            "",
+            "\u00a77Requires Post Pipeline ON — when pipeline is off, MC's",
+            "\u00a77fixed-quality FXAA runs instead and this setting is ignored.");
         registerTooltip(BTN_RCAS_ENABLE,
             "\u00a7eRCAS Post-Upscale Sharpen",
             "\u00a77Contrast-adaptive sharpening applied AFTER the upscaler,",
@@ -1146,6 +1178,19 @@ public class GuiLDOGSettings extends GuiScreen {
             default:          color = "\u00a77"; break;
         }
         return "Preset: " + color + preset.displayName();
+    }
+
+    static String fxaaQualityLabel(com.limitlessdev.ldog.render.pipeline.FXAAQuality q) {
+        String color;
+        switch (q) {
+            case LOW:     color = "\u00a77"; break;
+            case MEDIUM:  color = "\u00a7a"; break;
+            case HIGH:    color = "\u00a7a"; break;
+            case ULTRA:   color = "\u00a7e"; break;
+            case EXTREME: color = "\u00a76"; break;
+            default:      color = "\u00a77"; break;
+        }
+        return "FXAA Qual: " + color + q.displayName();
     }
 
     static String rcasStrengthLabel(double v) {

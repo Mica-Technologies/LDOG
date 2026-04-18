@@ -44,12 +44,18 @@ public final class FXAAHandler {
     /**
      * Reconciles EntityRenderer's shader state with LDOGConfig.enableFXAA.
      * Safe to call repeatedly — only loads/unloads when state actually changes.
+     *
+     * Yields to LDOG's pipeline FXAA (with quality levels) when the pipeline
+     * is on: unloads MC's fixed-quality shader in that case so we don't
+     * double-FXAA the frame. When the pipeline is off, MC's shader runs as
+     * before — users without the pipeline still get FXAA.
      */
     public static void apply() {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc == null || mc.entityRenderer == null) return;
 
-        boolean shouldBeLoaded = LDOGConfig.enableFXAA;
+        boolean pipelineHandlesFxaa = LDOGConfig.enablePostProcessPipeline;
+        boolean shouldBeLoaded = LDOGConfig.enableFXAA && !pipelineHandlesFxaa;
         if (shouldBeLoaded == currentlyLoaded) return;
 
         if (shouldBeLoaded) {
