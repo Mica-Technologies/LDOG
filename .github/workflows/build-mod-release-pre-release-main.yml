@@ -36,8 +36,26 @@ jobs:
           calculatedSha=$(git rev-parse --short ${{ github.sha }})
           echo "COMMIT_SHORT_SHA=$calculatedSha" >> $GITHUB_ENV
 
-          # Calculate 'final' version number (YYYY.MM.DD)
-          relVersion=$(date -u +'%Y.%m.%d')
+          # Calculate 'final' version number (YYYY.MM.DD).
+          # If a release tag already exists for today, append SemVer 2.0
+          # build metadata (+N) so subsequent same-day releases stay unique
+          # without inventing a non-SemVer 4th segment.
+          baseVersion=$(date -u +'%Y.%m.%d')
+          git fetch --tags --quiet origin || true
+          relVersion="$baseVersion"
+          maxN=-1
+          if git rev-parse -q --verify "refs/tags/$baseVersion" >/dev/null 2>&1; then
+            maxN=0
+          fi
+          for existingTag in $(git tag -l "${baseVersion}+*"); do
+            suffix="${existingTag#${baseVersion}+}"
+            if [[ "$suffix" =~ ^[0-9]+$ ]] && [ "$suffix" -gt "$maxN" ]; then
+              maxN="$suffix"
+            fi
+          done
+          if [ "$maxN" -ge 0 ]; then
+            relVersion="${baseVersion}+$((maxN + 1))"
+          fi
           echo "REL_TAG=$relVersion" >> $GITHUB_ENV
 
           # Calculate 'pre-release' version number (YYYY.MM.DD-pre.hhmm.shorttz+COMMITSHORTSHA)
@@ -61,22 +79,22 @@ jobs:
 
       - name: Save Mod Name to GITHUB_ENV
         run: |
-          modName=$(${{github.workspace}}/gradlew -q printModName)
+          modName=$(${{github.workspace}}/gradlew -q printModName | xargs)
           echo "MOD_NAME=$modName" >> $GITHUB_ENV
 
       - name: Save Mod Version to GITHUB_ENV
         run: |
-          modVersion=$(${{github.workspace}}/gradlew -q printModVersion)
+          modVersion=$(${{github.workspace}}/gradlew -q printModVersion | xargs)
           echo "MOD_VERSION=$modVersion" >> $GITHUB_ENV
 
       - name: Save Mod Archive Base Name to GITHUB_ENV
         run: |
-          modArchiveBaseName=$(${{github.workspace}}/gradlew -q printArchivesBaseName)
+          modArchiveBaseName=$(${{github.workspace}}/gradlew -q printArchivesBaseName | xargs)
           echo "MOD_ARCHIVE_BASE_NAME=$modArchiveBaseName" >> $GITHUB_ENV
 
       - name: Save Minecraft Version to GITHUB_ENV
         run: |
-          minecraftVersion=$(${{github.workspace}}/gradlew -q printMinecraftVersion)
+          minecraftVersion=$(${{github.workspace}}/gradlew -q printMinecraftVersion | xargs)
           echo "MINECRAFT_VERSION=$minecraftVersion" >> $GITHUB_ENV
 
       - name: Copy Assembled Mod Jar to GitHub Actions Workspace
