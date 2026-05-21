@@ -86,6 +86,12 @@ public abstract class MixinEntityRendererPostPipeline {
         if (PostProcessPipeline.hasConflictingFeatureOn()) return;
         if (pass != 2) return;
 
+        // Phase 9c.3-C: reset the per-frame entity-render queue at the start
+        // of every world pass so MixinRenderManagerEntityMV's captures populate
+        // a fresh list. The EntityMotionVectorPass drains it later in the
+        // pipeline tick.
+        com.limitlessdev.ldog.render.pipeline.EntityRenderStateCache.get().beginFrame();
+
         Framebuffer fb = Minecraft.getMinecraft().getFramebuffer();
         if (fb == null) return;
 

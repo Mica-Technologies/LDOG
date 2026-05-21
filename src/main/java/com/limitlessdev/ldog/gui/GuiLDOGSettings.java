@@ -158,6 +158,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_TAA_ENABLE = 108;
     private static final int BTN_TAA_WEIGHT = 109;
     private static final int BTN_TAA_REACTIVE_MASK = 113;
+    private static final int BTN_TAA_ENTITY_MV     = 114;
     private static final int BTN_HDR_PIPELINE      = 600;
     private static final int BTN_HDR_TONEMAP       = 601;
     private static final int BTN_HDR_EXPOSURE      = 602;
@@ -316,7 +317,8 @@ public class GuiLDOGSettings extends GuiScreen {
         settingsList.addButtonRow(
             new GuiButton(BTN_TAA_REACTIVE_MASK, 0, 0, w, h,
                 toggleLabel("Entity Reactive Mask", LDOGConfig.enableEntityReactiveMask)),
-            null);
+            new GuiButton(BTN_TAA_ENTITY_MV, 0, 0, w, h,
+                toggleLabel("Entity MV (9c.3-C)", LDOGConfig.enableEntityMotionVectors)));
 
         // -- Display (Phase 10) --
         settingsList.addHeaderRow("Display");
@@ -1168,6 +1170,10 @@ public class GuiLDOGSettings extends GuiScreen {
             case BTN_TAA_REACTIVE_MASK:
                 LDOGConfig.enableEntityReactiveMask = !LDOGConfig.enableEntityReactiveMask;
                 button.displayString = toggleLabel("Entity Reactive Mask", LDOGConfig.enableEntityReactiveMask);
+                break;
+            case BTN_TAA_ENTITY_MV:
+                LDOGConfig.enableEntityMotionVectors = !LDOGConfig.enableEntityMotionVectors;
+                button.displayString = toggleLabel("Entity MV (9c.3-C)", LDOGConfig.enableEntityMotionVectors);
                 break;
             case BTN_FXAA_QUALITY: {
                 com.limitlessdev.ldog.render.pipeline.FXAAQuality current =

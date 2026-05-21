@@ -25,6 +25,7 @@
     "MixinItemRendererHand",
     "MixinRenderItem",
     "MixinRenderLivingBase",
+    "MixinRenderManagerEntityMV",
     "MixinWorldDynamicLights",
     "MixinEntityRendererLightmap",
     "MixinEntityRendererMSAA",

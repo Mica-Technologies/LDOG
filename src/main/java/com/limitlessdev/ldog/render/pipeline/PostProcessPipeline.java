@@ -4,6 +4,7 @@ import com.limitlessdev.ldog.LDOGMod;
 import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.pipeline.passes.BilinearBlitPass;
 import com.limitlessdev.ldog.render.pipeline.passes.BloomPass;
+import com.limitlessdev.ldog.render.pipeline.passes.EntityMotionVectorPass;
 import com.limitlessdev.ldog.render.pipeline.passes.FSR1EASUPass;
 import com.limitlessdev.ldog.render.pipeline.passes.FSR1QualityPass;
 import com.limitlessdev.ldog.render.pipeline.passes.HDRTonemapPass;
@@ -62,6 +63,10 @@ public final class PostProcessPipeline {
         passes.add(new BilinearBlitPass());
         passes.add(new FSR1EASUPass());
         passes.add(new FSR1QualityPass());
+        // 9c.3-C: per-entity motion-vector emission. Runs AFTER the upscaler
+        // (so MV target dims match TAA's main-FB-resolution input) but BEFORE
+        // TAA itself, which consumes the MV target to reproject history.
+        passes.add(new EntityMotionVectorPass());
         // TAA runs AFTER the upscaler — temporal accumulation operates on the
         // native-res upscaled image. Companion MixinEntityRendererJitter
         // offsets the projection matrix per frame so samples hit different

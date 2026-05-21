@@ -57,23 +57,37 @@ public final class TAAAccumulatePass implements PostProcessPass {
         "uniform sampler2D u_history;\n" +
         "uniform sampler2D u_sceneDepth;\n" +
         "uniform sampler2D u_reactiveMask;\n" +
+        "uniform sampler2D u_entityMV;\n" +
         "uniform vec2 u_invMainDim;\n" +
         "uniform float u_historyWeight;\n" +
         "uniform mat4 u_invCurViewProj;\n" +
         "uniform mat4 u_prevViewProj;\n" +
         "uniform bool u_useMotionVectors;\n" +
         "uniform bool u_useReactiveMask;\n" +
+        "uniform bool u_useEntityMV;\n" +
         "varying vec2 v_texCoord;\n" +
         "\n" +
         "void main() {\n" +
         "    vec2 off = u_invMainDim;\n" +
         "    vec3 cur = texture2D(u_current, v_texCoord).rgb;\n" +
         "\n" +
-        "    // Phase 9c.2: reproject history via depth + camera matrix delta so\n" +
-        "    // camera motion doesn't ghost. Fall back to direct history read\n" +
-        "    // when MV data isn't available (pipeline off or first frame).\n" +
+        "    // Phase 9c.3-C: per-entity MV takes priority. The MV texture\n" +
+        "    // stores (curUV - prevUV) for entity pixels and (0,0) elsewhere.\n" +
+        "    // When non-zero we subtract it from the current UV to get the\n" +
+        "    // entity's previous-frame UV — proper per-entity reprojection.\n" +
+        "    vec2 entityVel = vec2(0.0, 0.0);\n" +
+        "    bool hasEntityMV = false;\n" +
+        "    if (u_useEntityMV) {\n" +
+        "        entityVel = texture2D(u_entityMV, v_texCoord).rg;\n" +
+        "        hasEntityMV = abs(entityVel.x) > 0.0005 || abs(entityVel.y) > 0.0005;\n" +
+        "    }\n" +
+        "\n" +
+        "    // Phase 9c.2 camera MV: reproject history via depth + matrix delta\n" +
+        "    // when no entity MV is available for this pixel.\n" +
         "    vec2 histUV = v_texCoord;\n" +
-        "    if (u_useMotionVectors) {\n" +
+        "    if (hasEntityMV) {\n" +
+        "        histUV = v_texCoord - entityVel;\n" +
+        "    } else if (u_useMotionVectors) {\n" +
         "        float depth = texture2D(u_sceneDepth, v_texCoord).r;\n" +
         "        // Reconstruct world-space position from NDC + current inverse VP.\n" +
         "        vec4 ndc = vec4(v_texCoord * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);\n" +
@@ -123,7 +137,10 @@ public final class TAAAccumulatePass implements PostProcessPass {
         "    // edges are soft — gives a feathered transition between reactive\n" +
         "    // and accumulated regions instead of a hard binary cut.\n" +
         "    float weight = u_historyWeight;\n" +
-        "    if (u_useReactiveMask) {\n" +
+        "    // Reactive mask drops history weight on entity silhouettes. With\n" +
+        "    // 9c.3-C entity MV present we'd already reproject correctly, so\n" +
+        "    // skip the drop in that case — keep the accumulated detail.\n" +
+        "    if (u_useReactiveMask && !hasEntityMV) {\n" +
         "        // Mask R is the entity-fragment colour replicated by fixed-\n" +
         "        // function across MRT attachments; clamp to [0,1] and use as\n" +
         "        // a confidence value for 'this pixel is reactive'. Scale up\n" +
@@ -147,6 +164,7 @@ public final class TAAAccumulatePass implements PostProcessPass {
     private boolean loggedFirstExecute;
     private boolean loggedFirstMV;
     private boolean loggedFirstMask;
+    private boolean loggedFirstEntityMV;
 
     private static final FloatBuffer MAT_BUF_INV = BufferUtils.createFloatBuffer(16);
     private static final FloatBuffer MAT_BUF_PREV = BufferUtils.createFloatBuffer(16);
@@ -246,15 +264,26 @@ public final class TAAAccumulatePass implements PostProcessPass {
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, rtm.getSceneReactiveMaskTexture());
         }
 
+        // Phase 9c.3-C: bind entity MV target on unit 4. Active when the
+        // user opted into per-entity MV AND the MV target exists.
+        boolean useEntityMV = LDOGConfig.enableEntityMotionVectors
+            && rtm.isReady() && rtm.getMotionVectorTexture() != 0;
+        if (useEntityMV) {
+            GL13.glActiveTexture(GL13.GL_TEXTURE4);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, rtm.getMotionVectorTexture());
+        }
+
         shader.bind();
         shader.setUniform1i("u_current", 0);
         shader.setUniform1i("u_history", 1);
         shader.setUniform1i("u_sceneDepth", 2);
         shader.setUniform1i("u_reactiveMask", 3);
+        shader.setUniform1i("u_entityMV", 4);
         shader.setUniform2f("u_invMainDim", 1.0f / w, 1.0f / h);
         shader.setUniform1f("u_historyWeight", (float) LDOGConfig.taaHistoryWeight);
         shader.setUniform1i("u_useMotionVectors", useMV ? 1 : 0);
         shader.setUniform1i("u_useReactiveMask", useMask ? 1 : 0);
+        shader.setUniform1i("u_useEntityMV", useEntityMV ? 1 : 0);
 
         if (useMV) {
             CameraState.writeCurInvViewProj(MAT_BUF_INV);
@@ -270,6 +299,10 @@ public final class TAAAccumulatePass implements PostProcessPass {
             loggedFirstMask = true;
             LDOGMod.LOGGER.info("LDOG: TAA entity reactive-mask ACTIVE (9c.3-A)");
         }
+        if (useEntityMV && !loggedFirstEntityMV) {
+            loggedFirstEntityMV = true;
+            LDOGMod.LOGGER.info("LDOG: TAA entity MV reprojection ACTIVE (9c.3-C)");
+        }
 
         GL11.glBegin(GL11.GL_TRIANGLES);
         GL11.glVertex2f(-1.0f, -1.0f);
@@ -280,6 +313,10 @@ public final class TAAAccumulatePass implements PostProcessPass {
         ShaderProgram.unbind();
 
         // Unbind extra units, leave unit 0 selected.
+        if (useEntityMV) {
+            GL13.glActiveTexture(GL13.GL_TEXTURE4);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+        }
         if (useMask) {
             GL13.glActiveTexture(GL13.GL_TEXTURE3);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);

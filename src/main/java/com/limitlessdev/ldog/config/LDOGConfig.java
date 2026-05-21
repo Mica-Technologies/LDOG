@@ -389,6 +389,24 @@ public class LDOGConfig {
     public static boolean enableTAA = false;
 
     @Config.Comment({
+        "Phase 9c.3-C: per-entity motion vectors. Captures each rendered",
+        "entity's screen-space velocity from its tick-to-tick world position",
+        "delta and stamps a velocity vector into a half-res MV target. TAA",
+        "reads the MV target to reproject history correctly per-entity,",
+        "eliminating moving-entity ghosting without per-frame instability.",
+        "",
+        "BBox-stamp implementation: each entity's AABB is projected and the",
+        "covered pixels get the entity's velocity uniform. Approximate (no",
+        "per-pixel granularity on entity geometry), but captures the bulk",
+        "of the perceptual win without a second per-entity draw pass.",
+        "",
+        "Supersedes the older Phase 9c.3-A reactive mask for entities that",
+        "have valid MV data; the reactive mask remains as fallback for",
+        "modded entities/TESRs the BBox stamper can't reach. Requires TAA on."
+    })
+    public static boolean enableEntityMotionVectors = false;
+
+    @Config.Comment({
         "Phase 9c.3-A: drop TAA history weight on entity silhouettes to kill",
         "moving-entity ghosting. When ON, the world render writes an extra",
         "single-channel mask alongside the colour buffer; entity pixels in",

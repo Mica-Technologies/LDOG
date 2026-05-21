@@ -54,6 +54,16 @@ public final class RenderTargetManager {
     private int pingFbo;
     private int pingColorTex;
 
+    // Phase 9c.3-C: motion-vector target for entity reprojection. Half-res
+    // RG16F (R = screen-space dx in [-1, +1] NDC units, G = dy). Allocated
+    // alongside the scene target so dim changes reallocate atomically. Half
+    // resolution because TAA bilinear-samples it — softness on the velocity
+    // texture acts as a built-in smoothing pass and saves half the bandwidth.
+    private int mvFbo;
+    private int mvTex;
+    private int mvWidth;
+    private int mvHeight;
+
     private RenderTargetManager() {}
 
     public boolean isSupported() {
@@ -77,6 +87,10 @@ public final class RenderTargetManager {
     public int getSceneReactiveMaskTexture() { return sceneReactiveMaskTex; }
     public int getPingPongFbo() { return pingFbo; }
     public int getPingPongColorTexture() { return pingColorTex; }
+    public int getMotionVectorFbo() { return mvFbo; }
+    public int getMotionVectorTexture() { return mvTex; }
+    public int getMotionVectorWidth() { return mvWidth; }
+    public int getMotionVectorHeight() { return mvHeight; }
     public int getScaledWidth() { return scaledWidth; }
     public int getScaledHeight() { return scaledHeight; }
     public float getScale() { return scale; }
@@ -124,7 +138,8 @@ public final class RenderTargetManager {
         hdr = requestedHDR;
 
         if (!createSceneTarget(newScaledW, newScaledH)
-            || !createPingPongTarget(newScaledW, newScaledH)) {
+            || !createPingPongTarget(newScaledW, newScaledH)
+            || !createMotionVectorTarget(newScaledW / 2, newScaledH / 2)) {
             LDOGMod.LOGGER.error("LDOG: Pipeline target allocation failed; disabling manager for this session");
             disposeTargets();
             unsupported = true;
@@ -237,6 +252,41 @@ public final class RenderTargetManager {
         return true;
     }
 
+    private boolean createMotionVectorTarget(int w, int h) {
+        // Half-res floor — clamp so 1px scenes don't try to allocate 0.
+        w = Math.max(1, w);
+        h = Math.max(1, h);
+        mvFbo = GL30.glGenFramebuffers();
+        mvTex = GL11.glGenTextures();
+        mvWidth = w;
+        mvHeight = h;
+
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, mvTex);
+        // RG16F: two-channel float for screen-space velocity (NDC dx, dy).
+        // Range roughly [-1, +1] for normal entity motion; clamp not needed
+        // since RG16F is float — values can exceed [-1,1] if an entity
+        // teleports, but TAA disocclusion handling will catch that anyway.
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_RG16F, w, h, 0,
+            GL30.GL_RG, GL11.GL_FLOAT, (java.nio.ByteBuffer) null);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, mvFbo);
+        GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
+            GL11.GL_TEXTURE_2D, mvTex, 0);
+        int status = GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER);
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
+
+        if (status != GL30.GL_FRAMEBUFFER_COMPLETE) {
+            LDOGMod.LOGGER.error("LDOG: MV FBO incomplete (status=0x{})", Integer.toHexString(status));
+            return false;
+        }
+        return true;
+    }
+
     private void disposeTargets() {
         if (sceneReactiveMaskTex != 0) { GL11.glDeleteTextures(sceneReactiveMaskTex); sceneReactiveMaskTex = 0; }
         if (sceneDepthTex != 0) { GL11.glDeleteTextures(sceneDepthTex); sceneDepthTex = 0; }
@@ -244,6 +294,9 @@ public final class RenderTargetManager {
         if (sceneFbo != 0)      { GL30.glDeleteFramebuffers(sceneFbo);  sceneFbo = 0; }
         if (pingColorTex != 0)  { GL11.glDeleteTextures(pingColorTex);  pingColorTex = 0; }
         if (pingFbo != 0)       { GL30.glDeleteFramebuffers(pingFbo);   pingFbo = 0; }
+        if (mvTex != 0)         { GL11.glDeleteTextures(mvTex);         mvTex = 0; }
+        if (mvFbo != 0)         { GL30.glDeleteFramebuffers(mvFbo);     mvFbo = 0; }
+        mvWidth = mvHeight = 0;
     }
 
     private static float clampScale(float requested) {
