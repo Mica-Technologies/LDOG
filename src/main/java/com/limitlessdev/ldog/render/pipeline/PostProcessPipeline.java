@@ -3,6 +3,7 @@ package com.limitlessdev.ldog.render.pipeline;
 import com.limitlessdev.ldog.LDOGMod;
 import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.pipeline.passes.BilinearBlitPass;
+import com.limitlessdev.ldog.render.pipeline.passes.BloomPass;
 import com.limitlessdev.ldog.render.pipeline.passes.FSR1EASUPass;
 import com.limitlessdev.ldog.render.pipeline.passes.FSR1QualityPass;
 import com.limitlessdev.ldog.render.pipeline.passes.HDRTonemapPass;
@@ -45,11 +46,15 @@ public final class PostProcessPipeline {
     private int framesSinceLastBind;
 
     private PostProcessPipeline() {
-        // HDR tonemap runs FIRST so downstream passes (upscaler, RCAS, FXAA,
-        // vignette, blit-back) operate on LDR-clamped values. Internally the
-        // scene texture is RGBA16F (when HDR is on) but its actual contents
-        // post-tonemap fit in [0,1] — that's what the blit to MC's RGBA8
-        // main FB expects without information loss.
+        // Bloom runs FIRST while the scene is still HDR — the bright-pass
+        // shader needs to see luminance values exceeding [0,1] to produce a
+        // proper glow on suns/torches/lava. Composites bloom additively
+        // back into the scene texture (still HDR).
+        passes.add(new BloomPass());
+        // HDR tonemap runs second so downstream passes (upscaler, RCAS, FXAA,
+        // vignette, blit-back) operate on LDR-clamped values. After tonemap
+        // the scene texture holds [0,1] values in HDR storage — that's what
+        // the blit to MC's RGBA8 main FB expects without information loss.
         passes.add(new HDRTonemapPass());
         // All upscalers are always registered; each pass's isEnabled() checks
         // the selected algorithm so exactly one runs per frame. New upscalers
