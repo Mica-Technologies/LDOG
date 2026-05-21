@@ -94,8 +94,6 @@ Version is derived from Git tags. No manual version setting needed (see `modVers
 ## Documentation
 
 See `docs/` for detailed project documentation:
-- `docs/ATTACK_PLAN.md` -- Phased development plan with checklists and resume prompt
-- `docs/FEASIBILITY.md` -- Feasibility analysis of replicating OptiFine features
+- `docs/MASTER_APP_PLAN.md` -- Single source of truth for roadmap, phase status, research notes, backlog, gotchas, and resume prompt
 - `docs/ARCHITECTURE.md` -- Planned architecture for each feature module
-- `docs/PHASE1_RESEARCH.md` -- Detailed rendering optimization research with vanilla code analysis
-- `docs/MOD_CONSOLIDATION.md` -- Plan for absorbing/replacing other optimization mods from the alto modpack
+- `docs/CONVENTIONS.md` -- Code/mixin/GUI conventions established during development

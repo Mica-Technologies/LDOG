@@ -1,0 +1,687 @@
+# LDOG Master App Plan
+
+Single source of truth for LDOG's development roadmap, phase-by-phase status, research notes, and pickup state. Consolidates what used to live in `ATTACK_PLAN.md`, `FEASIBILITY.md`, `MOD_CONSOLIDATION.md`, `PHASE1_RESEARCH.md`, `P8_RESEARCH_AND_PLAN.md`, `POST_9A4_RESEARCH.md`, `PHASE_9C_TEMPORAL_DEEP_DIVE.md`, and `PHASE_9C3_OPTION_C_RESEARCH.md`.
+
+For architecture and code-level conventions, see `docs/ARCHITECTURE.md` and `docs/CONVENTIONS.md` — those stay as informational references and are *not* duplicated here.
+
+Status legend used throughout: `[x]` complete · `[~]` partial / unverified · `[ ]` outstanding · `[defer]` deliberately deferred.
+
+---
+
+## 1. Project Goal
+
+LDOG (Limitless Development Optigame) is a Minecraft 1.12.2 Forge client mod that aims to be a high-performance, open-source replacement for OptiFine. Built with the GregTechCEu Buildscripts (RFG 1.4.0) wrapper. Client-only, config-driven, mixin-first.
+
+Key feature targets:
+
+| Area | Priority | Status |
+|---|---|---|
+| Rendering Optimizations | High | shipped (Phase 1) |
+| Connected Textures (CTM) | High | shipped (Phase 3) |
+| Emissive Textures | High | shipped (Phase 4) |
+| Dynamic Lights | Medium | shipped (Phase 5) |
+| HD Textures | Medium | shipped (Phase 2) |
+| Custom Sky | Medium | shipped (Phase 6d) |
+| Shader Pipeline | Stretch | foundation shipped (Phase 8); real shader-pack loading still open |
+
+Long-term: replace 5-7 separate optimization mods in the alto modpack with one integrated mod (see §3).
+
+---
+
+## 2. Resume Prompt (for next session)
+
+> We're building LDOG (`ldog`), an open-source OptiFine replacement for Minecraft Forge 1.12.2. The project is at `E:\gitRepos\LDOG`. Build system is GregTechCEu Buildscripts (RFG 1.4.0). Reference projects for conventions: `E:\gitRepos\minecraft-city-super-mod` and `E:\gitRepos\LDFAWE`. Read `CLAUDE.md`, `docs/MASTER_APP_PLAN.md`, `docs/ARCHITECTURE.md`, and `docs/CONVENTIONS.md` to get up to speed, then pick up at the next open item in §5 or §11 (backlog).
+
+### Where work left off (last working session: 2026-04-18 — "more options the merrier")
+
+Shipped in two pushes that day:
+
+1. **9a.9 auto-scale log fix** (`3374a86`) — one-shot INFO on first tick + per-decision DEBUG. User-verified.
+2. **9c.3-A entity reactive mask** (`14628e1`) — MRT + per-attachment colorMaski to stamp entity pixels into a COLOR1 R8 attachment of sceneFbo; TAA drops history weight on flagged pixels. Kills moving-mob ghost trails without per-entity MV. User-verified. Companion plan for full Option C in §10.
+3. **Phase 6d closure** (`2719c53`) — doc fix only; sky was already verified earlier.
+4. **9a.9 ext — aggressive 3-state mode** (`9d77526`) — `AutoScaleMode` enum (Off/Normal/Aggressive). Aggressive adds a 7-tier extended ladder that also drives `upscalerAlgorithm` + `fxaaQuality` + `enableFXAA`. Config schema: `enableAutoScale` removed, `autoScaleMode` added.
+5. **Phase C4 foundation** (`3b083bc`) — per-feature OptiFine override mode: `OFOverrideMode` enum (AUTO/LDOG_OVERRIDE/OPTIFINE_OVERRIDE), `OFFeature` catalog (7 features), `OFConfigBridge` lazy reflective probe on the GameSettings instance (OF stores feature toggles as instance fields on vanilla GameSettings via its transformer — NOT on a static Config class). Legacy `shouldHandle*` methods preserved as wrappers. New "OptiFine Interop" GUI section only rendered when OF detected. Defaults to AUTO — zero behavior change.
+6. **Future Expansion Ideas doc** (`6ade2fd`, `6749a9c`) — 15 gaps from walking the OF jar (§13).
+7. **Per-particle toggles** (`e25f1c7`) — 5 categories: Firework/Portal/Potion/Water/Dripping. Cancel at spawn via `MixinParticleManagerFilter`; class-name suffix matching.
+8. **Vignette pass** (`68d4435`) — `VignettePass` runs LAST in the pipeline. Multiplicative GL_DST_COLOR blend (darken-only).
+9. **Atmosphere section** (`e25d79d`) — cloud height override, fog distance multiplier, sun/moon size, weather render toggle + density, biome blend radius 1→2→3.
+10. **Comfort/Cinematic + Info HUD** (`39fe2a2`, `9a258bc`, `374789c`) — 10 comfort toggles + 5-row info overlay (coords/facing/time/biome/light level).
+
+**Pending verification** (deferred to later sessions):
+- **C4 OptiFine interop**: needs in-prod test with real OF in a real MC launcher install. Look for `LDOG: OF interop bridge ready — N feature(s) controllable, M unmapped (...)` in logs to know which `OFFeature.candidateFieldNames` are right.
+- This session's new features (particle filter, vignette, atmosphere, comfort, HUD hides, info overlays) — need in-game smoke-test.
+
+---
+
+## 3. Feasibility Snapshot
+
+Tier 1 (high feasibility, high value — all shipped): rendering opts, CTM, HD textures, dynamic lights, better grass/snow.
+Tier 2 (medium — mostly shipped): emissive, custom sky, custom colors, AA/AF, natural textures, random mobs.
+Tier 3 (hard / stretch): full GLSL shader pack support (loading external `.zip` shader packs with vertex+fragment+composite stages); CEM (custom entity models); custom GUIs.
+
+Open-source references (concept-only — no code copying per LDOG policy):
+
+| Project | License | Use |
+|---|---|---|
+| ConnectedTexturesMod | MIT | CTM implementation patterns |
+| AtomicStryker Dynamic Lights | Open | Dynamic lighting approach |
+| FoamFix / VintageFix | GPL-3.0 | Memory/render opts |
+| VanillaFix | MIT | Vanilla bug fixes |
+| BetterFPS | MIT | Performance opts |
+| ShadersMod | LGPL | Pre-OptiFine shader pipeline reference |
+| Super Resolution (187J3X1-114514/superresolution) | — | FSR/temporal upscaling — but targets MC 1.18+ with GL 4.3 compute + Vulkan, near-zero direct reuse for 1.12.2 |
+| Radiance (Minecraft-Radiance/Radiance) | — | Full Vulkan renderer replacement — bypasses MC's pipeline entirely, not applicable to LDOG approach |
+| hancin/Fullscreen-Windowed-Minecraft | — | Concept reference for Phase 10b runtime borderless |
+
+Risks: shader-pack compatibility (modern packs expect the full OF shader API; partial may frustrate users more than nothing); mod compatibility (some mods check for OF presence — provide shims); scope creep (10+ years of OF features — resist matching everything).
+
+---
+
+## 4. Mod Consolidation Plan
+
+The alto modpack uses 10+ separate optimization/rendering mods. LDOG absorbs them in phases.
+
+| Mod | Function | LDOG Strategy | Status |
+|---|---|---|---|
+| OptiFine | Shaders/CTM/emissive/render | **Replace** (primary goal) | most features at parity; shader pack loading still open |
+| Vintage Fix 0.5.1 | Model dedup, blockstate compaction, dynamic loading | **Coexist then integrate** (memory opts) | Phase C2 — not started |
+| Censored ASM / LoliASM 5.30 | BakedQuad/texture dedup, class loading | **Coexist then integrate** | Phase C2 — not started |
+| Performant 1.11 | Entity/TE tick perf, pathfinding | **Coexist** (server-side, outside scope) | kept |
+| Universal Tweaks 1.17.0 | Misc vanilla fixes | **Cherry-pick rendering tweaks only** | cherry-pick deferred |
+| FPS Reducer 1.20 | Reduce FPS when AFK/unfocused | **Integrate** | shipped Phase C1 |
+| Clear Water 1.2 | Water transparency | **Integrate** | shipped Phase C1 |
+| Smooth Font 2.1.4 | TrueType font rendering | **Integrate** | shipped Phase C3 |
+| Spark / Lag Goggles | Profilers | **Coexist** (diagnostic) | kept |
+
+At full maturity: 5-7 mods consolidated. Today's gap from full maturity: Vintage Fix + Censored ASM (Phase C2 not started) + OptiFine shader-pack loading (under Phase 8 stretch).
+
+---
+
+## 5. Phases — Status and Detail
+
+Section per phase. Each lists `Status:` block at the top so you can skim "what's left." Sub-bullets carry forward the original detail/gotcha content from the consolidated source docs.
+
+### Phase 0 — Foundation
+
+Status: `[x]` complete. Tagged `v0.0.1-alpha`. Build system, scaffolding, `@Mod` entry, config/proxy/compat infra.
+
+### Phase 1 — Rendering Optimizations + Mod Absorptions
+
+Status: `[x]` complete. Tagged `v0.1.0-alpha`.
+
+Implemented features:
+- Entity render distance culling (configurable, default 64 blocks).
+- Entity LOD (64-128 blocks: half framerate, 128+: quarter).
+- Tile entity render distance culling (configurable, default 64 blocks).
+- Particle frustum culling (dot product behind-camera check).
+- FPS Reducer (replaces standalone mod): AFK + unfocused detection, mouse movement tracking, HUD indicator.
+- Clear Water (replaces standalone mod): surface alpha, underwater fog, RGB color tinting.
+- F3 debug overlay with [LDOG] stats section.
+- Scrollable settings GUI accessible from Options + Video Settings screens.
+
+Research catalogue (for future reference / Phase 1.5 backlog): see §6.
+
+### Phase 2 — HD Texture Support
+
+Status: `[x]` complete.
+- Vanilla atlas already supports any sprite size up to GL max — research confirmed.
+- `MixinTextureAtlasSprite` prevents crash on non-square textures.
+- Tested with 256x resource pack (covers 32x/64x/128x).
+
+### Phase 3 — Connected Textures (CTM)
+
+Status: `[x]` complete.
+- `CTMProperties`: OptiFine `.properties` parser (method, matchBlocks, tiles).
+- `CTMLogic`: 47-tile full CTM + horizontal + vertical index calculation.
+- `CTMBakedModel`: `BakedModelWrapper` with per-quad retexturing via UV remap.
+- `CTMSprite`: custom `TextureAtlasSprite` that loads PNGs from mcpatcher/ctm paths.
+- `CTMRegistry`: scans resource pack dirs/zips, registers tiles, wraps models at `ModelBakeEvent`.
+- `CTMRenderContext`: ThreadLocal passing `IBlockAccess` + `BlockPos` from `renderBlock` to `getQuads`.
+- `MixinBlockRendererDispatcher`: sets/clears `CTMRenderContext` around block rendering.
+- Supports both mcpatcher/ctm and optifine/ctm paths, numeric block IDs.
+- Glass pane CTM: synthetic quads for absent arms, UV mirror convention, mirrorH tile selection.
+- Seam suppression: removes UP/DOWN edge strips between stacked panes for seamless glass.
+
+### Phase 4 — Emissive Textures
+
+Status: `[x]` complete.
+- `EmissiveTextureRegistry` scans resource packs for `*_e.png` directly.
+- Reads `optifine/emissive.properties` and `mcpatcher/emissive.properties` for suffix config.
+- `EmissiveRenderHandler` creates fullbright retextured quads (UV remap to emissive sprite).
+- `MixinBlockModelRenderer` intercepts `getQuads()` in both smooth and flat paths.
+- Verified in-game: emissive ore overlays glow.
+- Fullbright lightmap verified: `lightmap(240, 240)` in BLOCK format correctly bypasses AO/smooth lighting.
+- `RenderItem` emissive layer: `MixinRenderItem` + `EmissiveItemRenderHandler` (ITEM format, global fullbright via `OpenGlHelper`, polygon offset).
+
+### Phase 5 — Dynamic Lights + Lighting Customization
+
+Status: `[x]` complete (one optional enhancement deferred).
+- `DynamicLightManager`: tracks entities holding light-emitting items, distance-attenuated.
+- `ItemLightRegistry`: items → light levels (block items auto-detect + hardcoded overrides).
+- `MixinWorldDynamicLights`: injects into `ChunkCache.getCombinedLight()` (NOT `World` — World loads before mixins).
+- `DynamicLightTickHandler`: per-tick entity scan + per-frame smooth mode.
+- Entities on fire emit light level 15; dropped items emit their item's light level.
+- Configurable update interval (Smooth/per-frame, Fast/per-tick, or N ticks).
+- `MixinEntityRendererLightmap`: full lightmap customization via 16×16 texture manipulation.
+- Separate block/sky light RGB tinting (warm torches + cool moonlight, no shaders).
+- Night darkness multiplier (0.5× brighter → 100× pitch black) with torch protection.
+- Brightness boost (-1.0 to +1.0).
+- Pseudo-HDR tonemapping (ACES filmic curve).
+- 13 named presets (neutral, warm_torches, cinematic, candlelight, moonlit, dark_nights, horror, bright_caves, vivid, fluorescent, purple_haze, neon_blue, red_alert).
+- Full GUI: preset cycling + individual controls.
+- Auto-enable when any individual option is changed.
+- `[ ]` Per-light-source color (torch=warm, redstone=red) — possible future enhancement.
+
+### Phase 6 — Resource Pack Features
+
+Status: `[x]` complete (6a-6e all shipped; 6c has two optional gaps).
+
+**6a — Better Grass / Better Snow**: `BetterGrassBakedModel`, `BetterGrassHandler`, `BetterSnowHandler` shipped with flat lighting + directional shading + Z-offset. Config: `betterGrass = off/fast/fancy` (default fancy).
+
+**6b — Natural Textures**: `NaturalTextureBakedModel` (position-based UV rotation 0/90/180/270 + flip), `NaturalTextureHandler` parses `optifine/natural.properties`, defaults for 16 common blocks. Modes: rotate, rotate+flip, flip, fixed.
+
+**6c — Custom Colors**: `CustomColorHandler` fires after vanilla colorizers; reads `optifine/colormap/grass.png` + `foliage.png`; parses `optifine/color.properties` for redstone wire colors + static overrides.
+- `[ ]` Per-biome water color overrides (future).
+- `[ ]` Potion / map / dye color overrides (future).
+
+**6d — Custom Sky**: `CustomSkyRenderer` parses `optifine/sky/world0/skyN.properties` (texture, HH:MM fade times, rotate, blend, speed, axis); `CustomSkyLayer` does time-based alpha fade with wrap-around, skybox cube rendering. Custom sun/moon already supported by vanilla resource pack system. **Mixin verified in-game 2026-04-18** after earlier issues fixed across `c944b4e` (descriptor + refmap regen), `8ca2f52` (SRG name), `1113a60` (removed inverted pass check, MCPatcher layout). The `ldog$skyMixinConfirmed` one-shot log in `MixinRenderGlobal.renderSky` HEAD stays as regression detector.
+
+**6e — Random Entity Textures**: `RandomEntityTextureHandler` scans `optifine/random/entity/`; `MixinRender` intercepts `bindEntityTexture()` for living entities (targets `Render.class`, not abstract method); UUID-based deterministic selection with optional weighted `.properties`.
+
+### Phase 7 — Anti-aliasing / Anisotropic Filtering
+
+Status: `[x]` complete (one known MSAA-edges issue documented as won't-fix; FXAA via Phase 9a.8 is the better answer).
+
+**7a — Anisotropic Filtering**: config `enableAnisotropicFiltering`, `anisotropicLevel` (2/4/8/16, clamped to GPU max). `AnisotropicFilteringHandler` applies `GL_TEXTURE_MAX_ANISOTROPY_EXT` at `TextureStitchEvent.Post`. GUI: toggle + level cycling, re-applies on save without full resource reload. Graceful fallback if extension missing. **Block-edge bleed at distance fixed by Phase 7c**.
+
+**7b — MSAA**: config `enableMSAA`, `msaaSamples` (2/4/8, clamped to `GL_MAX_SAMPLES`). `MSAAFramebuffer` aux multisampled FBO (GL_RGBA8 + GL_DEPTH24_STENCIL8); `MixinEntityRendererMSAA` binds at `renderWorldPass` HEAD, blit-resolves to `mc.framebufferMc` at RETURN. Auto-resizes on window size change. Graceful fallback if GL 3.0 or EXT_framebuffer_multisample+blit missing.
+- **Known issue**: faint rasterization edge lines at distant chunk/block-face seams. OF avoids this with display-level MSAA (`PixelFormat.withSamples` + disable fboEnable) but loses spectator outlines. Not fixing — FXAA (Phase 9a.8 pipeline FXAA) is the better answer.
+
+**7c — Extended border mipmaps (AF bleed fix)**: config `enableExtendedBorderMipmaps` (default off — opt-in, grows atlas ~3× for 16x packs).
+- `ExtendedBorderHandler` holds per-stitch state (`mipmapLevels`, active flag), generates padded mipmap chains via clamp-to-edge halo at each mip level.
+- `MixinStitcherHolder` `@Redirect`s `getIconWidth/Height` inside `Holder.<init>` to inflate packing dims by `2 * border` (border = `2^mipmapLevels`). Sprite's own width/height stay untouched so external callers see inner size.
+- `MixinStitcher` `@Redirect`s the `initSprite` call in `getStichSlots` to shift sprite origin inward by `border`, so UVs address only the inner region.
+- `MixinTextureMap` brackets stitch with `beginStitch`/`endStitch`; `@Redirect`s `TextureUtil.uploadTextureMipmap` in `finishLoading` to write padded pixel data at `(innerOrigin - border)` with dims `(w + 2*border, h + 2*border)`. Uses `remap = false` on the enclosing `@Redirect` because `finishLoading` is Forge-added.
+- GUI toggle in AA/Filtering. On save triggers `mc.refreshResources()` (packing change, not live-refresh).
+- 50 unit tests pass.
+- **Limitations**: animated sprite halo stays as first frame's edge color (v1 tradeoff); atlas growth may push modpacks past `GL_MAX_TEXTURE_SIZE`.
+- **Tried and reverted 2026-04-16**: clamping `GL_TEXTURE_MAX_LOD` to `mipmapLevels - 2` on the block atlas when AF is on — didn't visibly reduce edge lines, added mild regression.
+
+**7d — FXAA post-process**: config `enableFXAA`. `FXAAHandler` toggles `EntityRenderer.loadShader("shaders/post/fxaa.json")` on/off. `AccessorEntityRenderer` mixin for clearing shaderGroup+useShader on disable. First-tick reconciliation. GUI row.
+- **Pipeline FXAA path (Phase 9a.8)**: When the post-process pipeline is on, `FXAAHandler` yields MC's fixed shader and `LDOGFXAAPass` runs instead — LDOG-original FXAA 3.11-inspired shader with 5 quality levels (`FXAAQuality` enum Low/Medium/High/Ultra/Extreme). Live-adjustable. When pipeline OFF, MC's shipped fxaa.json runs.
+
+### Phase 8 — Shader Pipeline
+
+Status: `[x]` 8a + 8b + 8c shipped 2026-04-17. Real third-party shader-pack loading remains the Phase 8 stretch goal — see §13.
+
+**8a — Framework**: `PostProcessPass`, `PostProcessContext`, `PostProcessPipeline`, `passes/NoOpPass`. Mixin lifecycle hook on `EntityRenderer.renderWorldPass` (RETURN). `RenderTargetManager` owns scaled GL_RGBA8 color tex + GL_DEPTH24_STENCIL8 depth RBO scene target + color-only ping-pong. `ensure(baseW, baseH, scale)` reallocates on dim/scale change.
+
+**8b — Observability**: `PipelineDebugStats` (active passes, frame nanos, target ready/scale/dims); perf overlay row; first-enable log reports base+scaled dims, target readiness, and MSAA/FXAA posture; fault-tolerant pass removal on execute failure; `disableAll` on fatal init/resize error disposes `RenderTargetManager`.
+
+**8c — Binding hook**: `MixinEntityRendererPostPipelineBind` (single wrapper, replaces the older RETURN-only injector). At HEAD: if pipeline on + no MSAA conflict + `RenderTargetManager.isReady()`, save current FBO + viewport, bind scene FBO, set scaled viewport, clear color+depth, set `ldog$pipelineActive=true`. At RETURN: run pass chain against scene target, `glBlitFramebuffer` back to saved FBO at saved viewport (`GL_LINEAR`), restore viewport. MSAA path: pipeline does not bind (MSAA owns FBO); pass chain still runs on main FB after resolve. FXAA path: unchanged (composites after).
+
+Critical: `pass != 2` guard — `renderWorldPass(pass)` with `pass != 2` is anaglyph-only. Default MC always uses `pass == 2`. Originally guarded on `pass == 0`, which broke binding. Fixed.
+
+`ShaderProgram` utility (compile/link/uniform setters + cached locations) shipped with 8a, used by all 9a+ shader passes. `setUniformMatrix4` added for 9c.2.
+
+### Phase 9 — Upscaling + Post-Process Chain
+
+Status: 9a + 9c.1-9c.3a `[x]`; 9b `[ ]` doc-only protocol; 9c.3-Option-C, 9c.4, 9c.5 `[defer]`.
+
+**Concept**: AMD FidelityFX Super Resolution 1.0 (spatial). Render world to scaled FBO, apply FSR sharpen/upscale pass to output at native. Works on any GPU. FSR 1.0 over DLSS because: DLSS requires NVIDIA SDK (native/JNI), DX12/Vulkan, motion vectors, depth — fundamentally incompatible with MC 1.12.2 OpenGL 2.1.
+
+#### 9a — Spatial upscalers + post-process chain (all `[x]` 2026-04-17)
+
+- **9a.1** `BilinearBlitPass` extracted from mixin into its own pass. Pipeline registers passes by algorithm with `isEnabled()` gating.
+- **9a.2** `FSR1EASUPass` — LDOG-original unsharp-mask-on-bilinear with contrast-adaptive strength. GLSL 120. **Bug fixed**: initial anti-ringing 5-tap clamp trapped edge peaks back to input; widened then dropped entirely.
+- **9a.3** FSR1 sharpness slider 0.0-2.0, live-tunable.
+- **9a.4** `FSR1QualityPass` — direction-biased EASU variant. Sobel edge detection + anisotropic sampling along edge + contrast-adaptive sharpen. Noticeably crisper on diagonals.
+- **9a.5** `UpscalerPreset` enum (Native/Ultra/Quality/Balanced/Performance/Custom). Auto-flips to Custom when individual controls edited.
+- **9a.6** `RCASSharpenPass` — post-upscale sharpen via `glCopyTexSubImage2D`. Works at any scale including 1.0 (pure sharpen for native-res users). Config + slider.
+- **9a.7** `LDOGPreset` enum — whole-mod presets (Vanilla/Performance/Default/Fancy/Ultra/Custom). At top of settings list. `LDOGPreset.apply()` sets AA/FXAA/ExtBorder/water change flags so `saveAndClose` triggers right reloads.
+- **9a.8** `LDOGFXAAPass` — LDOG-original FXAA 3.11-inspired, 5 quality levels (see 7d).
+- **9a.9** `AutoScaleHandler` — target-FPS dynamic resolution scaling. Every 2s (40 client ticks), compares `Minecraft.getDebugFPS()` against `min(Display.getDesktopDisplayMode().getFrequency(), gameSettings.limitFramerate)`, steps `internalRenderScale` through 5-tier ladder {1.00, 0.85, 0.75, 0.67, 0.50} with 0.9×/1.1× threshold dead-zone. Extended (Aggressive mode): 7-tier ladder that also drives `upscalerAlgorithm` + `fxaaQuality` + `enableFXAA` (FSR1-Quality → FSR1 → Bilinear, FXAA Ultra→High→Med→Low→off). Config: `autoScaleMode` (Off/Normal/Aggressive). One-shot INFO log on first tick + per-decision DEBUG.
+
+#### 9b — Quality tuning + validation (`[ ]` doc-only, user-driven)
+
+Artifact: write `docs/PHASE_9B_VALIDATION.md` with target packs (vanilla 16x, 32x HD, Stratum 256x), reference scenes (exact biome coords / screenshot recipes), scoring rubric per pack × upscaler × scale, artifact catalog per upscaler. Defer until user signals investment in quality testing. No code change.
+
+#### 9c — Temporal upscaling
+
+**Foundation matters**: temporal upscalers need source color + depth + motion vectors + jittered projection + history buffer + (optionally) exposure + reactive mask. MC 1.12.2 provides source + depth + camera pose + per-entity prev positions natively. Doesn't provide: per-entity MV emission (no hook), particle MV (batched draw), TESR prev transforms (custom code), chunk-local motion (texture animation — accept artifact).
+
+Reference mods can't be code-mirrored: Super Resolution targets GL 4.3 compute + Vulkan (1.18+); Radiance bypasses MC's renderer entirely via Vulkan + C++. LDOG is writing **the first temporal reconstructor for MC 1.12.2's legacy immediate-mode pipeline** from first principles.
+
+Stages (each independently shippable):
+
+- **9c.1** `[x]` Jittered-projection TAA MVP — `JitterHelper` (Halton 2,3) + `TAAAccumulatePass` with neighborhood-clamped history blend. **Bug 1**: jitter injection targeted `setupCameraTransform` but `renderWorldPass` overwrites projection afterward (sky + terrain `gluPerspective` calls) — jitter was a no-op. Fix: inject at `renderWorldPass` on both ordinals. User-verified post-fix.
+- **9c.2** `[x]` Camera motion vectors — `CameraState` singleton captures jittered viewProj + invCurViewProj + prevViewProj at the terrain-projection injection point (AFTER jitter). Scene depth attachment moved from RBO to `GL_DEPTH24_STENCIL8` texture (GL_NEAREST) for shader sampling. TAA shader reconstructs world-space from NDC + depth + invCurViewProj, reprojects via prevViewProj. Disocclusion check: reprojected UV outside [0,1] → skip history. **Bug 2**: initial impl captured un-jittered matrices while history stored jittered pixels — "drunk/swimming" visuals. Fix: capture AFTER `applyJitter()` so cur/prev matrices match history. User-verified post-fix.
+- **9c.3-A** `[x]` Entity reactive mask (Option A from §10) — MRT + per-attachment `colorMaski`: sceneFbo gets a COLOR1 R8 attachment always-allocated; binding mixin `glDrawBuffers` to [COLOR0, COLOR1] and `glColorMaski(1, false)` around non-entity draws; `MixinRenderGlobal` opens `colorMaski(1, true)` around `renderEntities` HEAD/RETURN. Legacy fixed-function replicates `gl_FragColor` across attachments so no custom entity shader needed. TAA shader drops history weight on flagged pixels. Kills moving-mob ghost trails. User-verified.
+- **9c.3-C** `[defer]` Full per-entity MV (Option C) — see §10 for the day-by-day plan. ~1 week focused.
+- **9c.4** `[defer]` FSR2-style reconstruction kernel. Requires Option C first.
+- **9c.5** `[defer]` Reactive mask polish + alpha-cutout classification.
+
+### Phase 10 — Borderless Windowed Fullscreen
+
+Status: `[x]` 10a (restart-required) shipped 2026-04-17. `[defer]` 10b (runtime-togglable) — see backlog.
+
+**10a — Restart-required mode**:
+- Core plugin reads LDOG config file directly (before ConfigManager initializes), sets `org.lwjgl.opengl.Window.undecorated=true` if flag is on; MC's Display is created undecorated for the session.
+- `MixinMinecraftBorderless` (must be in `mixins.ldog.vanilla.json` early config) replaces exclusive fullscreen with resize-to-desktop + position (0,0).
+- **Flicker fix**: `Display.setDisplayMode` must use `new DisplayMode(w, h)` — passing full `getDesktopDisplayMode()` carries refresh/bpp metadata that triggers fullscreen mode-switch intent in LWJGL 2.9.4 on Windows. Reordered: setResizable → setLocation → setDisplayMode.
+- **Windows Fullscreen Optimizations dodge + user toggle**: window sized `desktop_h - 1` by default so Win10/11 DWM doesn't auto-transition into optimized-borderless-fullscreen. User toggle "Block FS Optim" (default ON). Trade-off: ON = flicker-free but taskbar visible; OFF = clean taskbar-hidden but brief transition flash.
+- **Startup sizing fix**: `Minecraft.startGame` fullscreen-at-startup path goes through `toggleFullscreen()` (lines 601-604), not `setInitialDisplayMode`. Vanilla's toggleFullscreen calls `this.resize(displayWidth, displayHeight)` which invokes `currentScreen.onResize`; our handler initially only called `updateFramebufferSize` directly. Fixed: use `mc.resize(w, h)` in both enter/exit paths. Side benefit: also fixes F11 toggles while a settings screen is open.
+- **Trade-off**: undecorated is session-level; windowed mode loses title bar/resize grips. Tooltip documents Alt+drag (Windows) or keyboard window movement.
+
+**10b — Runtime-togglable** (deferred): `Display.destroy()` + `Display.create()` + coordinated LDOG GL subsystem cleanup. **Why hard**: destroying the Display invalidates the entire GL context — every LDOG-owned GL handle dies (RenderTargetManager FBOs, all shader programs, TTF font atlas, MSAAFramebuffer). MC's `refreshResources()` reloads MC atlases but NOT mod GL state. Sketch:
+1. Dispose all LDOG GL state.
+2. `Display.destroy()`.
+3. Update `System.setProperty("org.lwjgl.opengl.Window.undecorated", ...)`.
+4. `Display.setDisplayMode(...)`.
+5. `Display.create(new PixelFormat().withDepthBits(24))`.
+6. `mc.refreshResources()`.
+7. LDOG subsystems lazy-reinit on next use.
+
+Most subsystems already have `dispose()` — main risk is ordering, want a central `LDOGRenderingLifecycle` event bus. Priority: low unless multiple users request.
+
+Architectural reference: `hancin/Fullscreen-Windowed-Minecraft` on GitHub — concept-only, no code copying.
+
+### Phase C1 — Mod Absorptions (during Phase 1)
+
+Status: `[x]` complete.
+- FPS Reducer → `FpsReducerHandler` (AFK + unfocused + mouse tracking + HUD overlay).
+- Clear Water → `MixinBlockFluidRenderer` + `ClearWaterHandler` (alpha + fog + RGB tint).
+
+### Phase C2 — Memory Optimization Absorption
+
+Status: `[ ]` not started (deferred until later phases stable).
+
+Plan:
+- **Vintage Fix → LDOG**: model dedup (post-bake walk + content-hash), blockstate compaction (array-backed `BlockStateContainer`), dynamic model loading (lazy + LRU evict), property value interning. Risk: moderate (touches fundamental data structures). Test with 200-mod pack.
+- **Censored ASM / LoliASM → LDOG**: BakedQuad vertex-int-array dedup, sprite pixel dedup post-stitch, `LaunchClassLoader.findClass()` opts, IBlockState canonical cache, NBT tag-name string interning. Verify non-overlap with VintageFix-equivalents. Risk: moderate-high (class loading sensitive).
+
+### Phase C3 — Smooth Font Absorption
+
+Status: `[x]` complete 2026-04-17 (one cache enhancement still open).
+
+Pain point: original Smooth Font roughly doubles launch time because it synchronously rasterizes all glyph pages × sizes at startup. LDOG implementation must not repeat that.
+
+Shipped:
+- **HD ASCII PNG swap path**: `SmoothFontHandler` scans active pack in priority order `optifine/font/ascii.png → mcpatcher/font/ascii.png`; registers `HDFontTexture` (SimpleTexture subclass) under stable `ldog:textures/font/hd_ascii`; applies `GL_LINEAR` filtering at upload. `MixinFontRenderer.@Redirect` on the `bindTexture(locationFontTexture)` call inside `renderDefaultChar` swaps to HD when available. `FontRendererInvoker` exposes protected `bindTexture` (both use `remap = false` — Forge-added method, no SRG mapping).
+- **Width overrides**: parses `ascii.properties` (`width.N=W` format) in priority order `optifine/font/ → mcpatcher/font/ → font/`. `MixinFontRenderer.@Inject(TAIL)` on `readFontTexture` applies overrides on top of vanilla's auto-computed widths. Alto pack ships widths at `font/ascii.properties`.
+- **Config**: `enableSmoothFont` (master), `useHDFontTexture`, `fontAntialiasing` (off/bilinear/trilinear), `useFontPropertyWidths`, `fontLodBias`, `fontAnisotropic`, `useTTFFont`, `ttfFontFamily`, `ttfBold`, `ttfItalic`, `ttfFontSize`, `ttfCellSize`, `fontDropShadows`. Live flips: AA off↔bilinear, drop shadows. Trilinear boundary + TTF source change + HD probe trigger `mc.refreshResources()`.
+- **GUI**: "Font Rendering" section — 9 rows with per-button hover tooltips. Custom TTF families highlighted yellow vs built-in green.
+- **OptiFine conflict check**: `OptiFineCompat.shouldHandleSmoothFont()` auto-disables all four features when OF detected.
+- **TTF path**: `TTFFontRasterizer` uses `Graphics2D` with `TEXT_ANTIALIAS_ON` + `FRACTIONALMETRICS_ON` to rasterize 256-char default-font page from `Font` into 16×16 grid at configurable cell size. `TTFFontTexture` uploads via shared `FontTextureUploader`. Width comes from AWT `FontMetrics.charWidth(ch)` scaled to MC's logical 8-per-cell and written into `FontRenderer.charWidth[]` via `@Accessor` (not `@Inject(TAIL)` — our listener runs after FontRenderer's, TAIL would always read previous reload's table). Built-in families: SansSerif/Serif/Monospaced/Arial/Verdana/Tahoma/Segoe UI/Helvetica/Consolas/Courier New. ASCII page eager-rasterized at reload (~100ms for 256 glyphs).
+- **Three-level AA**: `FontAAMode` enum — `off` (GL_NEAREST) / `bilinear` (GL_LINEAR no mipmaps) / `trilinear` (GL_LINEAR_MIPMAP_LINEAR + `glGenerateMipmap` + `GL_TEXTURE_MAX_LEVEL = log2(size)`). Trilinear is the only mode that actually antialiases at GUI scales — bilinear is ≳16:1 downsampling from 4096 atlas. Trilinear applies negative `fontLodBias` (default -0.5, tunable -4..4) + anisotropic sampling (default 16x, clamped to GPU max).
+- **User-supplied fonts**: `TTFFontCatalog` scans `config/ldog/fonts/` for `.ttf`/`.otf` at preInit, loads via `Font.createFont(TRUETYPE_FONT, file)`, registers with `GraphicsEnvironment`. Rescanned on every resource reload so F3+T picks up new drops without restart. Already-registered files skipped. AWT registration failures (name collisions with installed system fonts) logged as warnings, not crashes.
+- **Drop-shadow toggle**: `fontDropShadows` config + `@ModifyVariable` on `FontRenderer.drawString(String,F,F,I,Z)I`'s boolean arg at HEAD. All rendering funnels through this overload.
+- **Subclass pass-through**: `MixinFontRenderer`'s redirect checks `self.getClass() != FontRenderer.class` and bypasses HD swap for subclasses. Fixed a Forge `SplashProgress$SplashFontRenderer` crash (separate GL context/thread).
+- **Core-plugin early loader**: `LDOGCorePlugin` implements `IFMLLoadingPlugin` + MixinBooter's `IEarlyMixinLoader`, registers `mixins.ldog.vanilla.json`. FontRenderer is pulled into the classloader during FML bootstrap ahead of the late-loader window, so late mixins silently no-op with "loaded too early". `coreModClass` in `buildscript.properties` propagates to dev JVM args and jar manifest.
+- **v1 deliberately skipped**: Unicode glyph pages (`glyph_XX.png`) untouched by the hook — ASCII HD swap is the user-visible win.
+
+Future enhancements (not blocking):
+- `[ ]` Persistent disk cache at `config/ldog/font-cache/<font-hash>/<size>.png`.
+- `[ ]` Async rasterization on worker thread.
+- `[ ]` Unicode `glyph_XX.png` runtime rasterization with lazy+cached per-page atlases.
+- `[ ]` Bold/italic GUI toggles.
+- `[ ]` Subpixel rendering hint.
+
+### Phase C4 — OptiFine Override Mode
+
+Status: `[x]` foundation shipped (`3b083bc`); `[ ]` in-prod verification + field-name corrections + parity benchmarking + tooltip polish all pending.
+
+Today's compat: when OF is detected, LDOG auto-disables overlapping features. The override-mode goal: once an LDOG feature is demonstrably ≥ OptiFine's (faster, lower memory, better-looking, more configurable), flip it: LDOG takes over, OF's feature disabled.
+
+Foundation shipped:
+- `OFOverrideMode` enum: AUTO / LDOG_OVERRIDE / OPTIFINE_OVERRIDE. One `ofModeXxx` config string per feature.
+- `OFFeature` catalog (7 features: CTM, emissive, sky, dynamic lights, random mobs, smooth font, custom colors).
+- `OFConfigBridge` lazy reflective probe + setter on the **GameSettings instance** (key discovery: OF doesn't use a static Config class — OF's transformer adds `ofXxx` instance fields to vanilla `GameSettings`. The Config class at JAR root holds platform state only — openGlVersion, initGameSettings). Bridge walks class hierarchy, tries candidate field names per `OFFeature`.
+- All features default to AUTO — zero behavior change until user opts in.
+- GUI section "OptiFine Interop" rendered only when OF detected. Color-coded labels (grey/green/yellow with red for "uncontrollable").
+- Graceful failure: bridge returns false on every error path; `OptiFineCompat.computeDecision` falls back to OPTIFINE_OVERRIDE with logged warning when LDOG_OVERRIDE can't be honored.
+- Legacy `shouldHandle*` methods preserved as wrappers — all existing callers unchanged.
+
+**CRITICAL gotcha — OF cannot run in `gradlew runClient`**: dropping the official OF production jar (`OptiFine_1.12.2_HD_U_G5.jar`) into `run/mods/` and launching via gradle crashes immediately at `FMLClientHandler.detectOptifine` with `NoClassDefFoundError: cer`. Root cause: OF's jar is obfuscated against production-MC (notch) class names; the dev workspace runs deobfuscated MC. OF's class transformer references obfuscated names like `cer` that don't exist in dev.
+
+In-prod verification path:
+1. `./gradlew build` → `build/libs/LimitlessDevelopmentOptigame-vX.X.X.jar`.
+2. Copy to a real production MC 1.12.2 + Forge install's `mods/` (e.g., alto modpack instance).
+3. Ensure OF is also in that production mods folder.
+4. Launch via the normal Minecraft launcher (NOT gradle).
+5. Look at `<.minecraft>/logs/latest.log` for `LDOG: OF interop bridge ready — N feature(s) controllable, M unmapped (...)`. The unmapped list tells us which `OFFeature.candidateFieldNames` need adjusting.
+6. Toggle OF interop GUI rows; confirm OF features actually go off when set to LDOG.
+
+**Don't put OF in `run/mods/` again.** Keep the jar outside the project tree (e.g., `Downloads/`) if needed for inspection.
+
+User tried verification in a 100+ mod pack and hit compat errors unrelated to LDOG — deferred to cleaner test env.
+
+Remaining work:
+- `[ ]` In-prod verification with real OF.
+- `[ ]` Field-name corrections for features the bridge logs as unmapped.
+- `[ ]` Per-feature parity benchmarking before flipping any default to LDOG_OVERRIDE.
+- `[ ]` Tooltip polish for the 7 OF Interop GUI rows.
+
+---
+
+## 6. Phase 1 Research — Catalogue (for future Phase 1.5)
+
+The shipped Phase 1 covered B1/B2/B3 entity/TE distance + LOD, C1 particle frustum cull, and C1/D2 mod absorptions. The wider opportunity catalogue from the original research doc — items not yet implemented — sits here for reference. Ranked by impact × difficulty × conflict risk (lower priority = farther into future).
+
+| # | Item | Target | Impact | Diff | Conflict |
+|---|---|---|---|---|---|
+| 1 | A2: Skip air blocks in chunk rebuild | `RenderChunk.rebuildChunk()` iteration loop; check `ExtendedBlockStorage.isEmpty()` | Mod | Low | Low |
+| 2 | A3: Frustum reuse + tighter culling | `RenderGlobal.setupTerrain()`, `EntityRenderer.renderWorldPass()` | Mod | Low-Med | Low |
+| 3 | A1: AO/Lighting cache | `BlockModelRenderer.AmbientOcclusionFace.updateVertexBrightness()` — 18×18×18 cache + `@Redirect` neighbor lookups | **Very High** | Mod | Mod (OF) |
+| 4 | A4: Chunk rebuild prioritization (distance/frustum-aware queue) | `ChunkRenderDispatcher` | Mod | Mod | Low |
+| 5 | C2: Particle count limiting | `ParticleManager` | Low-Med | Low | Low |
+| 6 | A5: Batch chunk uploads | `ChunkRenderDispatcher.runChunkUploads()` | Low-Med | Mod | Low |
+| 7 | D1: Reduce per-frame allocations (pooled Vec3d/AABB/BlockPos) | various hot paths | Mod | Mod | Low |
+| 8 | E1: Cache vertex format GL state | `RenderGlobal.renderBlockLayer()` | Low | Very Low | Low |
+
+A1 (AO/Lighting cache) is the single biggest unshipped optimization but moderate conflict risk with OF's own AO — gate via `OptiFineCompat`.
+
+---
+
+## 7. Phase 8/9 Deeper Plan (compressed)
+
+Original deep-dive identified what to do (spatial FSR1 first, temporal as research), what not to do (DLSS — incompatible with MC 1.12.2 OpenGL 2.1; no platform shift in scope), and three research tracks (R1 NIS-style, R2 FSR2 feasibility, R3 XeSS viability memo) with explicit go/no-go gates.
+
+**What's been validated by shipping**: Phase 8 framework + binding is stable; FSR1 + FSR1-Quality + Bilinear + RCAS are all shipped (R1's NIS-style track effectively superseded by FSR1-Quality which is direction-biased EASU — comparable quality without separate NIS implementation); 9c.1 + 9c.2 prove camera-MV temporal is feasible on the legacy pipeline (R2 partially answered — temporal works at camera scope).
+
+**Still open from original research plan**:
+- `[ ]` R3 XeSS viability memo — produce constraint matrix + classification (`researchable` vs `platform-shift`). Almost certainly classifies as platform-shift given runtime requirements.
+- `[ ]` 9b validation protocol doc (§5).
+- `[defer]` R2 full FSR2 feasibility — Option C entity MV is the gating prereq (see §10).
+
+**Legal/compliance discipline** (carry forward): external mods (Super Resolution, Radiance) are concept-only references. No code copying. Document conceptual borrowings in design notes. Vendor SDK paths (DLSS-class) have higher legal/redistribution constraints and are separate go/no-go gates.
+
+---
+
+## 8. Post-9a.4 Backlog (compressed)
+
+After 9a.4 (FSR1-Quality) shipped, options the user could pursue:
+
+1. `[x]` **Quality Presets** — `UpscalerPreset` enum bundles scale + upscaler + sharpness — shipped as 9a.5.
+2. `[x]` **RCAS standalone sharpen** — shipped as 9a.6 via `glCopyTexSubImage2D`.
+3. `[ ]` **Phase 9b validation protocol doc** — see §5.
+4. `[defer]` **Phase 10b runtime-togglable borderless** — see §5 (Phase 10).
+5. `[defer]` **Phase 9c temporal upscaling** — see §5 (Phase 9c) and §9.
+
+---
+
+## 9. Phase 9c Temporal Upscaling — Deep Dive (compressed)
+
+What temporal upscalers need (algorithm-level): source color, depth, motion vectors, jittered projection, history buffer, optional exposure, reactive mask.
+
+What MC 1.12.2 provides natively: source color, depth, jittered projection (via mixin redirect on `Project.gluPerspective`), history buffer (just another FBO), camera pose (`ActiveRenderInfo` + projection matrix), per-entity `prevPosX/Y/Z` + `lastTickPosX/Y/Z` (read-only).
+
+What MC 1.12.2 does NOT provide: per-entity MV emission hook (hard); particle MV (batched draw — hard); TESR prev transforms (custom code — hard); chunk-local texture animation motion (accept artifact).
+
+Chunks aren't a blocker — they're world-space static, so depth-based camera MV is sufficient. Entities are the hard problem. Particles are even worse; accept particle ghosting behind reactive mask.
+
+Staged plan (independently shippable):
+
+| Stage | Scope | Est | Status |
+|---|---|---|---|
+| 9c.1 | Jittered TAA MVP (jitter + history + simple accum) | 3-5d | `[x]` |
+| 9c.2 | Camera MV (depth-based, neighborhood clamping) | 1-2w | `[x]` |
+| 9c.3-A | Entity reactive mask (drop history on entity pixels) | 1-2d | `[x]` |
+| 9c.3-C | Full per-entity MV — see §10 | ~1w focused | `[defer]` |
+| 9c.4 | FSR2-style reconstruction kernel (needs 9c.3-C) | 2-4w | `[defer]` |
+| 9c.5 | Reactive-mask polish + alpha-cutout classification | 1-2w | `[defer]` |
+
+**Worst case**: ~4 months focused for the full stack. **Minimum viable** already shipped (9c.1+9c.2+9c.3-A).
+
+**When to pivot to "platform shift"**: only if users request DLSS-level quality AND project commits to a modern Minecraft fork. That's Radiance's territory — Vulkan + native renderer rewrite. Document as research archive, not roadmap.
+
+---
+
+## 10. Phase 9c.3 Option C — Full Per-Entity MV (concrete plan)
+
+Companion to §9, written after Option A (reactive mask) shipped 2026-04-18.
+
+### What Option A left on the table
+
+| Problem | Severity |
+|---|---|
+| Entity TAA quality — reactive pixels get per-frame instability instead of accumulated detail. Entities look jaggy/shimmery in motion. | Medium |
+| Particles still ghost — they aren't drawn from `RenderGlobal.renderEntities`. | Low |
+| Mask is binary — slow-moving entities treated same as fast. Sub-pixel motion unnecessarily nuked. | Medium |
+| Entity-on-entity occlusion via neighborhood clamping bleed | Low |
+| TESR sub-pixel detail loss (banners, beacons, end portal) | Low-Medium |
+
+Per-entity MV fixes all in one shot.
+
+### Strategy comparison
+
+- **Strategy 1** (two-pass with custom velocity shader) — clean separation, 2× entity draw cost worst case. Workable.
+- **Strategy 2** (MRT during entity render, single-pass) — **don't**. Catastrophically invasive (replaces fixed-function entity rendering), breaks shader-mod compat.
+- **Strategy 3** (optical flow approximation) — **don't**. Notoriously fragile, ~30ms per frame for a 7×7 search.
+- **Strategy 4** (RECOMMENDED) — Strategy 1 for vanilla entities + reactive mask for modded/TESR fallback. Vanilla coverage is bulk of perceived value; modded compat surface stays at "reactive mask handles it." Lands working software in 1-2 weeks instead of weeks-to-months.
+
+### Improvements over the naive plan
+
+- **4.1 Per-entity displacement caching** with `prevPosX/Y/Z` interpolated via `partialTicks`. Cache in `WeakHashMap<UUID, EntityRenderState>`, evict on death/unload.
+- **4.2 Velocity threshold** — skip MV emission for stationary entities (|prevPos - curPos| < ~0.001 blocks). ~80% of rendered entities in survival are stationary at any frame.
+- **4.3 Lower-resolution MV target** — half-res by default; TAA bilinear-samples. Downside: thin entities (arrows, fishing lines) may miss pixels. Mitigation: per-entity full-res flag for known-thin classes.
+- **4.4 MV format**: RG16F recommended (precision avoids visible quantization), fallback RG8 if `GL_R16F` missing.
+- **4.5 Async MV pass** — render MV during frame N, TAA samples in frame N+1. One frame of transient incorrect MV at motion start; steady-state correct. Acceptable.
+- **4.6 Combine with 9c.4** — MV is foundational for proper FSR2-style reconstruction. The investment pays off twice (ghost-free TAA + actual upscale quality). **If 9c.4 is ever a real roadmap goal, Option C is required, not optional.**
+
+### Day-by-day plan (1 week focused / 2 weeks interrupted; 4-6d if already familiar with 9c.1+9c.2 code)
+
+**Day 1 — Infrastructure (4-6h)**
+- Create `MotionVectorTarget.java` — separate FBO, RG16F texture, half-res default.
+- Allocate via `RenderTargetManager` lifecycle.
+- Create `EntityVelocityShader.java` — vertex shader passes `prevClipPos`, fragment writes screen-space delta to RG.
+- Create `EntityRenderStateCache` — `WeakHashMap<UUID, EntityRenderState>` with cur/prev transform.
+
+**Day 2 — Hook entity rendering (4-6h)**
+- `MixinRenderLivingBase` + `MixinRenderEntity` + `MixinRenderItem`: `@Inject` HEAD on `doRender` to capture pre-render GL_MODELVIEW.
+- `@Inject` RETURN to capture post-render GL_MODELVIEW (or compute current matrix from entity position + camera state).
+- Update `EntityRenderStateCache` with cur/prev pair.
+- Schedule MV emission in per-frame queue.
+
+**Day 3 — MV emission pass (4-6h)**
+- `EntityMotionVectorPass` runs after scene render, before TAA.
+- Bind `MotionVectorTarget` FBO.
+- For each queued entity, bind velocity shader with cur/prev modelview uniforms, re-render geometry (investigate `RenderManager.renderEntityStatic` or equivalent for the "no lighting/texture" path).
+- Verify only velocity is written.
+
+**Day 4 — TAA integration + validation (4-6h)**
+- `TAAAccumulatePass` shader: bind MV target on unit 4. Uniforms `u_motionVectors` + `u_useEntityMV`.
+- Logic: if MV.r != 0 || MV.g != 0 → `histUV = v_texCoord - texture(motionVectors, v_texCoord).rg`. Else fall through to camera-only MV path.
+- Remove reactive-mask drop-history for pixels with entity MV; keep reactive mask as fallback for non-MV entities.
+- Validation matrix:
+  - Static camera + moving sheep → entity TAA accumulates, no ghost.
+  - Camera pan + static sheep → still works (camera MV).
+  - Both moving → entity MV combines correctly.
+  - Modded entity → reactive mask fallback fires.
+  - TESR (banner, beacon) → reactive mask fallback fires.
+
+**Days 5-7 — Polish + perf**
+- Per-entity velocity threshold (skip stationary).
+- Frustum culling on MV pass.
+- Try lower-res MV target; verify quality.
+- Profile: confirm < 2ms added per frame on test scene.
+- Document modded entity compat list.
+
+### Risks
+
+| Risk | Likelihood | Mitigation |
+|---|---|---|
+| `RenderManager.renderEntityStatic` doesn't exist/has wrong signature in 1.12.2 | Med | Investigate Day 1; fall back to `Render.doRender` with manual transform |
+| Per-entity uniform updates throttle GPU | Low-Med | Batch by render type; cache uniform locations; consider instanced-array for many same-type |
+| Half-res MV breaks thin entities | Med | Per-entity full-res flag, or reactive-mask fallback |
+| Vanilla render path uses GL state we don't set in second pass (lighting, glow) | Med | Match vanilla setup; explicitly disable color/texture/lighting in velocity pass |
+| OptiFine coexistence | Low | Detect OF, skip Option C entirely (reactive mask still works) |
+
+### When to NOT pursue Option C
+
+Stop at Option A if: user accepts reactive-mask quality; project priority shifts; 9c.4 (FSR2-style reconstruction) dropped from roadmap entirely. Option A is the 80/20 win for ghosting; Option C is the polish step.
+
+---
+
+## 11. Backlog — "More options" Tier A/B/C
+
+Captured 2026-04-18. Sorted by effort × user-visibility.
+
+**Tier A — high user value, clean hooks**:
+- `[ ]` Always-show advanced item tooltips (Forge `ItemTooltipEvent` listener appends vanilla-F3+H details when toggle on).
+- `[ ]` Reduce/disable nausea distortion (EntityRenderer portal/nausea screen warp — careful not to break gameplay portal counter).
+- `[ ]` World time speed multiplier (clientside-only, mixin `World.getWorldTime` client-side — risky, many client systems read it).
+- `[ ]` Ping HUD (multiplayer) — `NetHandlerPlayClient.getPlayerInfo(...).getResponseTime()`. 6th Info HUD row.
+- `[ ]` Day counter HUD — `floor(world.getTotalWorldTime() / 24000)`. 7th Info HUD row.
+- `[ ]` CPS counter — track InputUpdate ticks/second.
+
+**Tier B — entangled vanilla method, needs profiler-section ordinal injection or careful splitting**:
+- `[ ]` Hide armor bar (`GuiIngame.renderPlayerStats`, "armor" profiler section).
+- `[ ]` Hide hunger bar (same method, "food" section).
+- `[ ]` Hide air bar (same method, "air" section).
+- `[ ]` Hide boss health bars (`GuiBossOverlay.renderBossHealth`; mixin call site in `renderGameOverlay` at INVOKE target).
+
+**Tier C — invasive / deferred**:
+- `[ ]` Smart Animations — skip ticking texture animations for sprites not currently visible (hook `TextureAtlasSprite.updateAnimation` + per-sprite visibility tracking).
+- `[ ]` Lagometer — per-stage frame-time graph overlay (chunk meshing vs render vs lighting vs ticks). Profiler API + rolling-window display.
+- `[ ]` Cloud 2D/3D mode + opacity (beyond what current Atmosphere section covers).
+- `[ ]` Per-bar HUD hide (armor/hunger/air) — see Tier B.
+- `[ ]` Translucent block blending — correct color compositing for stacked transparent blocks (order-dependent transparent rendering is a big architectural change).
+- `[ ]` 9c.3 Option C (see §10).
+- `[ ]` 9c.4 FSR2-style reconstruction (needs Option C).
+- `[ ]` Phase 10b runtime borderless (see §5).
+- `[ ]` Phase C4 in-prod verification (see §5).
+- `[ ]` Phase C4 field-name corrections.
+- `[ ]` Phase C4 per-feature parity benchmarking.
+- `[ ]` Phase C4 tooltips.
+- `[ ]` Phase C3 polish: disk-cached TTF atlas, Unicode glyph pages, async rasterization, bold/italic GUI toggles, subpixel hint.
+
+---
+
+## 12. Critical Gotchas — Carry Forward
+
+Non-obvious infrastructure facts a future reader (or session pickup) needs to know:
+
+### Mixin loading / classloader timing
+- **`Minecraft` and `FontRenderer` mixins MUST be in `mixins.ldog.vanilla.json`** (early config loaded via `IEarlyMixinLoader` in `LDOGCorePlugin`). These classes are pulled into the classloader during FML bootstrap BEFORE late mixin configs register. Late-loaded mixins on them silently no-op with "loaded too early" in the log.
+- **Cannot target** `World`, `Block`, `BlockLiquid` from any mixin — they load before any MixinBooter config. Use Forge events or target wrapper classes (`ChunkCache` instead of `World`).
+- Dynamic Light injection: `ChunkCache.getCombinedLight()` NOT `World.getCombinedLight()`. Return value packed `skyLight << 20 | blockLight << 4`.
+
+### LWJGL 2.9.4 / Display
+- `Display.setDisplayMode` must be called with **plain `new DisplayMode(w, h)`** — passing the full `Display.getDesktopDisplayMode()` carries bpp/refresh metadata that triggers fullscreen mode-switch intent even when not in exclusive fullscreen. Caused borderless flicker.
+- `Display.destroy()` invalidates the entire GL context. Every LDOG-owned GL handle dies — main reason 10b runtime borderless is deferred.
+
+### TAA / temporal
+- TAA matrix capture must happen AFTER `applyJitter()`, not before. History stores jittered pixel positions; reprojection needs matrices that match what was actually rendered. (Bug 2 in 9c.2.)
+- Jitter injection must target `renderWorldPass`, NOT `setupCameraTransform`. `renderWorldPass` overwrites projection (sky + terrain `gluPerspective` calls) and would invalidate `setupCameraTransform` jitter. (Bug 1 in 9c.1.)
+- `renderWorldPass(pass)` with `pass != 2` is anaglyph-only (red/cyan eyes). Default MC always uses `pass == 2`. Don't gate on `pass == 0` unless explicitly wanting anaglyph-only.
+
+### Phase 8/9 pipeline
+- `AutoScaleHandler` uses `@Mod.EventBusSubscriber(modid = Tags.MODID, value = Side.CLIENT)` — matches `FXAAHandler` and `PerformanceOverlayRenderer` pattern. Registration auto at mod load.
+- Preset changes need `extBorderSettingsChanged`, `fxaaSettingsChanged`, `waterSettingsChanged` on the GUI instance so `saveAndClose` triggers right reload paths.
+- Auto-scale overrides manual Render Scale cycling — documented in tooltip.
+
+### Phase 9c.3-A reactive mask
+- Implemented via MRT + per-attachment `colorMaski`. sceneFbo gets COLOR1 R8 attachment always-allocated. Binding mixin `glDrawBuffers` to [COLOR0, COLOR1] and `glColorMaski(1, false)` around non-entity draws. `MixinRenderGlobal` opens `colorMaski(1, true)` around `renderEntities` HEAD/RETURN. Legacy fixed-function replicates `gl_FragColor` across bound attachments so no custom entity shader needed.
+
+### Vignette
+- Vignette pass MUST be absolute last in chain (after FXAA) so FXAA doesn't see the gradient as an edge to smooth.
+
+### Biome blend
+- Radius change requires `renderGlobal.loadRenderers()` to invalidate cached chunk meshes so the new radius takes effect immediately.
+
+### Phase C4 OptiFine
+- OF stores feature toggles as **instance fields on vanilla `GameSettings`** (added by OF's transformer), NOT on a static Config class. `optifine.Config` holds only platform state. `OFConfigBridge` reflects on `Minecraft.getMinecraft().gameSettings`, walks class hierarchy, tries candidate field names per `OFFeature`.
+- **Do NOT put the OF jar in `run/mods/` for `gradlew runClient`** — crashes at `FMLClientHandler.detectOptifine` with `NoClassDefFoundError: cer` because OF's jar is obfuscated against production-MC class names. Verification path goes through a real launcher install.
+
+### Other MC 1.12.2 quirks
+- `EnumLightType` does NOT exist — MC 1.12.2 uses `EnumSkyBlock`. Compile-time bug.
+- `TextureMap.mapRegisteredSprites` is cleared before `TextureStitchEvent.Pre` fires — cannot enumerate existing sprites during Pre. Scan resource packs directly or use other discovery.
+- `IBakedModel.getQuads()` doesn't receive `IBlockAccess`. Solved via `CTMRenderContext` ThreadLocal set by `MixinBlockRendererDispatcher.renderBlock()`.
+- Resource packs may use either `mcpatcher/ctm` or `optifine/ctm`. Tile PNGs live outside `textures/`, so `CTMSprite` (custom loader) is needed.
+- GUI button-ID collisions: OF interop buttons originally started at 200 which collided with `BTN_DONE`; bumped to 400+ range.
+
+### Mixin Registration
+LDOG uses MixinBooter 10.7 with `ILateMixinLoader` (`LDOGMixinLoader`):
+- `mixins.ldog.json` (late): GUI mixins, RenderGlobal, TESR, ParticleManager, BlockModelRenderer, BlockRendererDispatcher.
+- `mixins.ldog.early.json` (also via late loader): BlockFluidRenderer, TextureAtlasSprite.
+- `mixins.ldog.vanilla.json` (early via `IEarlyMixinLoader`): Minecraft, FontRenderer, anything that loads during FML bootstrap.
+
+---
+
+## 13. Future Expansion Ideas (from OptiFine inspection)
+
+Catalogued 2026-04-18 by walking the OF 1.12.2 HD U G5 jar. Each is something OF supports that LDOG does not yet — a candidate for future phases beyond what's currently planned. Not commitments, just visibility. Sorted by estimated user impact.
+
+- `[ ]` **Real shader pack support** — load and run external `.zip` shader packs (vertex + fragment + composite stages). Phase 8 framework is in place; missing piece is shader-pack file format parsing + multi-program compositor stage. This is the Phase 8 stretch goal.
+- `[ ]` **CEM (Custom Entity Models)** — pack-supplied JSON model overrides for unique mob geometry.
+- `[ ]` **Smart Animations** — skip ticking animations for non-visible sprites. Meaningful FPS gain on heavy-animation packs.
+- `[ ]` **Multi-core / Smooth chunk loading** — chunk mesh build + upload across worker threads + frame budget. Reduces stutter on world-load and chunk-cross.
+- `[ ]` **Smooth World** — distribute single-player tick work across frames.
+- `[ ]` **Smooth Biomes** — blend grass/foliage/water colors at biome borders.
+- `[ ]` **Per-particle-type toggles** — `[x]` 5 categories shipped (firework/portal/potion/water/dripping); remaining: Void, others.
+- `[x]` **Vignette effect** — shipped.
+- `[ ]` **Cloud quality + height controls** — `[x]` height shipped via Atmosphere section; `[ ]` 2D/3D modes still open.
+- `[~]` **Fog customization** — `[x]` distance multiplier shipped; `[ ]` fancy fog toggle still open.
+- `[ ]` **Translucent block blending** — correct color compositing for stacked transparents (big architectural change).
+- `[ ]` **Custom GUIs** — texture-pack-replaceable backgrounds + button skins.
+- `[ ]` **Lagometer** — per-stage frame-time visualization overlay.
+- `[ ]` **Render Regions** — group nearby chunks into single VBO uploads.
+- `[ ]` **Custom loading screens / panorama** — pack-supplied splash + background.
+
+---
+
+## 14. Version Milestones
+
+| Version | Phase | What Users Get |
+|---|---|---|
+| `v0.0.1-alpha` | Phase 0 | Mod loads, nothing visible yet |
+| `v0.1.0-alpha` | Phase 1 + C1 | FPS improvements, FPS reducer, clear water (replaces 3 mods) |
+| `v0.4.0-alpha` | Phase 2-4 | HD textures, CTM, emissive textures |
+| `v0.5.0-alpha` | Phase 5 | Dynamic lights, lighting customization |
+| `v0.6.0-alpha` | Phase 6 | Full resource pack feature parity |
+| (current) | Phase 7-10 + C3-C4 foundation | AA/AF, shader pipeline, FSR1/RCAS, TAA MVP, borderless, smooth font, OF interop foundation |
+| `v1.0.0-beta` | Phase 8 stretch | Real shader pack loading — OptiFine fully replaceable |
+
+50 unit tests, all passing.
+
+---
+
+## 15. Open-Source Reference Mods
+
+| Project | Used as | License |
+|---|---|---|
+| ConnectedTexturesMod (Chisel-Team) | CTM impl reference | MIT |
+| AtomicStryker Dynamic Lights | Dynamic lighting concept | Open |
+| FoamFix (asiekierka) / VintageFix | Memory opts concept | GPL-3.0 |
+| VanillaFix (DimensionalDevelopment) | Bug fix patterns | MIT |
+| BetterFPS (Guichaguri) | Perf opt patterns | MIT |
+| ShadersMod (karyonix) | Original pre-OF shader pipeline reference | LGPL |
+| Super Resolution (Modrinth) | FSR/temporal concept — but 1.18+ Vulkan target | — |
+| Radiance (CurseForge) | Full renderer replacement concept — out of scope | — |
+| hancin/Fullscreen-Windowed-Minecraft | Phase 10b runtime borderless reference | — |
+
+Policy: external projects are design references only. No code copying. Implement runtime code independently in LDOG style; document conceptual borrowings.
+
+---
+
+## 16. Git History Snapshot (key landmarks)
+
+| Tag/Hash | What |
+|---|---|
+| `v0.0.1-alpha` | Phase 0 scaffold |
+| `v0.1.0-alpha` | Phase 1 complete |
+| `v0.4.0-alpha` | Phase 2-4 initial |
+| `3325e11` | Emissive direct pack scanning + CTM null-side fix |
+| `6a9bc9d` | CTMSprite mipmap crash fix |
+| `3d518bb` | CTM tile mapping rewrite + emissive reflection fix |
+| `aff578c` | CTM scanner + emissive sprite registration |
+| `3374a86` | 9a.9 auto-scale log fix (2026-04-18) |
+| `14628e1` | 9c.3-A entity reactive mask (2026-04-18) |
+| `9d77526` | 9a.9 ext aggressive 3-state mode (2026-04-18) |
+| `3b083bc` | Phase C4 OF interop foundation (2026-04-18) |
+| `e25f1c7` | Per-particle toggles (2026-04-18) |
+| `68d4435` | Vignette pass (2026-04-18) |
+| `e25d79d` | Atmosphere section (2026-04-18) |
+| `39fe2a2`, `9a258bc` | Comfort/Cinematic toggles (2026-04-18) |
+| `374789c` | Info HUD overlays (2026-04-18) |
