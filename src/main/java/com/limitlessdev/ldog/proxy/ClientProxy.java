@@ -4,6 +4,7 @@ import com.limitlessdev.ldog.render.color.CustomColorHandler;
 import com.limitlessdev.ldog.render.dynamiclights.DynamicLightTickHandler;
 import com.limitlessdev.ldog.render.font.SmoothFontHandler;
 import com.limitlessdev.ldog.render.font.TTFFontCatalog;
+import com.limitlessdev.ldog.render.shaderpack.ShaderPackManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.IReloadableResourceManager;
 import net.minecraftforge.common.MinecraftForge;
@@ -37,5 +38,9 @@ public class ClientProxy extends CommonProxy {
     @Override
     public void postInit(FMLPostInitializationEvent event) {
         super.postInit(event);
+        // Scan for shader packs once at postInit so the GUI sees them on
+        // first open without having to wait for a user-triggered rescan.
+        // Activation happens via the GUI cycle button or directly via config.
+        ShaderPackManager.INSTANCE.applyConfigSelection();
     }
 }

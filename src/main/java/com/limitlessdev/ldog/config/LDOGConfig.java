@@ -453,10 +453,23 @@ public class LDOGConfig {
     public static boolean blockFullscreenOptimizations = true;
 
     @Config.Comment({
-        "Enable shader support (stretch goal).",
-        "Auto-disabled when OptiFine is detected."
+        "Enable shader support (Phase 8 stretch goal). When ON, the",
+        "ShaderPackManager scans <.minecraft>/shaderpacks/ for packs and",
+        "activates the one named by shaderPackName.",
+        "",
+        "Scaffold ships discovery + properties parsing today; full gbuffer",
+        "+ composite execution is still in progress. Activating a pack is",
+        "currently visible only as log lines until the rest of the pipeline",
+        "lands. Auto-disabled when OptiFine is detected."
     })
     public static boolean enableShaders = false;
+
+    @Config.Comment({
+        "Selected shader pack name (directory or .zip filename under",
+        "<.minecraft>/shaderpacks/). '(none)' = no pack active.",
+        "Honored when enableShaders is on."
+    })
+    public static String shaderPackName = "(none)";
 
     @Config.Comment({
         "Enable custom sky rendering.",
