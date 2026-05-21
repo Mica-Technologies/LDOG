@@ -320,18 +320,9 @@ public class GuiLDOGSettings extends GuiScreen {
             new GuiButton(BTN_TAA_ENTITY_MV, 0, 0, w, h,
                 toggleLabel("Entity MV", LDOGConfig.enableEntityMotionVectors)));
 
-        // -- Display (Phase 10) --
-        settingsList.addHeaderRow("Display");
-        settingsList.addButtonRow(
-            new GuiButton(BTN_BORDERLESS_FULLSCREEN, 0, 0, w, h,
-                toggleLabel("Borderless Windowed", LDOGConfig.borderlessFullscreen)),
-            new GuiButton(BTN_BLOCK_FSO, 0, 0, w, h,
-                toggleLabel("Block FS Optim", LDOGConfig.blockFullscreenOptimizations)));
-
-        // -- Post-Process Pipeline (Phase 8, Experimental) --
-        // Scaffold only today: allocates an offscreen scene target but does not
-        // yet bind it for world rendering, so changing these values has no
-        // visible effect. The binding hook (Phase 8c) is the next step.
+        // -- Post-Process Pipeline (Experimental) --
+        // Master switch for the modern render pipeline — gates upscaling,
+        // tunable FXAA, TAA, RCAS, vignette, HDR + Bloom.
         settingsList.addHeaderRow("Post-Process (Experimental)");
         settingsList.addButtonRow(
             new GuiButton(BTN_PIPELINE, 0, 0, w, h,
@@ -399,6 +390,15 @@ public class GuiLDOGSettings extends GuiScreen {
                 biomeBlendLabel(LDOGConfig.biomeBlendRadius)),
             null);
 
+        // -- Display (window mode) --
+        // Session-scoped toggles — set once and (mostly) forget.
+        settingsList.addHeaderRow("Display");
+        settingsList.addButtonRow(
+            new GuiButton(BTN_BORDERLESS_FULLSCREEN, 0, 0, w, h,
+                toggleLabel("Borderless Windowed", LDOGConfig.borderlessFullscreen)),
+            new GuiButton(BTN_BLOCK_FSO, 0, 0, w, h,
+                toggleLabel("Block FS Optim", LDOGConfig.blockFullscreenOptimizations)));
+
         // -- Comfort / Cinematic --
         settingsList.addHeaderRow("Comfort / Cinematic");
         settingsList.addButtonRow(
@@ -450,15 +450,8 @@ public class GuiLDOGSettings extends GuiScreen {
             new GuiButton(BTN_HUD_CPS, 0, 0, w, h,
                 toggleLabel("CPS", LDOGConfig.showCpsHud)));
 
-        // -- Tier A small features --
-        settingsList.addHeaderRow("Quality of Life");
-        settingsList.addButtonRow(
-            new GuiButton(BTN_ADV_TOOLTIPS, 0, 0, w, h,
-                toggleLabel("Adv. Tooltips Always", LDOGConfig.advancedTooltipsAlways)),
-            new GuiButton(BTN_NO_NAUSEA, 0, 0, w, h,
-                toggleLabel("No Nausea Distort", LDOGConfig.disableNauseaDistortion)));
-
-        // -- Tier B HUD element hides --
+        // -- Hide HUD Elements + Quality of Life --
+        // Player UX cluster, lives next to Comfort / Cinematic and Info HUD.
         settingsList.addHeaderRow("Hide HUD Elements");
         settingsList.addButtonRow(
             new GuiButton(BTN_HIDE_ARMOR, 0, 0, w, h,
@@ -470,6 +463,11 @@ public class GuiLDOGSettings extends GuiScreen {
                 toggleLabel("Hide Air Bar", LDOGConfig.hideAirBar)),
             new GuiButton(BTN_HIDE_BOSS, 0, 0, w, h,
                 toggleLabel("Hide Boss Health", LDOGConfig.hideBossHealthBars)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_ADV_TOOLTIPS, 0, 0, w, h,
+                toggleLabel("Adv. Tooltips Always", LDOGConfig.advancedTooltipsAlways)),
+            new GuiButton(BTN_NO_NAUSEA, 0, 0, w, h,
+                toggleLabel("No Nausea Distort", LDOGConfig.disableNauseaDistortion)));
 
         // -- Font Rendering --
         // Drop-in replacement for the Smooth Font mod. Swaps in HD ascii.png from
