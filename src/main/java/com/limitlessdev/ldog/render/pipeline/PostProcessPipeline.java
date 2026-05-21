@@ -7,6 +7,7 @@ import com.limitlessdev.ldog.render.pipeline.passes.BloomPass;
 import com.limitlessdev.ldog.render.pipeline.passes.EntityMotionVectorPass;
 import com.limitlessdev.ldog.render.pipeline.passes.FSR1EASUPass;
 import com.limitlessdev.ldog.render.pipeline.passes.FSR1QualityPass;
+import com.limitlessdev.ldog.render.pipeline.passes.FSR2ReconstructionPass;
 import com.limitlessdev.ldog.render.pipeline.passes.HDRTonemapPass;
 import com.limitlessdev.ldog.render.pipeline.passes.LDOGFXAAPass;
 import com.limitlessdev.ldog.render.pipeline.passes.RCASSharpenPass;
@@ -60,13 +61,21 @@ public final class PostProcessPipeline {
         // All upscalers are always registered; each pass's isEnabled() checks
         // the selected algorithm so exactly one runs per frame. New upscalers
         // (NIS, FSR2, etc.) plug in here alongside the existing ones.
+        // 9c.3-C: per-entity motion-vector emission. Must run BEFORE any
+        // upscaler that consumes MV (specifically FSR2). The MV pass only
+        // depends on CameraState + the per-frame entity queue — not on the
+        // scene color texture's content — so it's safe to run this early.
+        // TAA also consumes the MV target but runs later in the chain.
+        passes.add(new EntityMotionVectorPass());
         passes.add(new BilinearBlitPass());
         passes.add(new FSR1EASUPass());
         passes.add(new FSR1QualityPass());
-        // 9c.3-C: per-entity motion-vector emission. Runs AFTER the upscaler
-        // (so MV target dims match TAA's main-FB-resolution input) but BEFORE
-        // TAA itself, which consumes the MV target to reproject history.
-        passes.add(new EntityMotionVectorPass());
+        // 9c.4: FSR2 is a temporal upscaler (Lanczos source + jittered
+        // history + entity MV reprojection) — slotted alongside the spatial
+        // upscalers since exactly one runs per frame based on
+        // upscalerAlgorithm. When FSR2 is selected, the standalone TAA pass
+        // short-circuits because FSR2 owns history accumulation itself.
+        passes.add(new FSR2ReconstructionPass());
         // TAA runs AFTER the upscaler — temporal accumulation operates on the
         // native-res upscaled image. Companion MixinEntityRendererJitter
         // offsets the projection matrix per frame so samples hit different

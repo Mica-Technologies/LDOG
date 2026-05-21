@@ -195,6 +195,14 @@ public final class TAAAccumulatePass implements PostProcessPass {
     @Override
     public void execute(PostProcessContext ctx) {
         if (shaderFailed || shader == null) return;
+        // FSR2 does its own temporal accumulation; standalone TAA must yield
+        // when FSR2 is the active upscaler so the two passes don't fight over
+        // history buffer ownership.
+        if (com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm.selected()
+                == com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm.FSR2) {
+            hasHistory = false;
+            return;
+        }
         if (!LDOGConfig.enableTAA) {
             // If TAA was just disabled, drop history so a re-enable starts fresh.
             hasHistory = false;

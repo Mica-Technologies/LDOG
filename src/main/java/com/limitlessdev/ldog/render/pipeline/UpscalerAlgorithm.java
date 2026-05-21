@@ -25,7 +25,24 @@ public enum UpscalerAlgorithm {
      * the plain FSR1 unsharp-mask, at the cost of ~8 extra texture fetches
      * per pixel. Still cheap enough to enable at any render scale.
      */
-    FSR1_QUALITY("fsr1_quality", "FSR1-Quality");
+    FSR1_QUALITY("fsr1_quality", "FSR1-Quality"),
+
+    /**
+     * Phase 9c.4 — LDOG-original FSR2-style temporal reconstruction. Combines
+     * jittered projection (9c.1), camera+entity motion vectors (9c.2 + 9c.3-C),
+     * neighborhood color clamping (9c.3-A), and a Lanczos-3 weighted source
+     * kernel into a single pass that produces native-resolution output from
+     * the scaled scene.
+     *
+     * <p>Architectural note: when this algorithm is active the other upscalers
+     * (Bilinear / FSR1 / FSR1-Quality) AND the standalone TAA pass all
+     * short-circuit — FSR2 does both jobs in one pass. Reactive mask + entity
+     * MV still feed in as auxiliary inputs.
+     *
+     * <p>Requires the post-process pipeline + TAA-eligible inputs to be on
+     * for any visual win; falls back transparently when prereqs aren't met.
+     */
+    FSR2("fsr2", "FSR2");
 
     private final String configKey;
     private final String displayName;
