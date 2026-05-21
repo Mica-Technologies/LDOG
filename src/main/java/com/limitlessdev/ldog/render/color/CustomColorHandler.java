@@ -28,6 +28,9 @@ import java.util.Properties;
  * - Static color overrides from optifine/color.properties
  * - Redstone wire color by power level
  * - Particle colors (water splash, portal, lava drip, etc.)
+ * - Per-biome water color overrides (water.[biomeId]=0xRRGGBB)
+ * - Potion liquid color overrides (potion.[name]=0xRRGGBB)
+ * - Dye color overrides (dye.[name]=0xRRGGBB)
  */
 public class CustomColorHandler implements IResourceManagerReloadListener {
 
@@ -39,12 +42,24 @@ public class CustomColorHandler implements IResourceManagerReloadListener {
     // Static color overrides from color.properties
     private static final Map<String, Integer> staticColors = new HashMap<>();
 
+    // Per-biome water color overrides (key = biome numeric id, value = RGB int)
+    private static final Map<Integer, Integer> biomeWaterColors = new HashMap<>();
+
+    // Potion color overrides (key = registry name path, e.g. "regeneration")
+    private static final Map<String, Integer> potionColors = new HashMap<>();
+
+    // Dye color overrides (key = dye enum name lowercased, e.g. "red")
+    private static final Map<String, Integer> dyeColors = new HashMap<>();
+
     @Override
     public void onResourceManagerReload(IResourceManager resourceManager) {
         if (!LDOGConfig.enableCustomColors) return;
 
         redstoneColors = null;
         staticColors.clear();
+        biomeWaterColors.clear();
+        potionColors.clear();
+        dyeColors.clear();
 
         loadCustomColormaps(resourceManager);
         loadColorProperties(resourceManager);
@@ -92,7 +107,7 @@ public class CustomColorHandler implements IResourceManagerReloadListener {
                 // Parse redstone wire colors
                 parseRedstoneColors(props);
 
-                // Parse static color overrides
+                // Parse static color overrides + extended categories
                 for (Map.Entry<Object, Object> entry : props.entrySet()) {
                     String key = entry.getKey().toString().trim();
                     String value = entry.getValue().toString().trim();
@@ -101,6 +116,22 @@ public class CustomColorHandler implements IResourceManagerReloadListener {
                         key.startsWith("sky.") || key.startsWith("underwater.")) {
                         try {
                             staticColors.put(key, parseColor(value));
+                        } catch (NumberFormatException ignored) {}
+                    } else if (key.startsWith("water.")) {
+                        // OF format: water.<biomeId>=0xRRGGBB
+                        try {
+                            int biomeId = Integer.parseInt(key.substring(6).trim());
+                            biomeWaterColors.put(biomeId, parseColor(value));
+                        } catch (NumberFormatException ignored) {}
+                    } else if (key.startsWith("potion.")) {
+                        try {
+                            potionColors.put(key.substring(7).trim().toLowerCase(),
+                                             parseColor(value));
+                        } catch (NumberFormatException ignored) {}
+                    } else if (key.startsWith("dye.")) {
+                        try {
+                            dyeColors.put(key.substring(4).trim().toLowerCase(),
+                                          parseColor(value));
                         } catch (NumberFormatException ignored) {}
                     }
                 }
@@ -159,6 +190,39 @@ public class CustomColorHandler implements IResourceManagerReloadListener {
         Integer color = staticColors.get(key);
         return color != null ? color : -1;
     }
+
+    /**
+     * Get a per-biome water color override (RGB int). Returns -1 when no
+     * override exists for the given numeric biome id.
+     */
+    public static int getBiomeWaterColor(int biomeId) {
+        Integer color = biomeWaterColors.get(biomeId);
+        return color != null ? color : -1;
+    }
+
+    /**
+     * Get a potion liquid color override by registry-name path (lowercased,
+     * e.g. "regeneration", "swiftness"). Returns -1 when no override.
+     */
+    public static int getPotionColor(String name) {
+        if (name == null) return -1;
+        Integer color = potionColors.get(name.toLowerCase());
+        return color != null ? color : -1;
+    }
+
+    /**
+     * Get a dye color override by enum name (lowercased, e.g. "red", "lime").
+     * Returns -1 when no override.
+     */
+    public static int getDyeColor(String name) {
+        if (name == null) return -1;
+        Integer color = dyeColors.get(name.toLowerCase());
+        return color != null ? color : -1;
+    }
+
+    public static boolean hasAnyBiomeWaterOverride() { return !biomeWaterColors.isEmpty(); }
+    public static boolean hasAnyPotionOverride() { return !potionColors.isEmpty(); }
+    public static boolean hasAnyDyeOverride() { return !dyeColors.isEmpty(); }
 
     private static int parseColor(String value) {
         if (value.startsWith("0x") || value.startsWith("0X")) {

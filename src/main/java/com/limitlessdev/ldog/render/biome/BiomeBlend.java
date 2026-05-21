@@ -1,5 +1,6 @@
 package com.limitlessdev.ldog.render.biome;
 
+import com.limitlessdev.ldog.render.color.CustomColorHandler;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.biome.Biome;
@@ -62,7 +63,7 @@ public final class BiomeBlend {
             switch (channel) {
                 case GRASS:   c = biome.getGrassColorAtPos(p);   break;
                 case FOLIAGE: c = biome.getFoliageColorAtPos(p); break;
-                case WATER:   c = biome.getWaterColor();         break;
+                case WATER:   c = waterColorFor(biome);          break;
                 default:      c = 0xFFFFFF;                       break;
             }
             rSum += (c >> 16) & 0xFF;
@@ -74,5 +75,19 @@ public final class BiomeBlend {
         int g = (gSum / total) & 0xFF;
         int b = (bSum / total) & 0xFF;
         return (r << 16) | (g << 8) | b;
+    }
+
+    /**
+     * Phase 6c extension: per-biome water color override from
+     * `optifine/color.properties` (`water.<biomeId>=0xRRGGBB`). When no override
+     * is present for the biome, vanilla's getWaterColor is used unchanged.
+     */
+    public static int waterColorFor(Biome biome) {
+        if (CustomColorHandler.hasAnyBiomeWaterOverride()) {
+            int id = net.minecraft.world.biome.Biome.getIdForBiome(biome);
+            int over = CustomColorHandler.getBiomeWaterColor(id);
+            if (over != -1) return over;
+        }
+        return biome.getWaterColor();
     }
 }

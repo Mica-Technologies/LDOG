@@ -16,6 +16,8 @@
     "MixinParticleManager",
     "MixinParticleManagerFilter",
     "MixinBiomeColorHelper",
+    "MixinPotionColor",
+    "MixinDyeColor",
     "MixinWorldProviderClouds",
     "MixinEntityRendererFog",
     "MixinEntityRendererWeather",

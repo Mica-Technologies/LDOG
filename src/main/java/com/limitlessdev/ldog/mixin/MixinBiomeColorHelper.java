@@ -2,6 +2,7 @@ package com.limitlessdev.ldog.mixin;
 
 import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.biome.BiomeBlend;
+import com.limitlessdev.ldog.render.color.CustomColorHandler;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.biome.BiomeColorHelper;
@@ -42,6 +43,14 @@ public abstract class MixinBiomeColorHelper {
     private static void ldog$smoothWater(IBlockAccess access, BlockPos pos,
                                           CallbackInfoReturnable<Integer> cir) {
         int r = LDOGConfig.biomeBlendRadius;
-        if (r > 1) cir.setReturnValue(BiomeBlend.blend(access, pos, r, BiomeBlend.Channel.WATER));
+        if (r > 1) {
+            cir.setReturnValue(BiomeBlend.blend(access, pos, r, BiomeBlend.Channel.WATER));
+            return;
+        }
+        // Phase 6c: even at radius 1, honor per-biome water color overrides.
+        if (CustomColorHandler.hasAnyBiomeWaterOverride()) {
+            int over = BiomeBlend.waterColorFor(access.getBiome(pos));
+            cir.setReturnValue(over);
+        }
     }
 }
