@@ -5,6 +5,7 @@ import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.pipeline.passes.BilinearBlitPass;
 import com.limitlessdev.ldog.render.pipeline.passes.FSR1EASUPass;
 import com.limitlessdev.ldog.render.pipeline.passes.FSR1QualityPass;
+import com.limitlessdev.ldog.render.pipeline.passes.HDRTonemapPass;
 import com.limitlessdev.ldog.render.pipeline.passes.LDOGFXAAPass;
 import com.limitlessdev.ldog.render.pipeline.passes.RCASSharpenPass;
 import com.limitlessdev.ldog.render.pipeline.passes.TAAAccumulatePass;
@@ -44,6 +45,12 @@ public final class PostProcessPipeline {
     private int framesSinceLastBind;
 
     private PostProcessPipeline() {
+        // HDR tonemap runs FIRST so downstream passes (upscaler, RCAS, FXAA,
+        // vignette, blit-back) operate on LDR-clamped values. Internally the
+        // scene texture is RGBA16F (when HDR is on) but its actual contents
+        // post-tonemap fit in [0,1] — that's what the blit to MC's RGBA8
+        // main FB expects without information loss.
+        passes.add(new HDRTonemapPass());
         // All upscalers are always registered; each pass's isEnabled() checks
         // the selected algorithm so exactly one runs per frame. New upscalers
         // (NIS, FSR2, etc.) plug in here alongside the existing ones.
@@ -104,7 +111,7 @@ public final class PostProcessPipeline {
 
     private void ensureInitialized(int w, int h) throws Exception {
         float scale = (float) LDOGConfig.internalRenderScale;
-        RenderTargetManager.INSTANCE.ensure(w, h, scale);
+        RenderTargetManager.INSTANCE.ensure(w, h, scale, LDOGConfig.enableHDRPipeline);
 
         if (!initialized) {
             this.width = w;

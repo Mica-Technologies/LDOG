@@ -27,7 +27,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(RenderChunk.class)
 public abstract class MixinRenderChunk {
 
-    @Shadow public BlockPos position;
+    @Shadow public abstract BlockPos getPosition();
     @Shadow protected World world;
 
     @Inject(method = "rebuildChunk", at = @At("HEAD"), cancellable = true)
@@ -37,9 +37,10 @@ public abstract class MixinRenderChunk {
         if (!LDOGConfig.skipEmptyChunkSections) return;
         World w = this.world;
         if (w == null) return;
-        Chunk chunk = w.getChunk(this.position);
+        BlockPos pos = this.getPosition();
+        Chunk chunk = w.getChunk(pos);
         // Storage array index = sectionY (chunk-local Y / 16).
-        int sectionY = this.position.getY() >> 4;
+        int sectionY = pos.getY() >> 4;
         ExtendedBlockStorage[] storages = chunk.getBlockStorageArray();
         if (sectionY < 0 || sectionY >= storages.length) return;
         ExtendedBlockStorage storage = storages[sectionY];

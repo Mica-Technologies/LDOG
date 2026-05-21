@@ -156,6 +156,12 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_TAA_ENABLE = 108;
     private static final int BTN_TAA_WEIGHT = 109;
     private static final int BTN_TAA_REACTIVE_MASK = 113;
+    private static final int BTN_HDR_PIPELINE      = 600;
+    private static final int BTN_HDR_TONEMAP       = 601;
+    private static final int BTN_HDR_EXPOSURE      = 602;
+    private static final int BTN_BLOOM_ENABLE      = 603;
+    private static final int BTN_BLOOM_THRESHOLD   = 604;
+    private static final int BTN_BLOOM_INTENSITY   = 605;
     private static final int BTN_AUTO_SCALE = 112;
     // Phase C4 OF interop modes — 7 features × 1 button each.
     // 400+ range to stay clear of BTN_DONE=200 and BTN_LDOG_PRESET=300.
@@ -178,6 +184,9 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int[] CLOUD_HEIGHT_VALUES = {-1, 64, 96, 128, 160, 192, 224, 255};
     private static final double[] FOG_DISTANCE_VALUES = {0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0};
     private static final double[] SIZE_MULT_VALUES = {0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0};
+    private static final double[] EXPOSURE_VALUES = {0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0};
+    private static final double[] BLOOM_THRESHOLD_VALUES = {0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0};
+    private static final double[] BLOOM_INTENSITY_VALUES = {0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0};
     private static final double[] WEATHER_DENSITY_VALUES = {0.1, 0.25, 0.5, 0.75, 1.0};
     private static final int[] BIOME_BLEND_VALUES = {1, 2, 3};
     private static final double[] TAA_WEIGHT_VALUES = {0.0, 0.5, 0.7, 0.8, 0.85, 0.9, 0.92, 0.95};
@@ -345,6 +354,24 @@ public class GuiLDOGSettings extends GuiScreen {
                 toggleLabel("Vignette", LDOGConfig.enableVignette)),
             new GuiButton(BTN_VIGNETTE_INTENSITY, 0, 0, w, h,
                 vignetteIntensityLabel(LDOGConfig.vignetteIntensity)));
+
+        // -- HDR + Bloom (Phase 8 stretch, Experimental) --
+        settingsList.addHeaderRow("HDR + Bloom (Experimental)");
+        settingsList.addButtonRow(
+            new GuiButton(BTN_HDR_PIPELINE, 0, 0, w, h,
+                toggleLabel("HDR Pipeline", LDOGConfig.enableHDRPipeline)),
+            new GuiButton(BTN_HDR_TONEMAP, 0, 0, w, h,
+                tonemapLabel(LDOGConfig.hdrTonemap)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_HDR_EXPOSURE, 0, 0, w, h,
+                multLabel("Exposure", LDOGConfig.hdrExposure)),
+            new GuiButton(BTN_BLOOM_ENABLE, 0, 0, w, h,
+                toggleLabel("Bloom", LDOGConfig.enableBloom)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_BLOOM_THRESHOLD, 0, 0, w, h,
+                multLabel("Bloom Thresh", LDOGConfig.bloomThreshold)),
+            new GuiButton(BTN_BLOOM_INTENSITY, 0, 0, w, h,
+                multLabel("Bloom Strength", LDOGConfig.bloomIntensity)));
 
         // -- Atmosphere (clouds / fog / sky / weather / biomes) --
         settingsList.addHeaderRow("Atmosphere");
@@ -695,6 +722,32 @@ public class GuiLDOGSettings extends GuiScreen {
             case BTN_VIGNETTE_INTENSITY:
                 LDOGConfig.vignetteIntensity = cycleValue(VIGNETTE_INTENSITY_VALUES, LDOGConfig.vignetteIntensity);
                 button.displayString = vignetteIntensityLabel(LDOGConfig.vignetteIntensity);
+                break;
+            case BTN_HDR_PIPELINE:
+                LDOGConfig.enableHDRPipeline = !LDOGConfig.enableHDRPipeline;
+                button.displayString = toggleLabel("HDR Pipeline", LDOGConfig.enableHDRPipeline);
+                break;
+            case BTN_HDR_TONEMAP: {
+                String[] ops = {"aces", "reinhard", "uncharted2", "linear"};
+                LDOGConfig.hdrTonemap = cycleStringValue(ops, LDOGConfig.hdrTonemap);
+                button.displayString = tonemapLabel(LDOGConfig.hdrTonemap);
+                break;
+            }
+            case BTN_HDR_EXPOSURE:
+                LDOGConfig.hdrExposure = cycleValue(EXPOSURE_VALUES, LDOGConfig.hdrExposure);
+                button.displayString = multLabel("Exposure", LDOGConfig.hdrExposure);
+                break;
+            case BTN_BLOOM_ENABLE:
+                LDOGConfig.enableBloom = !LDOGConfig.enableBloom;
+                button.displayString = toggleLabel("Bloom", LDOGConfig.enableBloom);
+                break;
+            case BTN_BLOOM_THRESHOLD:
+                LDOGConfig.bloomThreshold = cycleValue(BLOOM_THRESHOLD_VALUES, LDOGConfig.bloomThreshold);
+                button.displayString = multLabel("Bloom Thresh", LDOGConfig.bloomThreshold);
+                break;
+            case BTN_BLOOM_INTENSITY:
+                LDOGConfig.bloomIntensity = cycleValue(BLOOM_INTENSITY_VALUES, LDOGConfig.bloomIntensity);
+                button.displayString = multLabel("Bloom Strength", LDOGConfig.bloomIntensity);
                 break;
             case BTN_CLOUD_HEIGHT:
                 LDOGConfig.cloudHeightOverride = cycleValue(CLOUD_HEIGHT_VALUES, LDOGConfig.cloudHeightOverride);
@@ -1791,6 +1844,18 @@ public class GuiLDOGSettings extends GuiScreen {
             default:          color = "\u00a77"; break;
         }
         return "Preset: " + color + preset.displayName();
+    }
+
+    static String tonemapLabel(String op) {
+        String pretty;
+        switch (op == null ? "" : op.toLowerCase()) {
+            case "aces":       pretty = "ACES";       break;
+            case "reinhard":   pretty = "Reinhard";   break;
+            case "uncharted2": pretty = "Uncharted2"; break;
+            case "linear":     pretty = "Linear";     break;
+            default:           pretty = op;           break;
+        }
+        return "Tonemap: §a" + pretty;
     }
 
     static String taaWeightLabel(double w) {

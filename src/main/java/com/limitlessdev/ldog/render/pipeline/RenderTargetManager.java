@@ -32,6 +32,8 @@ public final class RenderTargetManager {
     private float scale = 1.0f;
     private int scaledWidth;
     private int scaledHeight;
+    /** HDR pipeline mode — drives scene + ping color internal format. */
+    private boolean hdr;
 
     // Scene (color + depth) target — receives scaled world rendering. Depth
     // is a TEXTURE (not a renderbuffer) since TAA's motion-vector path needs
@@ -78,6 +80,7 @@ public final class RenderTargetManager {
     public int getScaledWidth() { return scaledWidth; }
     public int getScaledHeight() { return scaledHeight; }
     public float getScale() { return scale; }
+    public boolean isHDR() { return hdr; }
 
     /**
      * Ensure targets exist at the requested base dimensions and render scale.
@@ -86,6 +89,16 @@ public final class RenderTargetManager {
      * not-ready and skip any pass that would require it.
      */
     public boolean ensure(int baseW, int baseH, float requestedScale) {
+        return ensure(baseW, baseH, requestedScale, false);
+    }
+
+    /**
+     * HDR-aware ensure variant. When {@code requestedHDR} is true the scene
+     * + ping color textures are allocated as GL_RGBA16F so intermediate
+     * pipeline values can exceed [0,1]. Switching HDR mode forces a
+     * reallocation since the internal format is set at glTexImage time.
+     */
+    public boolean ensure(int baseW, int baseH, float requestedScale, boolean requestedHDR) {
         if (!isSupported() || baseW <= 0 || baseH <= 0) return false;
 
         float clampedScale = clampScale(requestedScale);
@@ -96,7 +109,8 @@ public final class RenderTargetManager {
             && baseWidth == baseW
             && baseHeight == baseH
             && scaledWidth == newScaledW
-            && scaledHeight == newScaledH) {
+            && scaledHeight == newScaledH
+            && hdr == requestedHDR) {
             return true;
         }
 
@@ -107,6 +121,7 @@ public final class RenderTargetManager {
         scale = clampedScale;
         scaledWidth = newScaledW;
         scaledHeight = newScaledH;
+        hdr = requestedHDR;
 
         if (!createSceneTarget(newScaledW, newScaledH)
             || !createPingPongTarget(newScaledW, newScaledH)) {
@@ -116,8 +131,9 @@ public final class RenderTargetManager {
             return false;
         }
 
-        LDOGMod.LOGGER.info("LDOG: Pipeline render targets ready ({}x{} @ scale {} -> {}x{})",
-            baseW, baseH, clampedScale, newScaledW, newScaledH);
+        LDOGMod.LOGGER.info(
+            "LDOG: Pipeline render targets ready ({}x{} @ scale {} -> {}x{}, format={})",
+            baseW, baseH, clampedScale, newScaledW, newScaledH, hdr ? "RGBA16F" : "RGBA8");
         return true;
     }
 
@@ -134,8 +150,13 @@ public final class RenderTargetManager {
         sceneReactiveMaskTex = GL11.glGenTextures();
 
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, sceneColorTex);
-        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, w, h, 0,
-            GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, (java.nio.ByteBuffer) null);
+        // HDR uses RGBA16F (float linear, 16 bits per channel) so intermediate
+        // pipeline values can exceed [0,1] for bloom/tonemap. LDR uses RGBA8
+        // for memory + bandwidth savings.
+        int colorInternal = hdr ? GL30.GL_RGBA16F : GL11.GL_RGBA8;
+        int colorType = hdr ? GL11.GL_FLOAT : GL11.GL_UNSIGNED_BYTE;
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, colorInternal, w, h, 0,
+            GL11.GL_RGBA, colorType, (java.nio.ByteBuffer) null);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
@@ -192,8 +213,10 @@ public final class RenderTargetManager {
         pingColorTex = GL11.glGenTextures();
 
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, pingColorTex);
-        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, w, h, 0,
-            GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, (java.nio.ByteBuffer) null);
+        int pingInternal = hdr ? GL30.GL_RGBA16F : GL11.GL_RGBA8;
+        int pingType = hdr ? GL11.GL_FLOAT : GL11.GL_UNSIGNED_BYTE;
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, pingInternal, w, h, 0,
+            GL11.GL_RGBA, pingType, (java.nio.ByteBuffer) null);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);

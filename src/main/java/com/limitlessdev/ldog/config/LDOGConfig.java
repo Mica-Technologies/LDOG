@@ -302,6 +302,65 @@ public class LDOGConfig {
     @Config.RangeDouble(min = 0.0, max = 1.0)
     public static double rcasSharpness = 0.4;
 
+    // ---- HDR pipeline (Phase 8 stretch) ----
+
+    @Config.Comment({
+        "Enable HDR (high dynamic range) post-process pipeline. Allocates the",
+        "scene + ping-pong color targets as GL_RGBA16F instead of RGBA8, so",
+        "intermediate values can exceed [0,1] for proper bloom and tonemap.",
+        "Final output is converted back to LDR via the chosen tonemapping",
+        "curve before display.",
+        "",
+        "Distinct from the existing 'enableHDR' lightmap-tonemap toggle in",
+        "the Lighting section — that's a CPU lightmap-color shift; this is a",
+        "GPU framebuffer-format change.",
+        "",
+        "Requires Post Pipeline ON and GL 3.0+ (RGBA16F core). Cost: ~2x",
+        "memory for scene + ping targets vs LDR pipeline."
+    })
+    public static boolean enableHDRPipeline = false;
+
+    @Config.Comment({
+        "Tonemapping operator applied at the end of the HDR pipeline to",
+        "convert HDR scene values into displayable LDR range.",
+        "  aces       — ACES Filmic curve (cinematic, slight S-curve).",
+        "  reinhard   — classic Reinhard x / (1+x) — soft rolloff, no clipping.",
+        "  uncharted2 — Uncharted 2 / Hable curve — punchy highlights.",
+        "  linear     — no tonemap, just clamp. Useful for debug.",
+        "Only consumed when enableHDRPipeline is true."
+    })
+    public static String hdrTonemap = "aces";
+
+    @Config.Comment({
+        "HDR exposure multiplier applied before tonemapping. 1.0 = neutral.",
+        ">1.0 brightens (more highlights into the tonemap roll-off),",
+        "<1.0 darkens. Tonemap operators are designed around 1.0 input."
+    })
+    @Config.RangeDouble(min = 0.1, max = 4.0)
+    public static double hdrExposure = 1.0;
+
+    @Config.Comment({
+        "Enable bloom (HDR bright-pass + Gaussian blur composite). Highlights",
+        "exceeding the threshold below leak into surrounding pixels for a",
+        "soft glow on torches, lava, sun, fire, etc.",
+        "",
+        "Requires enableHDRPipeline ON — bloom needs HDR input to look right",
+        "(LDR clamping would crush highlight detail before bloom can extract it)."
+    })
+    public static boolean enableBloom = false;
+
+    @Config.Comment({
+        "Luminance threshold above which a pixel contributes to bloom. 1.0",
+        "= only HDR values exceeding LDR range bloom (clean look). Lower",
+        "values bleed more of the mid-tones into the glow."
+    })
+    @Config.RangeDouble(min = 0.0, max = 4.0)
+    public static double bloomThreshold = 1.0;
+
+    @Config.Comment("Bloom intensity at composite. 0.0 = invisible, 1.0 = subtle, 2.0 = aggressive.")
+    @Config.RangeDouble(min = 0.0, max = 4.0)
+    public static double bloomIntensity = 0.6;
+
     @Config.Comment({
         "FXAA quality level when the post-process pipeline is active.",
         "  low      = 4 search steps, threshold 0.200 — cheapest, coarse.",
