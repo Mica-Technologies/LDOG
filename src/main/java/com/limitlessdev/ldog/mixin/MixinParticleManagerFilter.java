@@ -1,14 +1,10 @@
 package com.limitlessdev.ldog.mixin;
 
-import com.limitlessdev.ldog.Tags;
 import com.limitlessdev.ldog.config.LDOGConfig;
+import com.limitlessdev.ldog.render.particles.ParticleSpawnCounter;
 import com.limitlessdev.ldog.render.particles.ParticleTypeFilter;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.ParticleManager;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import net.minecraftforge.fml.common.gameevent.TickEvent;
-import net.minecraftforge.fml.relauncher.Side;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -24,7 +20,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *
  * Phase 1 backlog C2: also enforces a soft per-tick spawn limit when
  * {@link LDOGConfig#particleSpawnsPerTickLimit} is non-zero. The counter
- * resets every client tick via the inner event handler.
+ * lives at {@link ParticleSpawnCounter} (outside the mixin package — mixin
+ * booter refuses to load regular classes from inside its owned package).
  */
 @Mixin(ParticleManager.class)
 public abstract class MixinParticleManagerFilter {
@@ -36,27 +33,11 @@ public abstract class MixinParticleManagerFilter {
             return;
         }
         int cap = LDOGConfig.particleSpawnsPerTickLimit;
-        if (cap > 0 && SpawnCounter.spawnedThisTick >= cap) {
-            SpawnCounter.dropped++;
+        if (cap > 0 && ParticleSpawnCounter.spawnedThisTick >= cap) {
+            ParticleSpawnCounter.dropped++;
             ci.cancel();
         } else {
-            SpawnCounter.spawnedThisTick++;
-        }
-    }
-
-    /**
-     * Per-tick counter for particle spawn rate limiting. Static — no
-     * per-instance state since there's only one ParticleManager in the
-     * client's lifetime. Reset at the start of each client tick.
-     */
-    @Mod.EventBusSubscriber(modid = Tags.MODID, value = Side.CLIENT)
-    public static final class SpawnCounter {
-        public static int spawnedThisTick;
-        public static int dropped;
-
-        @SubscribeEvent
-        public static void onClientTick(TickEvent.ClientTickEvent event) {
-            if (event.phase == TickEvent.Phase.START) spawnedThisTick = 0;
+            ParticleSpawnCounter.spawnedThisTick++;
         }
     }
 }

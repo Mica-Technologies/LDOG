@@ -95,7 +95,11 @@ public abstract class MixinEntityRendererPostPipeline {
 
         float scale = (float) LDOGConfig.internalRenderScale;
         RenderTargetManager rtm = RenderTargetManager.INSTANCE;
-        if (!rtm.ensure(mainW, mainH, scale) || !rtm.isReady()) return;
+        // Pass HDR flag so this mixin stays in sync with PostProcessPipeline.
+        // Earlier the 3-arg overload defaulted HDR=false here — each frame the
+        // pipeline's ensure(true) and this ensure(false) fought, reallocating
+        // targets every frame and producing a black screen with HDR enabled.
+        if (!rtm.ensure(mainW, mainH, scale, LDOGConfig.enableHDRPipeline) || !rtm.isReady()) return;
 
         ldog$savedFbo = fb.framebufferObject;
         ldog$savedMainWidth = mainW;

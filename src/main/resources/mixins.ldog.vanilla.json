@@ -9,7 +9,12 @@
     "FontRendererInvoker",
     "MixinFontRenderer",
     "AccessorMinecraft",
-    "MixinMinecraftBorderless"
+    "MixinMinecraftBorderless",
+    "MixinPotionColor",
+    "MixinDyeColor",
+    "MixinGuiIngameVignette",
+    "MixinGuiIngameCrosshair",
+    "MixinGuiIngameHud"
   ],
   "server": []
 }
