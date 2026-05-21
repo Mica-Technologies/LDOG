@@ -53,7 +53,10 @@ public abstract class MixinEntityRendererJitter {
             value = "INVOKE",
             target = "Lorg/lwjgl/util/glu/Project;gluPerspective(FFFF)V",
             ordinal = 0,
-            shift = At.Shift.AFTER))
+            shift = At.Shift.AFTER,
+            // LWJGL class — no SRG mapping exists, suppress refmap lookup
+            // and the spurious "Unable to locate method mapping" warning.
+            remap = false))
     private void ldog$jitterSky(int pass, float partialTicks, long finishTimeNano, CallbackInfo ci) {
         if (pass != 2) return;
         if (!LDOGConfig.enableTAA) return;
@@ -80,7 +83,8 @@ public abstract class MixinEntityRendererJitter {
             value = "INVOKE",
             target = "Lorg/lwjgl/util/glu/Project;gluPerspective(FFFF)V",
             ordinal = 1,
-            shift = At.Shift.AFTER))
+            shift = At.Shift.AFTER,
+            remap = false))
     private void ldog$jitterAndCaptureTerrain(int pass, float partialTicks, long finishTimeNano, CallbackInfo ci) {
         if (pass != 2) return;
         if (!LDOGConfig.enableTAA) return;

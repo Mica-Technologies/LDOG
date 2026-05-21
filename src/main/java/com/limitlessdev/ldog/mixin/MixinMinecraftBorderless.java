@@ -41,7 +41,8 @@ public abstract class MixinMinecraftBorderless {
      */
     @Redirect(
         method = "setInitialDisplayMode",
-        at = @At(value = "INVOKE", target = "Lorg/lwjgl/opengl/Display;setFullscreen(Z)V"))
+        // LWJGL class — no SRG mapping, suppress refmap lookup + warning.
+        at = @At(value = "INVOKE", target = "Lorg/lwjgl/opengl/Display;setFullscreen(Z)V", remap = false))
     private void ldog$startupFullscreen(boolean fullscreen) throws LWJGLException {
         if (fullscreen && BorderlessFullscreenHandler.isActive()) {
             BorderlessFullscreenHandler.setupAtStartup();

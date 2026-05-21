@@ -111,7 +111,6 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_HD_TEXTURES = 44;
     private static final int BTN_SHADERS = 45;
     private static final int BTN_SHADER_PACK = 610;
-    private static final int BTN_SHADER_RESCAN = 611;
     private static final int BTN_LIGHT_TEMP = 50;
     private static final int BTN_LIGHT_TEMP_PRESET = 51;
     private static final int BTN_BLOCK_LIGHT_R = 52;
@@ -599,17 +598,17 @@ public class GuiLDOGSettings extends GuiScreen {
                 LDOGConfig.enableHDTextures, OptiFineCompat.shouldHandleHDTextures()),
             makeFeatureButton(BTN_SHADERS, w, h, "Shaders",
                 LDOGConfig.enableShaders, OptiFineCompat.shouldHandleShaders()));
-        // Shader pack picker — cycles through whatever lives in shaderpacks/.
+        // Shader pack picker — opens a dedicated list-style picker screen.
         // Only shown when LDOG's shader path is on (the master toggle above);
         // otherwise the row is hidden so it doesn't suggest activation that
-        // wouldn't take effect. Rescan button forces a directory rescan if
-        // the user added a pack without restarting MC.
+        // wouldn't take effect.
         if (LDOGConfig.enableShaders) {
+            String activeName = com.limitlessdev.ldog.render.shaderpack
+                .ShaderPackManager.INSTANCE.getActiveName();
             settingsList.addButtonRow(
                 new GuiButton(BTN_SHADER_PACK, 0, 0, w, h,
-                    "Pack: §a" + com.limitlessdev.ldog.render.shaderpack.ShaderPackManager
-                        .INSTANCE.getActiveName()),
-                new GuiButton(BTN_SHADER_RESCAN, 0, 0, w, h, "Rescan Packs"));
+                    "Shader Pack: §a" + activeName + " §7..."),
+                null);
         }
 
         // -- OptiFine Interop (Phase C4) — only shown when OF is detected --
@@ -1041,19 +1040,11 @@ public class GuiLDOGSettings extends GuiScreen {
                 button.displayString = featureLabel("Shaders", LDOGConfig.enableShaders, OptiFineCompat.shouldHandleShaders());
                 com.limitlessdev.ldog.render.shaderpack.ShaderPackManager.INSTANCE.applyConfigSelection();
                 break;
-            case BTN_SHADER_PACK: {
-                com.limitlessdev.ldog.render.shaderpack.ShaderPackManager mgr =
-                    com.limitlessdev.ldog.render.shaderpack.ShaderPackManager.INSTANCE;
-                java.util.List<String> names = mgr.getPackNames();
-                LDOGConfig.shaderPackName = cycleStringValue(
-                    names.toArray(new String[0]), LDOGConfig.shaderPackName);
-                mgr.activate(LDOGConfig.shaderPackName);
-                button.displayString = "Pack: §a" + mgr.getActiveName();
-                break;
-            }
-            case BTN_SHADER_RESCAN:
-                com.limitlessdev.ldog.render.shaderpack.ShaderPackManager.INSTANCE.rescan();
-                button.displayString = "§aRescanned";
+            case BTN_SHADER_PACK:
+                // Open the dedicated list-style picker. Returning from it
+                // re-runs initGui on this screen, which rebuilds the button
+                // row with the (possibly changed) active pack name.
+                this.mc.displayGuiScreen(new GuiShaderPackPicker(this));
                 break;
             case BTN_BETTER_GRASS:
                 LDOGConfig.betterGrass = cycleStringValue(BETTER_GRASS_MODES, LDOGConfig.betterGrass);
@@ -2228,15 +2219,13 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a77Auto-disabled when OF is detected.");
         registerTooltip(BTN_SHADER_PACK,
             "\u00a7eShader Pack",
-            "\u00a77Cycles through packs found in \u00a7ashaderpacks/\u00a77. Drop",
+            "\u00a77Opens a list of packs found in \u00a7ashaderpacks/\u00a77. Drop",
             "\u00a77OptiFine or Iris-format pack .zip files (or extracted",
-            "\u00a77folders) into that directory to see them here.",
+            "\u00a77folders) into that directory to see them in the picker.",
             "",
-            "\u00a77\"(none)\" deactivates the active pack.");
-        registerTooltip(BTN_SHADER_RESCAN,
-            "\u00a7eRescan Shader Packs",
-            "\u00a77Force a fresh scan of \u00a7ashaderpacks/\u00a77 \u2014 use after",
-            "\u00a77dropping a new pack in without restarting MC.");
+            "\u00a77Click \"(none)\" to deactivate the current pack. The",
+            "\u00a77picker also has an \u00a7aOpen Folder\u00a77 button that pops",
+            "\u00a77\u00a7ashaderpacks/\u00a77 open in your OS file browser.");
 
         // ====================================================================
         // Font polish (the rows added late)
