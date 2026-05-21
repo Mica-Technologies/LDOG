@@ -22,7 +22,8 @@ Key feature targets:
 | Dynamic Lights | Medium | shipped (Phase 5) |
 | HD Textures | Medium | shipped (Phase 2) |
 | Custom Sky | Medium | shipped (Phase 6d) |
-| Shader Pipeline | Stretch | foundation shipped (Phase 8) + HDR + Bloom (2026-05-21); shader-pack discovery scaffold shipped, gbuffer/composite execution still open |
+| Shader Pipeline | Stretch | foundation shipped (Phase 8) + HDR + Bloom + composite + final stage runner (2026-05-22). Gbuffer + shadow pass still open. |
+| Temporal upscaling | High | shipped: TAA MVP (9c.1), camera MV (9c.2), entity reactive mask (9c.3-A), entity MV via BBox stamps (9c.3-C), FSR 2 reconstruction kernel (9c.4) — all LDOG-original on the 1.12.2 OpenGL 2.1 stack |
 
 Long-term: replace 5-7 separate optimization mods in the alto modpack with one integrated mod (see §3).
 
@@ -31,22 +32,57 @@ Long-term: replace 5-7 separate optimization mods in the alto modpack with one i
 ## 2. Resume Prompt (for next session)
 
 > We're building LDOG (`ldog`), an open-source OptiFine replacement for Minecraft Forge 1.12.2. The project is at `E:\gitRepos\LDOG`. Build system is GregTechCEu Buildscripts (RFG 1.4.0). Reference projects for conventions: `E:\gitRepos\minecraft-city-super-mod` and `E:\gitRepos\LDFAWE`. Read `CLAUDE.md`, `docs/MASTER_APP_PLAN.md`, `docs/ARCHITECTURE.md`, and `docs/CONVENTIONS.md` to get up to speed, then pick up at the next open item in §5 or §11 (backlog).
+>
+> Build: `JAVA_HOME=/c/Users/ahawk/.jdks/azul-17.0.18 ./gradlew compileJava` (or `build` for full + tests, or `runClient` for an in-game smoke test). Currently zero compile warnings, 50 unit tests passing. Default windows shell is PowerShell — Bash tool uses bash syntax.
 
-### Where work left off (last working session: 2026-05-21 — "hammer the master plan")
+### Where work left off (last session: 2026-05-22 — temporal upscaling + UX overhaul + shader runner)
 
-Pushed nine logical commits in a single session, hammering small items + HDR + bloom + shader-pack scaffold:
+Pushed nine commits across three thematic chunks: shipped the deferred temporal-upscaling work (Option C + FSR 2), did a comprehensive UX overhaul (tooltips, tabs, GUI reorg), and built the shader-pack composite runner so activated packs actually do something visible.
+
+**Render features**:
+
+1. **Phase 9c.3-C Option C** (`9264bb2`) — per-entity motion vectors via BBox-projected velocity stamps (Strategy 4 from §10). LDOG-original. New: `EntityRenderStateCache` (UUID-keyed WeakHashMap of cur+prev positions), `MotionVectorTarget` (half-res RG16F via `RenderTargetManager`), `EntityMotionVectorPass`, `MixinRenderManagerEntityMV` (one hook covers all entity types — mobs, items, XP orbs, projectiles, paintings, modded). TAA shader prefers entity MV over camera-only MV when present; reactive-mask drop bypassed where entity MV exists so entity pixels retain accumulated detail.
+2. **Phase 9c.4 FSR 2** (`1e9cdde`) — LDOG-original Lanczos-3 temporal reconstruction. New `FSR2ReconstructionPass` combines the full 9c stack (jitter + camera MV + entity MV + reactive mask + history) into a single scaled→native pass with a 5×5 Lanczos source kernel + neighborhood color clamping + reactive weighting + light final-stage sharpen. Selectable as the `FSR2` upscaler algorithm; standalone TAA pass short-circuits when active (FSR2 owns history accumulation). EntityMotionVectorPass moved earlier in chain so MV target is populated before FSR2 samples it.
+
+**Critical bug fixes (caught during runClient verification)**:
+
+- **Three load-order bugs unbreak runClient** (`6e7c872`) — the day's earlier work crashed/no-op'd on first launch:
+   - `MixinParticleManagerFilter$SpawnCounter` was a nested class in the `mixin` package; mixin booter refuses to load non-mixin classes from its owned package. `IllegalClassLoadError` at mod init. Moved counter to `render.particles.ParticleSpawnCounter`.
+   - `MixinPotionColor`, `MixinDyeColor`, `MixinGuiIngameVignette/Crosshair/Hud` were registered in the late mixin config but their target classes load during `Bootstrap.register` before the late loader fires. Each logged "Critical problem ... loaded too early" and silently no-op'd — Phase 6c potion/dye overrides + the Comfort/Cinematic hide toggles were broken. Moved to `mixins.ldog.vanilla.json` (early `IEarlyMixinLoader`).
+   - `MixinEntityRendererPostPipeline` was still using the 3-arg `RenderTargetManager.ensure()` overload which defaulted HDR=false. Every frame the pipeline's `ensure(..., true)` and this mixin's `ensure(..., false)` fought, reallocating targets — symptom: enabling HDR Pipeline made the world black (each frame rendered into a fresh empty target). Pass `LDOGConfig.enableHDRPipeline` explicitly.
+
+**UX overhaul (player-focused)**:
+
+- **Tooltip cleanup** (`7e52605`) — stripped phase numbers + GL jargon from existing tooltips. `"TAA (9c.1)"` → `"TAA"` on button labels. Tooltips for `Pipeline`, `AutoScale`, `TAA Enable`, `Reactive Mask`, `OF Shaders` row rewritten as player-facing prose.
+- **Comprehensive tooltips** (`bc3df8d`) — added ~60 tooltips for previously-undocumented buttons across every section: Performance + per-particle, FPS Management, AF / MSAA / FXAA, HDR + Bloom, Atmosphere, Comfort (10 toggles), Info HUD additions, Hide HUD elements, QoL, Visual (water + presets + grass/snow/natural/colors/mobs), Dynamic Lights + interval, Light Customization (preset + 6 RGB sliders + brightness + night darkness + HDR lightmap), Pack feature toggles, TTF Bold/Italic/Subpixel.
+- **Section reorg** (`af7ac9d`) — moved `Display` next to Comfort cluster (was awkwardly between Anti-aliasing and Post-Process); folded one-row Quality of Life into Hide HUD Elements.
+- **3 mixin warnings + dedicated shader picker screen** (`fd7d9bd`) — added `remap = false` to three `@At` annotations targeting LWJGL methods (`Project.gluPerspective` ×2, `Display.setFullscreen`); LWJGL classes have no SRG mapping so the warnings were spurious. Also built standalone `GuiShaderPackPicker` as a list-style replacement for the cycle button.
+- **Tabbed settings GUI** (`ed2defe`) — six tabs across the top of the settings screen: General / Rendering / Visual / Features / Shaders / UI-HUD. Active tab underlined yellow. Implementation: single `populateForActiveTab` method with `if (activeTab == X)` wraps around each existing section (no physical line reordering). Shaders tab is special — bypasses `settingsList` and embeds `GuiShaderPackList` directly. Tab switches deferred to next `updateScreen` tick via `pendingTabSwitch` field so we never clear `buttonList` mid-`mouseClicked`. `activeTab` is `static` so it survives child-screen round-trips.
+
+**Shader pack composite runner**:
+
+- **Composite + final stages run live** (`e056e67`) — activated packs now actually produce visible output. New `ShaderPackUniforms` computes + binds the standard OF/Iris uniform set (cameraPosition, sunPosition, moonPosition, gbufferModelView+Projection +Inverse +Previous, frameCounter, frameTimeCounter, viewWidth/Height, invMainSize, sunAngle, rainStrength, worldTime, isEyeInWater, near/far, aspectRatio) using OF naming convention so unmodified pack shaders link. New `ShaderPackRuntime` owns compiled GL programs for one active pack; compiles `composite.{vsh,fsh}` → `composite15` and terminal `final.{vsh,fsh}` on activate, disposes on deactivate; per-stage compile failures drop that stage but the rest run. New `ShaderPackCompositePass` (pipeline pass, runs after FXAA before vignette): copies main FB → `colortex0`, ping-pongs across two main-res FBOs through each composite stage feeding standard uniforms, then runs `final` to main FB (or blits the last composite output back when no `final.fsh`). `colortex1..7` + `depthtex1..2` bound to a 1×1 black texture so packs referencing uninitialized slots get safe zeros. **Scope still excludes**: gbuffer programs (per-object draw shaders) + shadow pass — the next big chunks for full OF compatibility. Composite is where most pack visual identity lives so a lot of packs partially work today.
+
+**Verified live**: ran `gradlew runClient` after each major commit. Build clean, zero mixin warnings, 11-pass pipeline initializes, FSR 2 shader compiles, entity MV pass live (`LDOG: TAA entity MV reprojection ACTIVE`).
+
+**Deferred (next session)**:
+- **Shader pack gbuffer support** — full OF compatibility wants per-object draw shaders. ~weeks of work: identify every MC draw-call type (terrain solid/cutout/water, entities, sky, clouds, weather, particles, item, hand), hook each one to bind the right `gbuffers_*.{vsh,fsh}` from the active pack and feed vertex-attribute uniforms. Composite-only runner today produces visible output for most packs but doesn't drive per-object effects.
+- **Shadow pass** — depth-only second world render from the sun's POV → `shadowtex0/1`. Required by realistic packs.
+- **Phase C2 memory opts** (Vintage Fix + Censored ASM absorptions) — not started.
+- **Phase 10b runtime-togglable borderless** — needs coordinated GL subsystem dispose. Risky.
+- **Phase 9c.5 reactive mask polish + alpha-cutout classification** — minor polish on top of 9c.3 stack.
+
+### Pre-2026-05-22 session — "hammer the master plan" (2026-05-21)
+
+Pushed nine commits across small items + HDR + bloom + shader-pack scaffold. Then ran `runClient` and caught three load-order bugs (fixed in the 2026-05-22 session — see above).
 
 1. **Phase 6c colors** (`25665b1`) — per-biome water, potion, dye colors via OF-format `color.properties`. Three new override maps in `CustomColorHandler`; `MixinPotionColor` + `MixinDyeColor` mixins. Water flows through `BiomeBlend.waterColorFor` so it's honored both at radius 1 and inside the smooth-biome kernel. Map colors deliberately not implemented (too invasive — patching `MapColor.COLORS` static array).
 2. **Tier A + B** (`16a5115`) — Tier A: advanced item tooltips toggle (tick-handler-driven flag flip), nausea distortion suppression via `ModifyVariable` on `EntityRenderer.renderWorldPass`, Info HUD rows for Ping/Day/CPS (left+right mouse, 1-second sliding window). Tier B: hide armor/hunger/air/boss-health bars via Forge `RenderGameOverlayEvent.Pre` cancel — cleaner than mixing into `GuiIngame.renderPlayerStats` profiler sections.
-3. **C3 + C4 polish** (`5f0c59b`) — Tooltip body for the 7 OF Interop GUI rows (Auto/LDOG/OF semantics, with shaders-not-ready-yet note). C3: wire `ttfBold` + `ttfItalic` to GUI rows (config fields existed since C3 ship; just no UI surface); add `ttfSubpixel` config + GUI row driving `TTFFontRasterizer`'s `TEXT_ANTIALIAS_LCD_HRGB` path.
-4. **Phase 1 perf + 9b doc** (`8b29d26`) — Phase 1 A2 skip-empty-sections (`RenderChunk.rebuildChunk` short-circuits when `ExtendedBlockStorage` is null/empty, saving 4096 `getBlockState` calls per section), C2 particle spawn cap (per-tick counter resets at TickEvent START), and `docs/PHASE_9B_VALIDATION.md` — user-driven test protocol for upscaler quality (5 packs × 5 scales × 3 upscalers + RCAS, 0-3 scoring rubric, regression triggers).
-5. **HDR pipeline** (`74e468d`) — `RenderTargetManager` grows an HDR mode; when `enableHDRPipeline` is on, scene + ping color textures allocate as `GL_RGBA16F` so intermediate values can exceed [0,1]. New `HDRTonemapPass` runs first in the chain with four operators (ACES filmic, Reinhard, Uncharted 2/Hable, linear) + user-tunable exposure. Uses RCAS's `glCopyTexSubImage2D` ping-pong: copy sceneColorTex → RGBA16F source, bind sceneFbo as draw, sample copy. Downstream passes don't need to be HDR-aware. Also fixes `MixinRenderChunk` `@Shadow` — `RenderChunk.position` is private `MutableBlockPos`, not public `BlockPos`; switched to `@Shadow on getPosition()`.
-6. **Bloom pass** (`5a924c6`) — `BloomPass` runs BEFORE HDR tonemap so bright-pass shader sees HDR values exceeding [0,1]. Three stages: bright-pass (luminance threshold, quadratic weight), separable 9-tap Gaussian blur (half-res, ping-pongs across two FBOs), additive composite. Gated on `enableBloom && enableHDRPipeline`.
-7. **Shader-pack scaffold** (`17f243a`) — `ShaderPack` abstract + `DirectoryShaderPack` + `ZipShaderPack` (auto-detects shaders-at-root vs nested `packname/shaders/`). `ShaderProgramId` catalogues OF/Iris-format `.vsh`/`.fsh` standard filenames. `ShaderPackManager` scans `<.minecraft>/shaderpacks/` (auto-created at postInit), exposes name list for GUI cycling, activates by config name. New GUI rows: Pack cycle + Rescan (only shown when LDOG shaders are on). **Deliberately not in v1**: gbuffer/composite/final compilation, uniform feed, shadow pass — activating a pack today is log-only. Foundation laid for buildout.
-
-**Critical bug fix in this session**: `MixinRenderChunk` `@Shadow public BlockPos position` didn't resolve — `RenderChunk.position` is actually `private final BlockPos.MutableBlockPos`. Use `@Shadow on getPosition()` instead. Pattern carries over for any private mutable field — use the public getter via shadow method.
-
-**Deferred (next session)**: Phase 9c.3-C Option C entity MV (per-entity velocity emission for vanilla entity classes, ~1 week focused — see §10 day-by-day plan), Phase 9c.4 FSR 2 reconstruction kernel (needs Option C first, ~2-4 weeks), Phase C2 memory opts (Vintage Fix + Censored ASM absorptions), Phase 10b runtime borderless. None blocked technically; each is a multi-day focused effort with substantial new shader/mixin infrastructure.
+3. **C3 + C4 polish** (`5f0c59b`) — Tooltip body for the 7 OF Interop GUI rows. C3: wire `ttfBold` + `ttfItalic` to GUI rows (config fields existed since C3 ship; just no UI surface); add `ttfSubpixel` config + GUI row driving `TTFFontRasterizer`'s `TEXT_ANTIALIAS_LCD_HRGB` path.
+4. **Phase 1 perf + 9b doc** (`8b29d26`) — Phase 1 A2 skip-empty-sections (`RenderChunk.rebuildChunk` short-circuits when `ExtendedBlockStorage` is null/empty, saving 4096 `getBlockState` calls per section), C2 particle spawn cap, and `docs/PHASE_9B_VALIDATION.md` — user-driven test protocol for upscaler quality.
+5. **HDR pipeline** (`74e468d`) — `RenderTargetManager` grows an HDR mode; when `enableHDRPipeline` is on, scene + ping color textures allocate as `GL_RGBA16F`. New `HDRTonemapPass` runs first in the chain with four operators (ACES filmic, Reinhard, Uncharted 2/Hable, linear) + user-tunable exposure. Also fixes `MixinRenderChunk` `@Shadow` — `RenderChunk.position` is private `MutableBlockPos`; switched to `@Shadow on getPosition()`.
+6. **Bloom pass** (`5a924c6`) — `BloomPass` runs BEFORE HDR tonemap so bright-pass shader sees HDR values exceeding [0,1]. Three stages: bright-pass (luminance threshold, quadratic weight), separable 9-tap Gaussian blur (half-res ping-pongs), additive composite.
+7. **Shader-pack discovery scaffold** (`17f243a`) — `ShaderPack` abstract + `DirectoryShaderPack` + `ZipShaderPack` (auto-detects shaders-at-root vs nested layout). `ShaderPackManager` scans `<.minecraft>/shaderpacks/`, exposes name list for GUI cycling. **Was log-only at the time** — composite runner shipped in the 2026-05-22 session.
 
 ### Pre-2026-05-21 session — "more options the merrier" (2026-04-18)
 
@@ -99,7 +135,7 @@ The alto modpack uses 10+ separate optimization/rendering mods. LDOG absorbs the
 
 | Mod | Function | LDOG Strategy | Status |
 |---|---|---|---|
-| OptiFine | Shaders/CTM/emissive/render | **Replace** (primary goal) | most features at parity; shader pack loading still open |
+| OptiFine | Shaders/CTM/emissive/render | **Replace** (primary goal) | most features at parity; composite + final shader stages run; gbuffer + shadow pass still open |
 | Vintage Fix 0.5.1 | Model dedup, blockstate compaction, dynamic loading | **Coexist then integrate** (memory opts) | Phase C2 — not started |
 | Censored ASM / LoliASM 5.30 | BakedQuad/texture dedup, class loading | **Coexist then integrate** | Phase C2 — not started |
 | Performant 1.11 | Entity/TE tick perf, pathfinding | **Coexist** (server-side, outside scope) | kept |
@@ -109,7 +145,7 @@ The alto modpack uses 10+ separate optimization/rendering mods. LDOG absorbs the
 | Smooth Font 2.1.4 | TrueType font rendering | **Integrate** | shipped Phase C3 |
 | Spark / Lag Goggles | Profilers | **Coexist** (diagnostic) | kept |
 
-At full maturity: 5-7 mods consolidated. Today's gap from full maturity: Vintage Fix + Censored ASM (Phase C2 not started) + OptiFine shader-pack loading (under Phase 8 stretch).
+At full maturity: 5-7 mods consolidated. Today's gap from full maturity: Vintage Fix + Censored ASM (Phase C2 not started) + OptiFine shader-pack gbuffer/shadow stages (composite stages now run, gbuffer + shadow still ahead — see Phase 8 stretch + §13 backlog).
 
 ---
 
@@ -230,7 +266,7 @@ Status: `[x]` complete (one known MSAA-edges issue documented as won't-fix; FXAA
 
 ### Phase 8 — Shader Pipeline
 
-Status: `[x]` 8a + 8b + 8c shipped 2026-04-17. `[~]` Shader-pack loading: discovery + selection scaffold shipped 2026-05-21 (`17f243a`); full gbuffer/composite/final execution + uniform feed + shadow pass still open — see §13. `[x]` HDR + Bloom shipped 2026-05-21 (`74e468d`, `5a924c6`).
+Status: `[x]` 8a + 8b + 8c shipped 2026-04-17. `[x]` HDR + Bloom shipped 2026-05-21 (`74e468d`, `5a924c6`). `[x]` Shader-pack discovery scaffold shipped 2026-05-21 (`17f243a`). `[x]` **Composite + final stage runner shipped 2026-05-22** (`e056e67`) — activated packs now produce visible post-process output. `[ ]` Gbuffer programs (per-object draw shaders) + shadow pass still open — the next chunks for full OF compatibility.
 
 **HDR pipeline (2026-05-21)**:
 - `RenderTargetManager` HDR mode: when `enableHDRPipeline` is on, scene + ping color textures allocate as `GL_RGBA16F` instead of RGBA8.
@@ -238,12 +274,17 @@ Status: `[x]` 8a + 8b + 8c shipped 2026-04-17. `[~]` Shader-pack loading: discov
 - Tonemap → LDR-clamped values stored in HDR storage so downstream passes (upscaler, RCAS, FXAA, vignette) don't need HDR awareness.
 - `BloomPass` runs even earlier (before tonemap) so bright-pass shader sees HDR luminance >1.0. Three stages: bright-pass quadratic weight, separable 9-tap Gaussian blur (half-res ping-pong), additive composite.
 
-**Shader-pack scaffold (2026-05-21)**:
+**Shader-pack discovery scaffold (2026-05-21)**:
 - `ShaderPack` abstract + Directory/Zip subclasses (auto-detects nested zip layouts).
 - `ShaderProgramId` catalogues OF/Iris standard `.vsh`/`.fsh` filenames.
 - `ShaderPackManager` discovers `<.minecraft>/shaderpacks/`, exposes name list, activates by config.
-- GUI: Pack cycle + Rescan rows (only shown when LDOG shaders are on).
-- **NOT in v1**: gbuffer hooking, composite execution, uniform feed (cameraPosition, projectionMatrix, sunPosition...), shadow pass. Activating a pack is log-only today. Documented as the gating prereq for v1.0-beta.
+- GUI: dedicated Shaders tab with scrollable list, Open Folder + Rescan + Done buttons (2026-05-22 — replaced the original cycle button).
+
+**Composite + final stage runner (2026-05-22)**:
+- `ShaderPackUniforms` — per-frame snapshot + push of the standard OF/Iris uniform set. Naming follows the public OF convention (`cameraPosition`, `sunPosition`, `gbufferModelView`, `frameCounter`, `frameTimeCounter`, `rainStrength`, `worldTime`, `isEyeInWater`, etc.) so unmodified pack shaders link.
+- `ShaderPackRuntime` — owns compiled GL programs for the active pack. Compiles `composite.{vsh,fsh}` → `composite15.{vsh,fsh}` + `final.{vsh,fsh}` on activate, disposes on deactivate. Per-stage compile failures drop that stage individually (logged at WARN) so a half-broken pack still renders the working stages.
+- `ShaderPackCompositePass` — pipeline pass, runs after FXAA before vignette. Each frame: copy main FB → `colortex0` source texture, then walk composites with two main-res ping-pong FBOs, feeding the standard uniform set + binding `colortex0`/`depthtex0` (and `colortex1..7` / `depthtex1..2` to a 1×1 black tex for safe-zero). Final stage (if present) renders to the actual main FB; otherwise the last composite output gets blitted back.
+- **Still NOT in v1**: gbuffer programs (per-object draw shaders), shadow pass, MRT `DRAWBUFFERS` directive, custom buffer formats from `shaders.properties`. Most pack visual identity DOES live in composite + final — typical packs partially work today.
 
 **8a — Framework**: `PostProcessPass`, `PostProcessContext`, `PostProcessPipeline`, `passes/NoOpPass`. Mixin lifecycle hook on `EntityRenderer.renderWorldPass` (RETURN). `RenderTargetManager` owns scaled GL_RGBA8 color tex + GL_DEPTH24_STENCIL8 depth RBO scene target + color-only ping-pong. `ensure(baseW, baseH, scale)` reallocates on dim/scale change.
 
@@ -288,8 +329,8 @@ Stages (each independently shippable):
 - **9c.1** `[x]` Jittered-projection TAA MVP — `JitterHelper` (Halton 2,3) + `TAAAccumulatePass` with neighborhood-clamped history blend. **Bug 1**: jitter injection targeted `setupCameraTransform` but `renderWorldPass` overwrites projection afterward (sky + terrain `gluPerspective` calls) — jitter was a no-op. Fix: inject at `renderWorldPass` on both ordinals. User-verified post-fix.
 - **9c.2** `[x]` Camera motion vectors — `CameraState` singleton captures jittered viewProj + invCurViewProj + prevViewProj at the terrain-projection injection point (AFTER jitter). Scene depth attachment moved from RBO to `GL_DEPTH24_STENCIL8` texture (GL_NEAREST) for shader sampling. TAA shader reconstructs world-space from NDC + depth + invCurViewProj, reprojects via prevViewProj. Disocclusion check: reprojected UV outside [0,1] → skip history. **Bug 2**: initial impl captured un-jittered matrices while history stored jittered pixels — "drunk/swimming" visuals. Fix: capture AFTER `applyJitter()` so cur/prev matrices match history. User-verified post-fix.
 - **9c.3-A** `[x]` Entity reactive mask (Option A from §10) — MRT + per-attachment `colorMaski`: sceneFbo gets a COLOR1 R8 attachment always-allocated; binding mixin `glDrawBuffers` to [COLOR0, COLOR1] and `glColorMaski(1, false)` around non-entity draws; `MixinRenderGlobal` opens `colorMaski(1, true)` around `renderEntities` HEAD/RETURN. Legacy fixed-function replicates `gl_FragColor` across attachments so no custom entity shader needed. TAA shader drops history weight on flagged pixels. Kills moving-mob ghost trails. User-verified.
-- **9c.3-C** `[defer]` Full per-entity MV (Option C) — see §10 for the day-by-day plan. ~1 week focused. Confirmed next session's work 2026-05-21; HDR pipeline shipped today lays the RGBA16F framebuffer foundation Option C + FSR 2 can consume.
-- **9c.4** `[defer]` FSR2-style reconstruction kernel. Requires Option C first. Per master plan §9 timeline: 2-4 weeks focused after Option C lands. Substantial new shader work — half-shipped is worse than not shipped, so deliberately deferred to a dedicated session.
+- **9c.3-C** `[x]` Per-entity motion vectors via BBox-projected velocity stamps shipped 2026-05-22 (`9264bb2`). Strategy 4 from §10 — captures every dispatched entity through one `MixinRenderManagerEntityMV` hook (covers mobs/items/XP orbs/projectiles/paintings/modded), projects bbox + cur/prev positions through `CameraState`, stamps screen-space velocity into the half-res RG16F MV target. TAA + FSR 2 sample the MV target with priority over camera-only reprojection; reactive-mask drop bypassed where entity MV is present so entity pixels retain accumulated detail. Approximate (bbox-granularity not per-pixel, ~5% the cost of re-rendering entity geometry) — covers ~95% of the perceptual win.
+- **9c.4** `[x]` FSR2-style temporal reconstruction shipped 2026-05-22 (`1e9cdde`). LDOG-original `FSR2ReconstructionPass` combines the full 9c stack into a single scaled→native pass: 5×5 Lanczos-3 source kernel + camera/entity MV reprojection + 3×3 neighborhood color clamping + reactive mask weighting + light final-stage sharpen. Selectable as the `FSR2` upscaler algorithm; the standalone TAA pass short-circuits when FSR 2 is active (FSR 2 owns history accumulation). Algorithm informed by AMD's public FSR2 specification but no code copied per project policy.
 - **9c.5** `[defer]` Reactive mask polish + alpha-cutout classification.
 
 ### Phase 10 — Borderless Windowed Fullscreen
@@ -578,8 +619,9 @@ Captured 2026-04-18. Sorted by effort × user-visibility.
 - `[ ]` Cloud 2D/3D mode + opacity (beyond what current Atmosphere section covers).
 - `[ ]` Per-bar HUD hide (armor/hunger/air) — see Tier B.
 - `[ ]` Translucent block blending — correct color compositing for stacked transparent blocks (order-dependent transparent rendering is a big architectural change).
-- `[ ]` 9c.3 Option C (see §10).
-- `[ ]` 9c.4 FSR2-style reconstruction (needs Option C).
+- `[x]` 9c.3 Option C — shipped 2026-05-22 via Strategy 4 BBox-projection (`9264bb2`). See §10 for the original plan; the actual ship took the simpler approach.
+- `[x]` 9c.4 FSR2-style reconstruction — shipped 2026-05-22 (`1e9cdde`). LDOG-original Lanczos-3 kernel.
+- `[ ]` **Shader pack gbuffer + shadow pass** — composite-stage runner shipped 2026-05-22; the remaining work is hooking each MC draw-call type (terrain solid/cutout/water, entities, sky basic/textured, clouds, weather, item, hand) to bind the matching `gbuffers_*.{vsh,fsh}` from the active pack, plus a depth-only shadow render pass. Weeks of focused effort. Gating prereq for `v1.0-beta`.
 - `[ ]` Phase 10b runtime borderless (see §5).
 - `[ ]` Phase C4 in-prod verification (see §5).
 - `[ ]` Phase C4 field-name corrections.
@@ -615,6 +657,29 @@ Non-obvious infrastructure facts a future reader (or session pickup) needs to kn
 ### Phase 9c.3-A reactive mask
 - Implemented via MRT + per-attachment `colorMaski`. sceneFbo gets COLOR1 R8 attachment always-allocated. Binding mixin `glDrawBuffers` to [COLOR0, COLOR1] and `glColorMaski(1, false)` around non-entity draws. `MixinRenderGlobal` opens `colorMaski(1, true)` around `renderEntities` HEAD/RETURN. Legacy fixed-function replicates `gl_FragColor` across bound attachments so no custom entity shader needed.
 
+### Phase 9c.3-C entity MV
+- BBox-projected velocity stamps (Strategy 4 from §10), not per-pixel geometry re-render. `MixinRenderManagerEntityMV` hooks `RenderManager.renderEntity` HEAD — covers every dispatched entity (mobs, items, XP orbs, projectiles, paintings, item frames, modded entities) through one mixin point.
+- `EntityRenderStateCache.beginFrame()` is reset at the start of `renderWorldPass` (HEAD inside `MixinEntityRendererPostPipeline`) so the per-frame queue starts empty each render. If you add another mixin that affects renderWorldPass, ensure it doesn't reset the cache earlier.
+- TAA + FSR 2 shaders read the MV target on a dedicated texture unit (4 for TAA, 3 for FSR 2). Both prefer entity MV when non-zero (per-pixel velocity > sub-pixel threshold) over the camera-only depth-based reprojection.
+- MV target is half-res RG16F by design — TAA bilinear-samples it, soft transitions act as built-in smoothing.
+
+### Phase 9c.4 FSR 2
+- Standalone TAA pass MUST short-circuit when `UpscalerAlgorithm.selected() == FSR2`. FSR 2 owns history accumulation itself; two history-managing passes fight each other.
+- `EntityMotionVectorPass` MUST run BEFORE FSR 2 in the pipeline pass list. The MV target needs to be populated by the time FSR 2 samples it. Easy mistake — MV pass naturally feels like it belongs near TAA, but TAA runs LATER.
+
+### Shader pack runtime
+- Composite stages get every standard OF/Iris uniform — `ShaderProgram.locate()` warns on missing uniforms. The runner sets all ~30 uniforms on every stage; shaders that declare only a few will spam "no active uniform" WARN lines on first compile. Acceptable noise — each warning fires once per uniform per shader thanks to the location cache.
+- `colortex1..7` and `depthtex1..2` bind to a shared 1×1 black texture. Packs sampling these get zeroed values, NOT crashes. If you implement gbuffers later, those texture units need real allocations.
+- Per-stage compile failures are logged at WARN, not ERROR, and the stage is dropped from the chain. A partially-working pack is more useful than no pack. Watch logs to spot which stages failed.
+
+### Tabbed settings GUI
+- Tab switches MUST defer to the next `updateScreen` tick via `pendingTabSwitch` — calling `initGui()` directly in `actionPerformed` clears `buttonList` while vanilla's `mouseClicked` loop is still iterating it, which can fire stale button indices.
+- `activeTab` is `static` so it survives child-screen round-trips (e.g., the shader pack picker's standalone GuiScreen). Without this, clicking into a child screen and back resets to General.
+- Shaders tab is special — `settingsList` is set to null when it's active, and `shaderPackList` is set to null when it's inactive. The mouse / draw routing checks `activeTab == Tab.SHADERS` to pick the right panel.
+
+### LWJGL @At targets
+- `@At` targets that reference LWJGL classes (`Lorg/lwjgl/util/glu/Project;...`, `Lorg/lwjgl/opengl/Display;...`) need `remap = false`. LWJGL isn't obfuscated, has no SRG mapping. Without `remap = false`, the annotation processor warns "Unable to locate method mapping" — non-fatal but noisy.
+
 ### Vignette
 - Vignette pass MUST be absolute last in chain (after FXAA) so FXAA doesn't see the gradient as an edge to smooth.
 
@@ -644,7 +709,7 @@ LDOG uses MixinBooter 10.7 with `ILateMixinLoader` (`LDOGMixinLoader`):
 
 Catalogued 2026-04-18 by walking the OF 1.12.2 HD U G5 jar. Each is something OF supports that LDOG does not yet — a candidate for future phases beyond what's currently planned. Not commitments, just visibility. Sorted by estimated user impact.
 
-- `[ ]` **Real shader pack support** — load and run external `.zip` shader packs (vertex + fragment + composite stages). Phase 8 framework is in place; missing piece is shader-pack file format parsing + multi-program compositor stage. This is the Phase 8 stretch goal.
+- `[~]` **Real shader pack support** — partial. Discovery + composite + final stage execution shipped 2026-05-22 (composite chain produces visible post-process output for typical packs). Remaining: gbuffer programs (per-object draw shaders for terrain/entities/sky/clouds/water/item/hand etc.) + shadow pass + MRT `DRAWBUFFERS` directive + custom buffer formats from `shaders.properties`. This is the Phase 8 stretch goal.
 - `[ ]` **CEM (Custom Entity Models)** — pack-supplied JSON model overrides for unique mob geometry.
 - `[ ]` **Smart Animations** — skip ticking animations for non-visible sprites. Meaningful FPS gain on heavy-animation packs.
 - `[ ]` **Multi-core / Smooth chunk loading** — chunk mesh build + upload across worker threads + frame budget. Reduces stutter on world-load and chunk-cross.
@@ -664,7 +729,7 @@ Catalogued 2026-04-18 by walking the OF 1.12.2 HD U G5 jar. Each is something OF
 
 ## 13.5. Testing Plan & Checklist
 
-User-driven test checklist for the 2026-05-21 batch of features. Build (`./gradlew build`), drop the jar into a real MC 1.12.2+Forge install (gradle dev mode crashes when OF is present — see §12 Phase C4), launch, work through the boxes. Tick as you go; file findings in `docs/PHASE_9B_VALIDATION.md` for any upscaler-quality regression.
+User-driven test checklist for the recent batches of features (2026-05-21 + 2026-05-22). Build (`./gradlew build`), drop the jar into a real MC 1.12.2+Forge install (gradle dev mode crashes when OF is present — see §12 Phase C4), launch, work through the boxes. Tick as you go; file findings in `docs/PHASE_9B_VALIDATION.md` for any upscaler-quality regression.
 
 **Smoke (5 min)** — start in a flat creative world, verify build loads + opens settings GUI:
 - [ ] Mod loads with no `Critical problem` or `Error` lines in `latest.log`.
@@ -716,11 +781,33 @@ dye.blue=0xFF00FF       # blue dye renders magenta
 - [ ] Linear operator + exposure > 2.0 — visible LDR clipping (sanity check: shows tonemap is actually mapping).
 - [ ] Toggle HDR off + on — no FBO leaks (target reallocates cleanly per log).
 
-**Shader-pack scaffold**:
+**Shader-pack composite runner** (new 2026-05-22):
 - [ ] `<.minecraft>/shaderpacks/` exists after first launch.
-- [ ] Drop a `.zip` or extracted folder containing `shaders/shaders.properties` — Pack cycle button surfaces it.
-- [ ] Activate — log line "Activated shader pack 'name'" appears.
-- [ ] Activate a pack with no gbuffer programs — WARN log "no standard gbuffer programs found".
+- [ ] Open Shaders tab — list shows all packs in the folder + a `(none)` row at top.
+- [ ] Drop a new pack while game is running, click Rescan — pack appears.
+- [ ] Open Folder button pops the OS file browser at the right directory.
+- [ ] Click a pack — log line `LDOG: Shader pack 'X' compiled — N composite stage(s) + final` appears within a frame.
+- [ ] Per-stage compile failure: WARN log entry quotes the GLSL error; other stages keep running.
+- [ ] Activated pack visibly changes the scene (color grading / sky tint / atmospheric effects). Gbuffer-driven effects WILL NOT work yet — that's the next phase.
+- [ ] Click `(none)` — pack deactivates, scene returns to vanilla-style render.
+
+**Phase 9c.3-C entity MV** (new 2026-05-22):
+- [ ] Enable Post Pipeline + TAA + Entity MV. Log line `LDOG: TAA entity MV reprojection ACTIVE (9c.3-C)` appears on first frame after a moving entity renders.
+- [ ] Spawn moving mobs (sheep walking), pan camera at moderate speed — entities should NOT smear; sharper than Reactive-Mask-only mode.
+- [ ] Try with FSR 2 selected — same crisp moving-entity result at sub-native render scale.
+
+**Phase 9c.4 FSR 2** (new 2026-05-22):
+- [ ] Set Upscaler = FSR2, Render Scale = 0.75, Post Pipeline ON, TAA ON. Log line `LDOG: FSR2 reconstruction live (sceneW x sceneH scaled -> mainW x mainH, scale 0.75)` appears.
+- [ ] Visibly sharper than FSR1 / FSR1-Quality at the same scale on dense foliage / fine geometry.
+- [ ] Disocclusion test: spin camera 180° — slight one-frame artifact on newly-visible pixels is expected and documented.
+- [ ] Switch upscaler back to FSR1 — log shows TAA pass re-engages, FSR 2 short-circuits.
+
+**Tabbed settings GUI** (new 2026-05-22):
+- [ ] Six tabs across top: General / Rendering / Visual / Features / Shaders / UI-HUD. Active tab underlined yellow.
+- [ ] Click each tab — content panel switches without flicker.
+- [ ] Click a row in Shaders tab — pack activates; tab stays put.
+- [ ] Visit Shaders tab, click a child screen (e.g., upscaler preset detail), return — same tab still active.
+- [ ] Done button visible and works from every tab.
 
 **Regression sanity** — features shipped earlier should still work:
 - [ ] CTM glass + bookshelf textures wrap correctly.
@@ -748,8 +835,9 @@ If any box fails: capture `latest.log` + a screenshot + the toggles that were on
 | `v0.5.0-alpha` | Phase 5 | Dynamic lights, lighting customization |
 | `v0.6.0-alpha` | Phase 6 | Full resource pack feature parity |
 | (2026-04-18) | Phase 7-10 + C3-C4 foundation | AA/AF, shader pipeline, FSR1/RCAS, TAA MVP, borderless, smooth font, OF interop foundation |
-| (current, 2026-05-21) | + HDR + Bloom + Phase 6c colors + Tier A/B + shader-pack scaffold | HDR pipeline, bloom, biome/potion/dye colors, full QoL toggles + HUD hides, shader-pack discovery (compile + execute still ahead) |
-| `v1.0.0-beta` | Phase 8 stretch + 9c.3-C + 9c.4 | Real shader pack execution + per-entity MV + FSR 2 reconstruction — OptiFine fully replaceable |
+| (2026-05-21) | + HDR + Bloom + Phase 6c colors + Tier A/B + shader-pack scaffold | HDR pipeline, bloom, biome/potion/dye colors, full QoL toggles + HUD hides, shader-pack discovery |
+| (current, 2026-05-22) | + Phase 9c.3-C entity MV + Phase 9c.4 FSR 2 + composite shader runner + tabbed GUI | Full temporal upscaling (FSR 2 + entity MV), composite/final stage execution for shader packs (most visual identity visible), tabbed settings with dedicated Shaders tab |
+| `v1.0.0-beta` | Phase 8 stretch gbuffer + shadow pass | Full shader-pack OptiFine compatibility — gbuffer programs hooked into every MC draw-call type + shadow pass |
 
 50 unit tests, all passing.
 
@@ -800,3 +888,12 @@ Policy: external projects are design references only. No code copying. Implement
 | `74e468d` | HDR pipeline (RGBA16F + ACES/Reinhard/Uncharted2/Linear tonemap) (2026-05-21) |
 | `5a924c6` | HDR bloom pass (bright-extract + 9-tap Gaussian + composite) (2026-05-21) |
 | `17f243a` | Shader-pack discovery + selection scaffold (2026-05-21) |
+| `6e7c872` | Fix 3 load-order bugs: SpawnCounter inner class, late→early mixin moves, HDR ensure ping-pong (2026-05-22) |
+| `9264bb2` | Phase 9c.3-C per-entity MV via BBox-projected velocity stamps (2026-05-22) |
+| `1e9cdde` | Phase 9c.4 FSR 2 reconstruction kernel (2026-05-22) |
+| `7e52605` | Tooltip dev-jargon cleanup (2026-05-22) |
+| `bc3df8d` | ~60 new tooltips across every settings section (2026-05-22) |
+| `af7ac9d` | Small GUI section reorg (2026-05-22) |
+| `fd7d9bd` | 3 mixin warnings cleared + dedicated GuiShaderPackPicker (2026-05-22) |
+| `ed2defe` | Tabbed settings GUI + Shaders tab embedding pack picker (2026-05-22) |
+| `e056e67` | Shader-pack composite + final stage runner (2026-05-22) |
