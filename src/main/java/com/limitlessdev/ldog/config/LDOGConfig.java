@@ -570,6 +570,48 @@ public class LDOGConfig {
     @Config.Comment("Show block + sky light level at the player's feet in the info HUD.")
     public static boolean showLightLevelHud = false;
 
+    @Config.Comment("Show server ping (ms) in the info HUD. Multiplayer only — hidden in singleplayer.")
+    public static boolean showPingHud = false;
+
+    @Config.Comment("Show in-game day counter (1 day = 24000 ticks) in the info HUD.")
+    public static boolean showDayHud = false;
+
+    @Config.Comment("Show clicks-per-second counter (left + right mouse) in the info HUD.")
+    public static boolean showCpsHud = false;
+
+    // ---- Tier A small features ----
+
+    @Config.Comment({
+        "Always show advanced item tooltips (the F3+H breakdown — durability,",
+        "lore, NBT info on hover). Equivalent to keeping the debug toggle on",
+        "without F3 being visible."
+    })
+    public static boolean advancedTooltipsAlways = false;
+
+    @Config.Comment({
+        "Reduce or disable the swirling distortion overlay when under the Nausea",
+        "potion effect (also triggered briefly when entering a portal). Cheap UX",
+        "win; doesn't affect gameplay timing of effects."
+    })
+    public static boolean disableNauseaDistortion = false;
+
+    // ---- Tier B HUD hides ----
+    // Discrete from the existing 'hide<X>' toggles because these hook through
+    // specific profiler-section ordinals inside GuiIngame.renderPlayerStats —
+    // separate mixin targets, separate failure modes.
+
+    @Config.Comment("Hide the armor bar above the hotbar.")
+    public static boolean hideArmorBar = false;
+
+    @Config.Comment("Hide the hunger bar (food shanks) above the hotbar.")
+    public static boolean hideHungerBar = false;
+
+    @Config.Comment("Hide the air bubble bar shown while underwater.")
+    public static boolean hideAirBar = false;
+
+    @Config.Comment("Hide boss health bars at the top of the screen (Wither, Ender Dragon, modded bosses).")
+    public static boolean hideBossHealthBars = false;
+
     @Config.Comment({
         "Enable entity LOD (Level of Detail).",
         "Distant entities render less frequently to save GPU work.",

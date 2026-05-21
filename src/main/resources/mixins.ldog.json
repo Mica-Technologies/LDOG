@@ -23,6 +23,7 @@
     "MixinEntityRendererWeather",
     "MixinRenderGlobalSky",
     "MixinEntityRendererHurtTilt",
+    "MixinEntityRendererNausea",
     "MixinGuiIngameVignette",
     "MixinItemRendererHand",
     "MixinGuiIngameCrosshair",

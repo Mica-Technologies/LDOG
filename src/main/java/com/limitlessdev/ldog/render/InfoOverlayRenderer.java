@@ -11,12 +11,15 @@ import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.EnumSkyBlock;
+import net.minecraftforge.client.event.MouseEvent;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.relauncher.Side;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 
 /**
@@ -36,7 +39,27 @@ public final class InfoOverlayRenderer {
     private static final int BG_COLOR    = 0x90000000;
     private static final int PADDING     = 4;
 
+    // CPS counter — sliding 1-second window of click timestamps.
+    // Mouse left/right events are pushed; expired ones are popped during render.
+    private static final Deque<Long> leftClicks = new ArrayDeque<>();
+    private static final Deque<Long> rightClicks = new ArrayDeque<>();
+
     private InfoOverlayRenderer() {}
+
+    @SubscribeEvent
+    public static void onMouseEvent(MouseEvent event) {
+        if (!LDOGConfig.showCpsHud) return;
+        if (!event.isButtonstate()) return; // only the press edge, not release
+        int btn = event.getButton();
+        if (btn == 0) leftClicks.add(System.nanoTime());
+        else if (btn == 1) rightClicks.add(System.nanoTime());
+    }
+
+    private static int countWithinSecond(Deque<Long> q) {
+        long cutoff = System.nanoTime() - 1_000_000_000L;
+        while (!q.isEmpty() && q.peekFirst() < cutoff) q.removeFirst();
+        return q.size();
+    }
 
     @SubscribeEvent
     public static void onRenderOverlay(RenderGameOverlayEvent.Post event) {
@@ -79,7 +102,10 @@ public final class InfoOverlayRenderer {
             || LDOGConfig.showFacingHud
             || LDOGConfig.showTimeHud
             || LDOGConfig.showBiomeHud
-            || LDOGConfig.showLightLevelHud;
+            || LDOGConfig.showLightLevelHud
+            || LDOGConfig.showPingHud
+            || LDOGConfig.showDayHud
+            || LDOGConfig.showCpsHud;
     }
 
     private static List<String> buildLines(Minecraft mc, EntityPlayerSP player) {
@@ -121,6 +147,29 @@ public final class InfoOverlayRenderer {
             int sky = mc.world.getLightFor(EnumSkyBlock.SKY, pos);
             int block = mc.world.getLightFor(EnumSkyBlock.BLOCK, pos);
             out.add(label("Light") + "sky " + sky + " / block " + block);
+        }
+
+        if (LDOGConfig.showDayHud) {
+            long day = mc.world.getWorldTime() / 24000L;
+            out.add(label("Day") + day);
+        }
+
+        if (LDOGConfig.showPingHud) {
+            // Multiplayer-only — getConnection() returns null in SP/main menu.
+            if (mc.getConnection() != null) {
+                var info = mc.getConnection().getPlayerInfo(player.getUniqueID());
+                if (info != null) {
+                    int ms = info.getResponseTime();
+                    String color = ms < 80 ? "§a" : ms < 200 ? "§e" : "§c";
+                    out.add(label("Ping") + color + ms + "ms§r");
+                }
+            }
+        }
+
+        if (LDOGConfig.showCpsHud) {
+            int lcps = countWithinSecond(leftClicks);
+            int rcps = countWithinSecond(rightClicks);
+            out.add(label("CPS") + "L " + lcps + " / R " + rcps);
         }
 
         return out;

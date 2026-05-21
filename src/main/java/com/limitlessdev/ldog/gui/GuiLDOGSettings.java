@@ -66,6 +66,17 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_HUD_TIME           = 562;
     private static final int BTN_HUD_BIOME          = 563;
     private static final int BTN_HUD_LIGHT          = 564;
+    private static final int BTN_HUD_PING           = 565;
+    private static final int BTN_HUD_DAY            = 566;
+    private static final int BTN_HUD_CPS            = 567;
+
+    private static final int BTN_ADV_TOOLTIPS       = 568;
+    private static final int BTN_NO_NAUSEA          = 569;
+
+    private static final int BTN_HIDE_ARMOR         = 570;
+    private static final int BTN_HIDE_HUNGER        = 571;
+    private static final int BTN_HIDE_AIR           = 572;
+    private static final int BTN_HIDE_BOSS          = 573;
     private static final int BTN_ENTITY_LOD = 14;
     private static final int BTN_FPS_REDUCER = 20;
     private static final int BTN_UNFOCUSED_FPS = 21;
@@ -397,7 +408,34 @@ public class GuiLDOGSettings extends GuiScreen {
         settingsList.addButtonRow(
             new GuiButton(BTN_HUD_LIGHT, 0, 0, w, h,
                 toggleLabel("Light Level", LDOGConfig.showLightLevelHud)),
-            null);
+            new GuiButton(BTN_HUD_PING, 0, 0, w, h,
+                toggleLabel("Ping", LDOGConfig.showPingHud)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_HUD_DAY, 0, 0, w, h,
+                toggleLabel("Day Counter", LDOGConfig.showDayHud)),
+            new GuiButton(BTN_HUD_CPS, 0, 0, w, h,
+                toggleLabel("CPS", LDOGConfig.showCpsHud)));
+
+        // -- Tier A small features --
+        settingsList.addHeaderRow("Quality of Life");
+        settingsList.addButtonRow(
+            new GuiButton(BTN_ADV_TOOLTIPS, 0, 0, w, h,
+                toggleLabel("Adv. Tooltips Always", LDOGConfig.advancedTooltipsAlways)),
+            new GuiButton(BTN_NO_NAUSEA, 0, 0, w, h,
+                toggleLabel("No Nausea Distort", LDOGConfig.disableNauseaDistortion)));
+
+        // -- Tier B HUD element hides --
+        settingsList.addHeaderRow("Hide HUD Elements");
+        settingsList.addButtonRow(
+            new GuiButton(BTN_HIDE_ARMOR, 0, 0, w, h,
+                toggleLabel("Hide Armor Bar", LDOGConfig.hideArmorBar)),
+            new GuiButton(BTN_HIDE_HUNGER, 0, 0, w, h,
+                toggleLabel("Hide Hunger Bar", LDOGConfig.hideHungerBar)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_HIDE_AIR, 0, 0, w, h,
+                toggleLabel("Hide Air Bar", LDOGConfig.hideAirBar)),
+            new GuiButton(BTN_HIDE_BOSS, 0, 0, w, h,
+                toggleLabel("Hide Boss Health", LDOGConfig.hideBossHealthBars)));
 
         // -- Font Rendering --
         // Drop-in replacement for the Smooth Font mod. Swaps in HD ascii.png from
@@ -737,6 +775,42 @@ public class GuiLDOGSettings extends GuiScreen {
             case BTN_HUD_LIGHT:
                 LDOGConfig.showLightLevelHud = !LDOGConfig.showLightLevelHud;
                 button.displayString = toggleLabel("Light Level", LDOGConfig.showLightLevelHud);
+                break;
+            case BTN_HUD_PING:
+                LDOGConfig.showPingHud = !LDOGConfig.showPingHud;
+                button.displayString = toggleLabel("Ping", LDOGConfig.showPingHud);
+                break;
+            case BTN_HUD_DAY:
+                LDOGConfig.showDayHud = !LDOGConfig.showDayHud;
+                button.displayString = toggleLabel("Day Counter", LDOGConfig.showDayHud);
+                break;
+            case BTN_HUD_CPS:
+                LDOGConfig.showCpsHud = !LDOGConfig.showCpsHud;
+                button.displayString = toggleLabel("CPS", LDOGConfig.showCpsHud);
+                break;
+            case BTN_ADV_TOOLTIPS:
+                LDOGConfig.advancedTooltipsAlways = !LDOGConfig.advancedTooltipsAlways;
+                button.displayString = toggleLabel("Adv. Tooltips Always", LDOGConfig.advancedTooltipsAlways);
+                break;
+            case BTN_NO_NAUSEA:
+                LDOGConfig.disableNauseaDistortion = !LDOGConfig.disableNauseaDistortion;
+                button.displayString = toggleLabel("No Nausea Distort", LDOGConfig.disableNauseaDistortion);
+                break;
+            case BTN_HIDE_ARMOR:
+                LDOGConfig.hideArmorBar = !LDOGConfig.hideArmorBar;
+                button.displayString = toggleLabel("Hide Armor Bar", LDOGConfig.hideArmorBar);
+                break;
+            case BTN_HIDE_HUNGER:
+                LDOGConfig.hideHungerBar = !LDOGConfig.hideHungerBar;
+                button.displayString = toggleLabel("Hide Hunger Bar", LDOGConfig.hideHungerBar);
+                break;
+            case BTN_HIDE_AIR:
+                LDOGConfig.hideAirBar = !LDOGConfig.hideAirBar;
+                button.displayString = toggleLabel("Hide Air Bar", LDOGConfig.hideAirBar);
+                break;
+            case BTN_HIDE_BOSS:
+                LDOGConfig.hideBossHealthBars = !LDOGConfig.hideBossHealthBars;
+                button.displayString = toggleLabel("Hide Boss Health", LDOGConfig.hideBossHealthBars);
                 break;
             case BTN_ENTITY_DIST:
                 LDOGConfig.entityRenderDistance = cycleValue(ENTITY_DIST_VALUES, LDOGConfig.entityRenderDistance);
