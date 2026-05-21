@@ -22,7 +22,7 @@ Key feature targets:
 | Dynamic Lights | Medium | shipped (Phase 5) |
 | HD Textures | Medium | shipped (Phase 2) |
 | Custom Sky | Medium | shipped (Phase 6d) |
-| Shader Pipeline | Stretch | foundation shipped (Phase 8); real shader-pack loading still open |
+| Shader Pipeline | Stretch | foundation shipped (Phase 8) + HDR + Bloom (2026-05-21); shader-pack discovery scaffold shipped, gbuffer/composite execution still open |
 
 Long-term: replace 5-7 separate optimization mods in the alto modpack with one integrated mod (see §3).
 
@@ -32,7 +32,23 @@ Long-term: replace 5-7 separate optimization mods in the alto modpack with one i
 
 > We're building LDOG (`ldog`), an open-source OptiFine replacement for Minecraft Forge 1.12.2. The project is at `E:\gitRepos\LDOG`. Build system is GregTechCEu Buildscripts (RFG 1.4.0). Reference projects for conventions: `E:\gitRepos\minecraft-city-super-mod` and `E:\gitRepos\LDFAWE`. Read `CLAUDE.md`, `docs/MASTER_APP_PLAN.md`, `docs/ARCHITECTURE.md`, and `docs/CONVENTIONS.md` to get up to speed, then pick up at the next open item in §5 or §11 (backlog).
 
-### Where work left off (last working session: 2026-04-18 — "more options the merrier")
+### Where work left off (last working session: 2026-05-21 — "hammer the master plan")
+
+Pushed nine logical commits in a single session, hammering small items + HDR + bloom + shader-pack scaffold:
+
+1. **Phase 6c colors** (`25665b1`) — per-biome water, potion, dye colors via OF-format `color.properties`. Three new override maps in `CustomColorHandler`; `MixinPotionColor` + `MixinDyeColor` mixins. Water flows through `BiomeBlend.waterColorFor` so it's honored both at radius 1 and inside the smooth-biome kernel. Map colors deliberately not implemented (too invasive — patching `MapColor.COLORS` static array).
+2. **Tier A + B** (`16a5115`) — Tier A: advanced item tooltips toggle (tick-handler-driven flag flip), nausea distortion suppression via `ModifyVariable` on `EntityRenderer.renderWorldPass`, Info HUD rows for Ping/Day/CPS (left+right mouse, 1-second sliding window). Tier B: hide armor/hunger/air/boss-health bars via Forge `RenderGameOverlayEvent.Pre` cancel — cleaner than mixing into `GuiIngame.renderPlayerStats` profiler sections.
+3. **C3 + C4 polish** (`5f0c59b`) — Tooltip body for the 7 OF Interop GUI rows (Auto/LDOG/OF semantics, with shaders-not-ready-yet note). C3: wire `ttfBold` + `ttfItalic` to GUI rows (config fields existed since C3 ship; just no UI surface); add `ttfSubpixel` config + GUI row driving `TTFFontRasterizer`'s `TEXT_ANTIALIAS_LCD_HRGB` path.
+4. **Phase 1 perf + 9b doc** (`8b29d26`) — Phase 1 A2 skip-empty-sections (`RenderChunk.rebuildChunk` short-circuits when `ExtendedBlockStorage` is null/empty, saving 4096 `getBlockState` calls per section), C2 particle spawn cap (per-tick counter resets at TickEvent START), and `docs/PHASE_9B_VALIDATION.md` — user-driven test protocol for upscaler quality (5 packs × 5 scales × 3 upscalers + RCAS, 0-3 scoring rubric, regression triggers).
+5. **HDR pipeline** (`74e468d`) — `RenderTargetManager` grows an HDR mode; when `enableHDRPipeline` is on, scene + ping color textures allocate as `GL_RGBA16F` so intermediate values can exceed [0,1]. New `HDRTonemapPass` runs first in the chain with four operators (ACES filmic, Reinhard, Uncharted 2/Hable, linear) + user-tunable exposure. Uses RCAS's `glCopyTexSubImage2D` ping-pong: copy sceneColorTex → RGBA16F source, bind sceneFbo as draw, sample copy. Downstream passes don't need to be HDR-aware. Also fixes `MixinRenderChunk` `@Shadow` — `RenderChunk.position` is private `MutableBlockPos`, not public `BlockPos`; switched to `@Shadow on getPosition()`.
+6. **Bloom pass** (`5a924c6`) — `BloomPass` runs BEFORE HDR tonemap so bright-pass shader sees HDR values exceeding [0,1]. Three stages: bright-pass (luminance threshold, quadratic weight), separable 9-tap Gaussian blur (half-res, ping-pongs across two FBOs), additive composite. Gated on `enableBloom && enableHDRPipeline`.
+7. **Shader-pack scaffold** (`17f243a`) — `ShaderPack` abstract + `DirectoryShaderPack` + `ZipShaderPack` (auto-detects shaders-at-root vs nested `packname/shaders/`). `ShaderProgramId` catalogues OF/Iris-format `.vsh`/`.fsh` standard filenames. `ShaderPackManager` scans `<.minecraft>/shaderpacks/` (auto-created at postInit), exposes name list for GUI cycling, activates by config name. New GUI rows: Pack cycle + Rescan (only shown when LDOG shaders are on). **Deliberately not in v1**: gbuffer/composite/final compilation, uniform feed, shadow pass — activating a pack today is log-only. Foundation laid for buildout.
+
+**Critical bug fix in this session**: `MixinRenderChunk` `@Shadow public BlockPos position` didn't resolve — `RenderChunk.position` is actually `private final BlockPos.MutableBlockPos`. Use `@Shadow on getPosition()` instead. Pattern carries over for any private mutable field — use the public getter via shadow method.
+
+**Deferred (next session)**: Phase 9c.3-C Option C entity MV (per-entity velocity emission for vanilla entity classes, ~1 week focused — see §10 day-by-day plan), Phase 9c.4 FSR 2 reconstruction kernel (needs Option C first, ~2-4 weeks), Phase C2 memory opts (Vintage Fix + Censored ASM absorptions), Phase 10b runtime borderless. None blocked technically; each is a multi-day focused effort with substantial new shader/mixin infrastructure.
+
+### Pre-2026-05-21 session — "more options the merrier" (2026-04-18)
 
 Shipped in two pushes that day:
 
@@ -181,8 +197,10 @@ Status: `[x]` complete (6a-6e all shipped; 6c has two optional gaps).
 **6b — Natural Textures**: `NaturalTextureBakedModel` (position-based UV rotation 0/90/180/270 + flip), `NaturalTextureHandler` parses `optifine/natural.properties`, defaults for 16 common blocks. Modes: rotate, rotate+flip, flip, fixed.
 
 **6c — Custom Colors**: `CustomColorHandler` fires after vanilla colorizers; reads `optifine/colormap/grass.png` + `foliage.png`; parses `optifine/color.properties` for redstone wire colors + static overrides.
-- `[ ]` Per-biome water color overrides (future).
-- `[ ]` Potion / map / dye color overrides (future).
+- `[x]` Per-biome water color overrides — `water.<biomeId>=0xRRGGBB`, honored at radius 1 and inside biome blend kernel (2026-05-21).
+- `[x]` Potion color overrides — `potion.<name>=0xRRGGBB`, `MixinPotionColor` on `Potion.getLiquidColor` (2026-05-21).
+- `[x]` Dye color overrides — `dye.<name>=0xRRGGBB`, `MixinDyeColor` on `EnumDyeColor.getColorValue` (2026-05-21).
+- `[defer]` Map color overrides — would require patching `MapColor.COLORS` static array, too invasive for user-visible payoff.
 
 **6d — Custom Sky**: `CustomSkyRenderer` parses `optifine/sky/world0/skyN.properties` (texture, HH:MM fade times, rotate, blend, speed, axis); `CustomSkyLayer` does time-based alpha fade with wrap-around, skybox cube rendering. Custom sun/moon already supported by vanilla resource pack system. **Mixin verified in-game 2026-04-18** after earlier issues fixed across `c944b4e` (descriptor + refmap regen), `8ca2f52` (SRG name), `1113a60` (removed inverted pass check, MCPatcher layout). The `ldog$skyMixinConfirmed` one-shot log in `MixinRenderGlobal.renderSky` HEAD stays as regression detector.
 
@@ -212,7 +230,20 @@ Status: `[x]` complete (one known MSAA-edges issue documented as won't-fix; FXAA
 
 ### Phase 8 — Shader Pipeline
 
-Status: `[x]` 8a + 8b + 8c shipped 2026-04-17. Real third-party shader-pack loading remains the Phase 8 stretch goal — see §13.
+Status: `[x]` 8a + 8b + 8c shipped 2026-04-17. `[~]` Shader-pack loading: discovery + selection scaffold shipped 2026-05-21 (`17f243a`); full gbuffer/composite/final execution + uniform feed + shadow pass still open — see §13. `[x]` HDR + Bloom shipped 2026-05-21 (`74e468d`, `5a924c6`).
+
+**HDR pipeline (2026-05-21)**:
+- `RenderTargetManager` HDR mode: when `enableHDRPipeline` is on, scene + ping color textures allocate as `GL_RGBA16F` instead of RGBA8.
+- `HDRTonemapPass` runs first in pipeline — four operators (ACES filmic, Reinhard, Uncharted 2/Hable, linear) + user-tunable exposure multiplier.
+- Tonemap → LDR-clamped values stored in HDR storage so downstream passes (upscaler, RCAS, FXAA, vignette) don't need HDR awareness.
+- `BloomPass` runs even earlier (before tonemap) so bright-pass shader sees HDR luminance >1.0. Three stages: bright-pass quadratic weight, separable 9-tap Gaussian blur (half-res ping-pong), additive composite.
+
+**Shader-pack scaffold (2026-05-21)**:
+- `ShaderPack` abstract + Directory/Zip subclasses (auto-detects nested zip layouts).
+- `ShaderProgramId` catalogues OF/Iris standard `.vsh`/`.fsh` filenames.
+- `ShaderPackManager` discovers `<.minecraft>/shaderpacks/`, exposes name list, activates by config.
+- GUI: Pack cycle + Rescan rows (only shown when LDOG shaders are on).
+- **NOT in v1**: gbuffer hooking, composite execution, uniform feed (cameraPosition, projectionMatrix, sunPosition...), shadow pass. Activating a pack is log-only today. Documented as the gating prereq for v1.0-beta.
 
 **8a — Framework**: `PostProcessPass`, `PostProcessContext`, `PostProcessPipeline`, `passes/NoOpPass`. Mixin lifecycle hook on `EntityRenderer.renderWorldPass` (RETURN). `RenderTargetManager` owns scaled GL_RGBA8 color tex + GL_DEPTH24_STENCIL8 depth RBO scene target + color-only ping-pong. `ensure(baseW, baseH, scale)` reallocates on dim/scale change.
 
@@ -257,8 +288,8 @@ Stages (each independently shippable):
 - **9c.1** `[x]` Jittered-projection TAA MVP — `JitterHelper` (Halton 2,3) + `TAAAccumulatePass` with neighborhood-clamped history blend. **Bug 1**: jitter injection targeted `setupCameraTransform` but `renderWorldPass` overwrites projection afterward (sky + terrain `gluPerspective` calls) — jitter was a no-op. Fix: inject at `renderWorldPass` on both ordinals. User-verified post-fix.
 - **9c.2** `[x]` Camera motion vectors — `CameraState` singleton captures jittered viewProj + invCurViewProj + prevViewProj at the terrain-projection injection point (AFTER jitter). Scene depth attachment moved from RBO to `GL_DEPTH24_STENCIL8` texture (GL_NEAREST) for shader sampling. TAA shader reconstructs world-space from NDC + depth + invCurViewProj, reprojects via prevViewProj. Disocclusion check: reprojected UV outside [0,1] → skip history. **Bug 2**: initial impl captured un-jittered matrices while history stored jittered pixels — "drunk/swimming" visuals. Fix: capture AFTER `applyJitter()` so cur/prev matrices match history. User-verified post-fix.
 - **9c.3-A** `[x]` Entity reactive mask (Option A from §10) — MRT + per-attachment `colorMaski`: sceneFbo gets a COLOR1 R8 attachment always-allocated; binding mixin `glDrawBuffers` to [COLOR0, COLOR1] and `glColorMaski(1, false)` around non-entity draws; `MixinRenderGlobal` opens `colorMaski(1, true)` around `renderEntities` HEAD/RETURN. Legacy fixed-function replicates `gl_FragColor` across attachments so no custom entity shader needed. TAA shader drops history weight on flagged pixels. Kills moving-mob ghost trails. User-verified.
-- **9c.3-C** `[defer]` Full per-entity MV (Option C) — see §10 for the day-by-day plan. ~1 week focused.
-- **9c.4** `[defer]` FSR2-style reconstruction kernel. Requires Option C first.
+- **9c.3-C** `[defer]` Full per-entity MV (Option C) — see §10 for the day-by-day plan. ~1 week focused. Confirmed next session's work 2026-05-21; HDR pipeline shipped today lays the RGBA16F framebuffer foundation Option C + FSR 2 can consume.
+- **9c.4** `[defer]` FSR2-style reconstruction kernel. Requires Option C first. Per master plan §9 timeline: 2-4 weeks focused after Option C lands. Substantial new shader work — half-shipped is worse than not shipped, so deliberately deferred to a dedicated session.
 - **9c.5** `[defer]` Reactive mask polish + alpha-cutout classification.
 
 ### Phase 10 — Borderless Windowed Fullscreen
@@ -527,19 +558,19 @@ Stop at Option A if: user accepts reactive-mask quality; project priority shifts
 
 Captured 2026-04-18. Sorted by effort × user-visibility.
 
-**Tier A — high user value, clean hooks**:
-- `[ ]` Always-show advanced item tooltips (Forge `ItemTooltipEvent` listener appends vanilla-F3+H details when toggle on).
-- `[ ]` Reduce/disable nausea distortion (EntityRenderer portal/nausea screen warp — careful not to break gameplay portal counter).
-- `[ ]` World time speed multiplier (clientside-only, mixin `World.getWorldTime` client-side — risky, many client systems read it).
-- `[ ]` Ping HUD (multiplayer) — `NetHandlerPlayClient.getPlayerInfo(...).getResponseTime()`. 6th Info HUD row.
-- `[ ]` Day counter HUD — `floor(world.getTotalWorldTime() / 24000)`. 7th Info HUD row.
-- `[ ]` CPS counter — track InputUpdate ticks/second.
+**Tier A — high user value, clean hooks** (all shipped 2026-05-21 except world time):
+- `[x]` Advanced item tooltips toggle — `AdvancedTooltipHandler` ticks the `gameSettings.advancedItemTooltips` flag, restoring on disable.
+- `[x]` Disable nausea distortion — `MixinEntityRendererNausea` `@ModifyVariable` zeroes the interpolated portal-time local in `renderWorldPass`. Gameplay portal counter untouched.
+- `[defer]` World time speed multiplier — risky (many client systems read `getWorldTime`), deferred.
+- `[x]` Ping HUD (multiplayer) — `mc.getConnection().getPlayerInfo(...).getResponseTime()`, color-coded by latency.
+- `[x]` Day counter HUD — `world.getWorldTime() / 24000`.
+- `[x]` CPS counter — `MouseEvent` press-edge tracking, 1-second sliding window for left + right.
 
-**Tier B — entangled vanilla method, needs profiler-section ordinal injection or careful splitting**:
-- `[ ]` Hide armor bar (`GuiIngame.renderPlayerStats`, "armor" profiler section).
-- `[ ]` Hide hunger bar (same method, "food" section).
-- `[ ]` Hide air bar (same method, "air" section).
-- `[ ]` Hide boss health bars (`GuiBossOverlay.renderBossHealth`; mixin call site in `renderGameOverlay` at INVOKE target).
+**Tier B — HUD element hides** (all shipped 2026-05-21 via `RenderGameOverlayEvent.Pre` cancel, no mixins needed):
+- `[x]` Hide armor bar.
+- `[x]` Hide hunger bar.
+- `[x]` Hide air bar.
+- `[x]` Hide boss health bars (BOSSHEALTH + BOSSINFO).
 
 **Tier C — invasive / deferred**:
 - `[ ]` Smart Animations — skip ticking texture animations for sprites not currently visible (hook `TextureAtlasSprite.updateAnimation` + per-sprite visibility tracking).
@@ -631,6 +662,82 @@ Catalogued 2026-04-18 by walking the OF 1.12.2 HD U G5 jar. Each is something OF
 
 ---
 
+## 13.5. Testing Plan & Checklist
+
+User-driven test checklist for the 2026-05-21 batch of features. Build (`./gradlew build`), drop the jar into a real MC 1.12.2+Forge install (gradle dev mode crashes when OF is present — see §12 Phase C4), launch, work through the boxes. Tick as you go; file findings in `docs/PHASE_9B_VALIDATION.md` for any upscaler-quality regression.
+
+**Smoke (5 min)** — start in a flat creative world, verify build loads + opens settings GUI:
+- [ ] Mod loads with no `Critical problem` or `Error` lines in `latest.log`.
+- [ ] LDOG settings GUI opens from Options screen.
+- [ ] LDOG settings GUI opens from Video Settings screen.
+- [ ] F3+T resource reload doesn't crash or leave stale state.
+
+**Phase 6c colors** — drop a pack containing `assets/minecraft/optifine/color.properties` into `resourcepacks/` with these lines, reload, verify:
+```
+water.6=0xFF0000        # red water in swamps (biome id 6)
+potion.regeneration=0x00FF00
+dye.blue=0xFF00FF       # blue dye renders magenta
+```
+- [ ] Swamp water visibly red.
+- [ ] Regen potion bottle visibly green.
+- [ ] Blue dye item icon + sheep wool visibly magenta.
+- [ ] No override = vanilla color (test by removing keys).
+
+**Tier A QoL**:
+- [ ] Adv. Tooltips Always: hover an item with NBT data — debug-style details show without F3+H.
+- [ ] No Nausea Distort: drink a Nausea II potion — screen does NOT swirl. Standing in a nether portal still ticks the gameplay timer (you go to nether eventually).
+- [ ] Ping HUD: enable in multiplayer — green/yellow/red ms reading appears, hides in SP.
+- [ ] Day Counter HUD: enable, sleep through a day — number increments.
+- [ ] CPS HUD: enable, click rapidly — left/right counters tick up and decay.
+
+**Tier B HUD hides**:
+- [ ] Hide Armor Bar: equip armor — bar gone.
+- [ ] Hide Hunger Bar: bar gone.
+- [ ] Hide Air Bar: submerge underwater — air bubbles never appear.
+- [ ] Hide Boss Health: spawn a Wither — boss bar gone (gameplay unaffected).
+
+**Phase C3 font polish**:
+- [ ] TTF Bold + Italic: enable both, change family — glyphs render bold-italic where AWT supports it.
+- [ ] LCD Subpixel: enable — glyph edges visibly sharper on horizontal LCD; check for red/blue fringe (toggle off if present).
+
+**Phase C4 OF Interop tooltips** — only meaningful with OptiFine installed in a production install:
+- [ ] Hover each of the 7 OF Interop rows — tooltip body appears with Auto/LDOG/OF semantics.
+- [ ] Shaders row tooltip notes "scaffold-only" caveat.
+
+**Phase 1 perf** — useful via F3:
+- [ ] `skipEmptyChunkSections` ON: ground level + sky chunks — F3 shows lower rebuild ms.
+- [ ] `particleSpawnsPerTickLimit = 200`: detonate TNT in a flat area — particle count caps at ~200/tick, no FPS spike.
+
+**HDR pipeline + Bloom**:
+- [ ] Enable Post Pipeline + HDR Pipeline + Bloom — log line "HDR tonemap shader compiled OK" + "Bloom shaders compiled OK".
+- [ ] Bright pixels (sun, torch, lava) bloom softly. Threshold slider toggles glow extent.
+- [ ] Switch tonemap operator (ACES → Reinhard → Uncharted2 → Linear) — visible contrast/curve change.
+- [ ] Exposure slider — overall brightness shifts.
+- [ ] Linear operator + exposure > 2.0 — visible LDR clipping (sanity check: shows tonemap is actually mapping).
+- [ ] Toggle HDR off + on — no FBO leaks (target reallocates cleanly per log).
+
+**Shader-pack scaffold**:
+- [ ] `<.minecraft>/shaderpacks/` exists after first launch.
+- [ ] Drop a `.zip` or extracted folder containing `shaders/shaders.properties` — Pack cycle button surfaces it.
+- [ ] Activate — log line "Activated shader pack 'name'" appears.
+- [ ] Activate a pack with no gbuffer programs — WARN log "no standard gbuffer programs found".
+
+**Regression sanity** — features shipped earlier should still work:
+- [ ] CTM glass + bookshelf textures wrap correctly.
+- [ ] Emissive ores glow.
+- [ ] Custom sky renders in `optifine/sky/world0/` pack.
+- [ ] Borderless windowed activates after restart with `borderlessFullscreen=true`.
+- [ ] Dynamic lights from held torch make a dark room visible.
+- [ ] FSR1 / FSR1-Quality upscaler at 0.75 scale produces a visibly upscaled-but-sharp image.
+- [ ] TAA + entity reactive mask kills moving-mob ghost trails.
+
+**Unit tests**:
+- [ ] `./gradlew test` — all 50 tests pass.
+
+If any box fails: capture `latest.log` + a screenshot + the toggles that were on, drop it into the findings log in `docs/PHASE_9B_VALIDATION.md` §7.
+
+---
+
 ## 14. Version Milestones
 
 | Version | Phase | What Users Get |
@@ -640,8 +747,9 @@ Catalogued 2026-04-18 by walking the OF 1.12.2 HD U G5 jar. Each is something OF
 | `v0.4.0-alpha` | Phase 2-4 | HD textures, CTM, emissive textures |
 | `v0.5.0-alpha` | Phase 5 | Dynamic lights, lighting customization |
 | `v0.6.0-alpha` | Phase 6 | Full resource pack feature parity |
-| (current) | Phase 7-10 + C3-C4 foundation | AA/AF, shader pipeline, FSR1/RCAS, TAA MVP, borderless, smooth font, OF interop foundation |
-| `v1.0.0-beta` | Phase 8 stretch | Real shader pack loading — OptiFine fully replaceable |
+| (2026-04-18) | Phase 7-10 + C3-C4 foundation | AA/AF, shader pipeline, FSR1/RCAS, TAA MVP, borderless, smooth font, OF interop foundation |
+| (current, 2026-05-21) | + HDR + Bloom + Phase 6c colors + Tier A/B + shader-pack scaffold | HDR pipeline, bloom, biome/potion/dye colors, full QoL toggles + HUD hides, shader-pack discovery (compile + execute still ahead) |
+| `v1.0.0-beta` | Phase 8 stretch + 9c.3-C + 9c.4 | Real shader pack execution + per-entity MV + FSR 2 reconstruction — OptiFine fully replaceable |
 
 50 unit tests, all passing.
 
@@ -685,3 +793,10 @@ Policy: external projects are design references only. No code copying. Implement
 | `e25d79d` | Atmosphere section (2026-04-18) |
 | `39fe2a2`, `9a258bc` | Comfort/Cinematic toggles (2026-04-18) |
 | `374789c` | Info HUD overlays (2026-04-18) |
+| `25665b1` | Phase 6c per-biome water + potion + dye color overrides (2026-05-21) |
+| `16a5115` | Tier A QoL + Tier B HUD element hides (2026-05-21) |
+| `5f0c59b` | C3 TTF bold/italic/subpixel + C4 OF interop tooltips (2026-05-21) |
+| `8b29d26` | Phase 1 A2 skip-empty-sections + C2 particle cap + 9b validation doc (2026-05-21) |
+| `74e468d` | HDR pipeline (RGBA16F + ACES/Reinhard/Uncharted2/Linear tonemap) (2026-05-21) |
+| `5a924c6` | HDR bloom pass (bright-extract + 9-tap Gaussian + composite) (2026-05-21) |
+| `17f243a` | Shader-pack discovery + selection scaffold (2026-05-21) |
