@@ -219,18 +219,107 @@ public class GuiLDOGSettings extends GuiScreen {
         this.parentScreen = parentScreen;
     }
 
+    /**
+     * Top-level grouping of settings rows into tabs. Each tab gets its own
+     * builder method; the active tab is the only one whose rows populate the
+     * scrollable settings list.
+     *
+     * <p>Order here = order on the tab strip (left to right).
+     */
+    public enum Tab {
+        GENERAL("General"),
+        RENDERING("Rendering"),
+        VISUAL("Visual"),
+        FEATURES("Features"),
+        SHADERS("Shaders"),
+        UI("UI / HUD");
+
+        public final String label;
+        Tab(String label) { this.label = label; }
+    }
+
+    /** Tab buttons live in this id range so they don't collide with content. */
+    private static final int BTN_TAB_BASE = 1000;
+    /** Shader pack rows in the Shaders tab live in this id range. */
+    private static final int BTN_SHADER_ROW_BASE = 1100;
+    /** Special "(none)" pack row id. */
+    private static final int BTN_SHADER_NONE = 1099;
+    /** Open-folder button in the Shaders tab. */
+    private static final int BTN_SHADER_OPEN_FOLDER = 1090;
+    /** Rescan button in the Shaders tab. */
+    private static final int BTN_SHADER_RESCAN_TAB = 1091;
+
+    /** Currently visible tab. Static so it survives a child-screen round-trip. */
+    private static Tab activeTab = Tab.GENERAL;
+    /**
+     * Set by a tab-click action; consumed at the next updateScreen tick.
+     * Deferring the re-init keeps us from clearing buttonList while
+     * vanilla {@code GuiScreen.mouseClicked} is iterating it.
+     */
+    private Tab pendingTabSwitch;
+
     @Override
     public void initGui() {
         this.buttonList.clear();
+        buttonTooltips.clear();
+        registerTooltips();
+
+        // Tab strip across the top (below the title at y=8). 22px tall row.
+        buildTabStrip();
+
+        // Shaders tab is special — it doesn't use the settings list at all,
+        // it embeds a custom pack-list panel via buildShadersTab below.
+        if (activeTab == Tab.SHADERS) {
+            settingsList = null;  // suppress click/draw routing to a stale list
+            buildShadersTab();
+            return;
+        }
+        // Drop any stale shader panel left over from a prior Shaders-tab visit.
+        shaderPackList = null;
 
         int w = 150;
         int h = 20;
 
-        // Create scrollable list (area between title and Done button)
-        settingsList = new GuiLDOGSettingsList(this.mc, this.width, this.height, 28, this.height - 32);
-        buttonTooltips.clear();
-        registerTooltips();
+        // Scrollable list lives below the tab strip and above the Done button.
+        // Tab strip occupies y=24..46, so list starts at y=50.
+        settingsList = new GuiLDOGSettingsList(this.mc, this.width, this.height, 50, this.height - 32);
 
+        // Populate sections — each is gated by the active tab so only the
+        // current tab's content actually lands in the list. This keeps the
+        // file flow contiguous (no need to physically reorganize hundreds of
+        // lines) while still presenting one tab at a time.
+        populateForActiveTab(w, h);
+    }
+
+    /**
+     * Draws the tab strip across the top of the screen. Each tab is a button
+     * with id = BTN_TAB_BASE + ordinal(). Active tab is highlighted yellow.
+     */
+    private void buildTabStrip() {
+        Tab[] tabs = Tab.values();
+        int totalPadding = 8;
+        int strip = this.width - totalPadding * 2;
+        int btnW = Math.min(80, strip / tabs.length);
+        int btnH = 20;
+        int totalW = btnW * tabs.length;
+        int x0 = (this.width - totalW) / 2;
+        int y = 24;
+        for (int i = 0; i < tabs.length; i++) {
+            Tab tab = tabs[i];
+            String label = (tab == activeTab ? "§e§n" : "§f") + tab.label;
+            this.buttonList.add(new GuiButton(BTN_TAB_BASE + i,
+                x0 + i * btnW, y, btnW, btnH, label));
+        }
+    }
+
+    /**
+     * Adds the active tab's sections to the settings list. Each section is
+     * wrapped in a single-arm check against {@link #activeTab} so only one
+     * tab's worth of rows actually populates the list per call.
+     */
+    private void populateForActiveTab(int w, int h) {
+        // ==== GENERAL tab: LDOG Preset + Performance + FPS Management ====
+        if (activeTab == Tab.GENERAL) {
         // -- Global Preset --
         settingsList.addHeaderRow("LDOG Preset");
         settingsList.addButtonRow(
@@ -284,9 +373,13 @@ public class GuiLDOGSettings extends GuiScreen {
             new GuiButton(BTN_AFK_FPS, 0, 0, w, h,
                 valLabel("AFK FPS", LDOGConfig.afkFpsLimit)));
 
+        } // end GENERAL
+
+        // ==== RENDERING tab: Anti-aliasing + Post-Process + HDR + Bloom ====
+        if (activeTab == Tab.RENDERING) {
         // -- Anti-aliasing / Filtering --
-        // AF can show faint block-edge bleed at distance (atlas sampling across tile borders
-        // at high mip levels — fixed by extended-border mipmaps, tracked as Phase 7c).
+        // Atlas sampling across tile borders at high mip levels can show faint
+        // block-edge bleed when AF is on — Extended Border Mipmaps fixes it.
         // MSAA can show faint rasterization edge lines on distant chunk seams.
         settingsList.addHeaderRow("Anti-aliasing (Experimental)");
         settingsList.addButtonRow(
@@ -367,6 +460,13 @@ public class GuiLDOGSettings extends GuiScreen {
             new GuiButton(BTN_BLOOM_INTENSITY, 0, 0, w, h,
                 multLabel("Bloom Strength", LDOGConfig.bloomIntensity)));
 
+        } // end RENDERING
+
+        // ==== VISUAL tab (part 1 — Atmosphere) ====
+        // VISUAL splits into two if blocks because the UI sections live
+        // between Atmosphere and Visual in the file. Functionally identical
+        // to one contiguous block; just two checks instead of one.
+        if (activeTab == Tab.VISUAL) {
         // -- Atmosphere (clouds / fog / sky / weather / biomes) --
         settingsList.addHeaderRow("Atmosphere");
         settingsList.addButtonRow(
@@ -389,6 +489,10 @@ public class GuiLDOGSettings extends GuiScreen {
                 biomeBlendLabel(LDOGConfig.biomeBlendRadius)),
             null);
 
+        } // end VISUAL (part 1)
+
+        // ==== UI tab: Display + Comfort + Info HUD + Hide HUD + Font ====
+        if (activeTab == Tab.UI) {
         // -- Display (window mode) --
         // Session-scoped toggles — set once and (mostly) forget.
         settingsList.addHeaderRow("Display");
@@ -503,6 +607,10 @@ public class GuiLDOGSettings extends GuiScreen {
                 toggleLabel("LCD Subpixel", LDOGConfig.ttfSubpixel)),
             null);
 
+        } // end UI
+
+        // ==== VISUAL tab (part 2 — Visual + Dynamic Lights + Light Cust.) ====
+        if (activeTab == Tab.VISUAL) {
         // -- Visual --
         currentPresetIndex = detectCurrentPreset();
         settingsList.addHeaderRow("Visual");
@@ -579,6 +687,10 @@ public class GuiLDOGSettings extends GuiScreen {
                 toggleLabel("HDR Tonemapping", LDOGConfig.enableHDR)),
             null);
 
+        } // end VISUAL (part 2)
+
+        // ==== FEATURES tab: Pack feature toggles + OF Interop ====
+        if (activeTab == Tab.FEATURES) {
         // -- Features --
         String featureNote = OptiFineCompat.isOptiFineLoaded()
             ? "Features (OptiFine handles these)"
@@ -598,20 +710,9 @@ public class GuiLDOGSettings extends GuiScreen {
                 LDOGConfig.enableHDTextures, OptiFineCompat.shouldHandleHDTextures()),
             makeFeatureButton(BTN_SHADERS, w, h, "Shaders",
                 LDOGConfig.enableShaders, OptiFineCompat.shouldHandleShaders()));
-        // Shader pack picker — opens a dedicated list-style picker screen.
-        // Only shown when LDOG's shader path is on (the master toggle above);
-        // otherwise the row is hidden so it doesn't suggest activation that
-        // wouldn't take effect.
-        if (LDOGConfig.enableShaders) {
-            String activeName = com.limitlessdev.ldog.render.shaderpack
-                .ShaderPackManager.INSTANCE.getActiveName();
-            settingsList.addButtonRow(
-                new GuiButton(BTN_SHADER_PACK, 0, 0, w, h,
-                    "Shader Pack: §a" + activeName + " §7..."),
-                null);
-        }
+        // Shader-pack picker moved to its own Shaders tab — see buildShadersTab.
 
-        // -- OptiFine Interop (Phase C4) — only shown when OF is detected --
+        // -- OptiFine Interop — only shown when OF is detected --
         if (OptiFineCompat.isOptiFineLoaded()) {
             settingsList.addHeaderRow("OptiFine Interop");
             settingsList.addButtonRow(
@@ -642,31 +743,98 @@ public class GuiLDOGSettings extends GuiScreen {
                 null);
         }
 
+        } // end FEATURES
+
         // Done button (fixed at bottom, outside scrollable area)
+        addDoneButton(h);
+    }
+
+    /**
+     * Done button is shared by every tab (including the special Shaders tab)
+     * so we extract it from populateForActiveTab. Anchors to the bottom.
+     */
+    private void addDoneButton(int h) {
         this.buttonList.add(new GuiButton(BTN_DONE,
             this.width / 2 - 100, this.height - 27, 200, h,
             I18n.format("gui.done")));
     }
 
+    // ====================================================================
+    // Shaders tab — dedicated pack-list panel. Doesn't use settingsList at
+    // all; embeds {@link shaderPackList} directly in the content area.
+    // ====================================================================
+
+    /** Embedded list panel — only allocated while the Shaders tab is active. */
+    private com.limitlessdev.ldog.gui.GuiShaderPackList shaderPackList;
+
+    private void buildShadersTab() {
+        // Force a rescan every time the tab opens so users see freshly-dropped
+        // packs without needing to hit Rescan manually.
+        com.limitlessdev.ldog.render.shaderpack.ShaderPackManager.INSTANCE.rescan();
+
+        // Pack list panel — same screen area the settings list usually uses.
+        shaderPackList = new com.limitlessdev.ldog.gui.GuiShaderPackList(
+            this.mc, this.width, this.height, 50, this.height - 56);
+
+        // Action buttons row above the Done button. Open Folder pops the OS
+        // file browser; Rescan refreshes the pack list from disk.
+        int btnW = 100;
+        int btnH = 20;
+        int spacing = 4;
+        int totalW = btnW * 2 + spacing;
+        int x0 = (this.width - totalW) / 2;
+        int y = this.height - 50;
+        this.buttonList.add(new GuiButton(BTN_SHADER_OPEN_FOLDER,
+            x0, y, btnW, btnH, "Open Folder"));
+        this.buttonList.add(new GuiButton(BTN_SHADER_RESCAN_TAB,
+            x0 + btnW + spacing, y, btnW, btnH, "Rescan"));
+
+        addDoneButton(20);
+    }
+
+    @Override
+    public void updateScreen() {
+        super.updateScreen();
+        // Apply queued tab switches between input events so we never re-init
+        // mid-click. Cheap when nothing's pending.
+        if (pendingTabSwitch != null && pendingTabSwitch != activeTab) {
+            activeTab = pendingTabSwitch;
+            pendingTabSwitch = null;
+            this.initGui();
+        }
+    }
+
     @Override
     public void handleMouseInput() throws IOException {
         super.handleMouseInput();
-        settingsList.handleMouseInput();
+        // Shaders tab uses an embedded pack list instead of settingsList.
+        if (activeTab == Tab.SHADERS) {
+            if (shaderPackList != null) shaderPackList.handleMouseInput();
+        } else if (settingsList != null) {
+            settingsList.handleMouseInput();
+        }
     }
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
         super.mouseClicked(mouseX, mouseY, mouseButton);
-        settingsList.mouseClicked(mouseX, mouseY, mouseButton);
-
-        // Handle button clicks from the scrollable list
-        handleListButtonClick(mouseX, mouseY);
+        if (activeTab == Tab.SHADERS) {
+            if (shaderPackList != null) shaderPackList.mouseClicked(mouseX, mouseY, mouseButton);
+        } else if (settingsList != null) {
+            settingsList.mouseClicked(mouseX, mouseY, mouseButton);
+            // Handle button clicks from the scrollable list
+            handleListButtonClick(mouseX, mouseY);
+        }
     }
 
     @Override
     protected void mouseReleased(int mouseX, int mouseY, int state) {
         super.mouseReleased(mouseX, mouseY, state);
-        settingsList.mouseReleased(mouseX, mouseY, state);
+        if (activeTab == Tab.SHADERS) {
+            if (shaderPackList != null) shaderPackList.mouseReleased(mouseX, mouseY, state);
+        } else if (settingsList != null) {
+            settingsList.mouseReleased(mouseX, mouseY, state);
+        }
     }
 
     private void handleListButtonClick(int mouseX, int mouseY) {
@@ -695,6 +863,34 @@ public class GuiLDOGSettings extends GuiScreen {
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
         if (!button.enabled) return;
+
+        // Tab strip clicks: queue the switch. The actual re-init happens at
+        // the next updateScreen tick so we don't clear buttonList while
+        // vanilla GuiScreen.mouseClicked is iterating it.
+        if (button.id >= BTN_TAB_BASE && button.id < BTN_TAB_BASE + Tab.values().length) {
+            Tab next = Tab.values()[button.id - BTN_TAB_BASE];
+            if (next != activeTab) pendingTabSwitch = next;
+            return;
+        }
+
+        // Shaders-tab action buttons.
+        if (button.id == BTN_SHADER_OPEN_FOLDER) {
+            try {
+                java.io.File mcDir = this.mc.gameDir;
+                java.io.File packs = new java.io.File(mcDir, "shaderpacks");
+                if (!packs.exists()) packs.mkdirs();
+                java.awt.Desktop.getDesktop().open(packs);
+            } catch (Throwable t) {
+                com.limitlessdev.ldog.LDOGMod.LOGGER.warn(
+                    "LDOG: Could not open shaderpacks folder via Desktop: {}", t.toString());
+            }
+            return;
+        }
+        if (button.id == BTN_SHADER_RESCAN_TAB) {
+            com.limitlessdev.ldog.render.shaderpack.ShaderPackManager.INSTANCE.rescan();
+            this.initGui();
+            return;
+        }
 
         switch (button.id) {
             case BTN_DONE:
@@ -1359,13 +1555,26 @@ public class GuiLDOGSettings extends GuiScreen {
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         this.drawDefaultBackground();
-        settingsList.drawScreen(mouseX, mouseY, partialTicks);
+        // Pick the right content panel for the active tab.
+        if (activeTab == Tab.SHADERS) {
+            if (shaderPackList != null) shaderPackList.drawScreen(mouseX, mouseY, partialTicks);
+            // Empty-state hint when no packs are present.
+            if (shaderPackList != null && shaderPackList.discoveredCount() == 0) {
+                this.drawCenteredString(this.fontRenderer,
+                    "§7No packs found. Use Open Folder, drop one in, then Rescan.",
+                    this.width / 2, 50, 0xAAAAAA);
+            }
+        } else if (settingsList != null) {
+            settingsList.drawScreen(mouseX, mouseY, partialTicks);
+        }
         this.drawCenteredString(this.fontRenderer, "LDOG Settings", this.width / 2, 8, 0xFFFFFF);
         super.drawScreen(mouseX, mouseY, partialTicks);
         drawHoveredTooltip(mouseX, mouseY);
     }
 
     private void drawHoveredTooltip(int mouseX, int mouseY) {
+        // Settings list isn't active on the Shaders tab — no row tooltips to draw.
+        if (settingsList == null) return;
         // Only show when the cursor is inside the list's visible area (above/below
         // the scroll region, buttons would be clipped but still "hovered" by coords).
         if (mouseY < settingsList.top || mouseY >= settingsList.bottom) return;
