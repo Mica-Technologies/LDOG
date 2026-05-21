@@ -60,6 +60,17 @@ public final class TTFFontRasterizer {
      */
     public static Result rasterize(String familyName, boolean bold, boolean italic,
                                    int fontSize, int cellSize) {
+        return rasterize(familyName, bold, italic, fontSize, cellSize, false);
+    }
+
+    /**
+     * Subpixel-capable variant. When {@code subpixel} is true, uses
+     * {@code TEXT_ANTIALIAS_LCD_HRGB} for sharper glyph edges on
+     * horizontal-RGB-stripe LCDs at the cost of potential color fringing on
+     * rotated panels.
+     */
+    public static Result rasterize(String familyName, boolean bold, boolean italic,
+                                   int fontSize, int cellSize, boolean subpixel) {
         int style = (bold ? Font.BOLD : 0) | (italic ? Font.ITALIC : 0);
         Font font = new Font(familyName, style, fontSize);
         int atlasSize = 16 * cellSize;
@@ -75,7 +86,8 @@ public final class TTFFontRasterizer {
             g.setComposite(AlphaComposite.SrcOver);
 
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
-                RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+                subpixel ? RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB
+                         : RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
             g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,
                 RenderingHints.VALUE_FRACTIONALMETRICS_ON);
             g.setRenderingHint(RenderingHints.KEY_RENDERING,

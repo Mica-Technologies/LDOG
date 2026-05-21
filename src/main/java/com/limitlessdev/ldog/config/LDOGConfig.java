@@ -160,6 +160,16 @@ public class LDOGConfig {
     public static boolean ttfItalic = false;
 
     @Config.Comment({
+        "Enable LCD subpixel rendering for the TTF rasterizer.",
+        "Uses Java AWT's TEXT_ANTIALIAS_LCD_HRGB hint instead of plain",
+        "grayscale antialiasing — yields visibly sharper glyph edges on",
+        "horizontal-RGB-stripe LCDs (most desktop monitors), but causes",
+        "colored fringing on rotated displays or atypical subpixel layouts.",
+        "Toggle off if you see red/blue tint at glyph edges."
+    })
+    public static boolean ttfSubpixel = false;
+
+    @Config.Comment({
         "AWT point size for TTF rasterization. Roughly 70-80% of ttfCellSize",
         "gives good results — larger values risk clipping ascenders/descenders,",
         "smaller values leave empty padding inside each cell."

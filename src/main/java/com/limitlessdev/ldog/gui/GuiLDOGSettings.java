@@ -141,6 +141,9 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_TTF_FAMILY = 95;
     private static final int BTN_TTF_SIZE = 96;
     private static final int BTN_FONT_SHADOW = 97;
+    private static final int BTN_TTF_BOLD     = 98;
+    private static final int BTN_TTF_ITALIC   = 99;
+    private static final int BTN_TTF_SUBPIXEL = 580;
     private static final int BTN_PIPELINE = 100;
     private static final int BTN_PIPELINE_SCALE = 101;
     private static final int BTN_PIPELINE_UPSCALER = 102;
@@ -462,6 +465,15 @@ public class GuiLDOGSettings extends GuiScreen {
                 fontFamilyLabel(LDOGConfig.ttfFontFamily)),
             new GuiButton(BTN_FONT_SHADOW, 0, 0, w, h,
                 toggleLabel("Drop Shadows", LDOGConfig.fontDropShadows)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_TTF_BOLD, 0, 0, w, h,
+                toggleLabel("TTF Bold", LDOGConfig.ttfBold)),
+            new GuiButton(BTN_TTF_ITALIC, 0, 0, w, h,
+                toggleLabel("TTF Italic", LDOGConfig.ttfItalic)));
+        settingsList.addButtonRow(
+            new GuiButton(BTN_TTF_SUBPIXEL, 0, 0, w, h,
+                toggleLabel("LCD Subpixel", LDOGConfig.ttfSubpixel)),
+            null);
 
         // -- Visual --
         currentPresetIndex = detectCurrentPreset();
@@ -1241,6 +1253,21 @@ public class GuiLDOGSettings extends GuiScreen {
                 button.displayString = valLabel("TTF Size", LDOGConfig.ttfFontSize);
                 fontSettingsChanged = true;
                 break;
+            case BTN_TTF_BOLD:
+                LDOGConfig.ttfBold = !LDOGConfig.ttfBold;
+                button.displayString = toggleLabel("TTF Bold", LDOGConfig.ttfBold);
+                fontSettingsChanged = true;
+                break;
+            case BTN_TTF_ITALIC:
+                LDOGConfig.ttfItalic = !LDOGConfig.ttfItalic;
+                button.displayString = toggleLabel("TTF Italic", LDOGConfig.ttfItalic);
+                fontSettingsChanged = true;
+                break;
+            case BTN_TTF_SUBPIXEL:
+                LDOGConfig.ttfSubpixel = !LDOGConfig.ttfSubpixel;
+                button.displayString = toggleLabel("LCD Subpixel", LDOGConfig.ttfSubpixel);
+                fontSettingsChanged = true;
+                break;
         }
     }
 
@@ -1542,6 +1569,49 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a762.00:\u00a77 very aggressive — may show halos on hard edges.",
             "",
             "\u00a77Live-adjustable. Only applies when Upscaler is FSR1.");
+
+        // -- Phase C4 OF Interop tooltips --
+        String[] interopBody = new String[] {
+            "\u00a77Per-feature override of who handles this when OptiFine",
+            "\u00a77is installed alongside LDOG.",
+            "",
+            "\u00a78Auto:\u00a77 legacy \u2014 defer to OptiFine. Safe default.",
+            "\u00a7aLDOG:\u00a77 reflectively flip OF's matching GameSettings",
+            "\u00a77field off, then run LDOG's impl. Falls back to OF",
+            "\u00a77silently if the probe can't find the field.",
+            "\u00a7eOptiFine:\u00a77 explicitly hand the feature to OF.",
+            "",
+            "\u00a7cOnly meaningful when OF is detected. No effect otherwise."
+        };
+        registerTooltip(BTN_OF_MODE_CTM,
+            joinTooltip("\u00a7eOF Interop \u2014 Connected Textures", interopBody));
+        registerTooltip(BTN_OF_MODE_EMISSIVE,
+            joinTooltip("\u00a7eOF Interop \u2014 Emissive Textures", interopBody));
+        registerTooltip(BTN_OF_MODE_DYNAMIC_LIGHTS,
+            joinTooltip("\u00a7eOF Interop \u2014 Dynamic Lights", interopBody));
+        registerTooltip(BTN_OF_MODE_CUSTOM_SKY,
+            joinTooltip("\u00a7eOF Interop \u2014 Custom Sky", interopBody));
+        registerTooltip(BTN_OF_MODE_HD_TEXTURES,
+            joinTooltip("\u00a7eOF Interop \u2014 HD Textures", interopBody));
+        registerTooltip(BTN_OF_MODE_SMOOTH_FONT,
+            joinTooltip("\u00a7eOF Interop \u2014 Smooth Font", interopBody));
+        registerTooltip(BTN_OF_MODE_SHADERS,
+            "\u00a7eOF Interop \u2014 Shaders",
+            "\u00a77Same Auto / LDOG / OptiFine semantics as the other rows.",
+            "",
+            "\u00a7cNote:\u00a77 LDOG's shader pack support is still",
+            "\u00a77scaffold-only (Phase 8 stretch). Setting this to LDOG",
+            "\u00a77today will disable OF's shaders without a working",
+            "\u00a77replacement \u2014 leave on OptiFine until LDOG's shader",
+            "\u00a77pack loader ships.");
+    }
+
+    /** Helper for OF Interop tooltips: prepend a per-feature title to a shared body. */
+    private static String[] joinTooltip(String title, String... body) {
+        String[] out = new String[body.length + 1];
+        out[0] = title;
+        System.arraycopy(body, 0, out, 1, body.length);
+        return out;
     }
 
     private void saveAndClose() {

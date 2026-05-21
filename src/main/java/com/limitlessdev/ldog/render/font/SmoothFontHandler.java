@@ -146,7 +146,8 @@ public final class SmoothFontHandler implements IResourceManagerReloadListener {
             result = TTFFontRasterizer.rasterize(
                 LDOGConfig.ttfFontFamily,
                 LDOGConfig.ttfBold, LDOGConfig.ttfItalic,
-                LDOGConfig.ttfFontSize, LDOGConfig.ttfCellSize);
+                LDOGConfig.ttfFontSize, LDOGConfig.ttfCellSize,
+                LDOGConfig.ttfSubpixel);
         } catch (Throwable t) {
             LDOGMod.LOGGER.warn("LDOG: TTF rasterization failed: {}", t.toString());
             return false;
