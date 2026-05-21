@@ -11,6 +11,7 @@ import com.limitlessdev.ldog.render.pipeline.passes.FSR2ReconstructionPass;
 import com.limitlessdev.ldog.render.pipeline.passes.HDRTonemapPass;
 import com.limitlessdev.ldog.render.pipeline.passes.LDOGFXAAPass;
 import com.limitlessdev.ldog.render.pipeline.passes.RCASSharpenPass;
+import com.limitlessdev.ldog.render.pipeline.passes.ShaderPackCompositePass;
 import com.limitlessdev.ldog.render.pipeline.passes.TAAAccumulatePass;
 import com.limitlessdev.ldog.render.pipeline.passes.VignettePass;
 
@@ -85,6 +86,11 @@ public final class PostProcessPipeline {
         passes.add(new RCASSharpenPass());
         // FXAA runs late so it smooths any aliasing introduced earlier.
         passes.add(new LDOGFXAAPass());
+        // Shader pack composite chain: runs the user's active pack's
+        // composite + final stages against the post-AA main framebuffer.
+        // Slotted late so it sees the fully-resolved upscaled+TAA'd image.
+        // Skips itself when no pack is active.
+        passes.add(new ShaderPackCompositePass());
         // Vignette runs ABSOLUTE LAST — it's a final-image multiplicative
         // darkening that shouldn't be smoothed by FXAA (FXAA's edge detector
         // would otherwise treat the vignette gradient as an edge to soften).

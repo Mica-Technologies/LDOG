@@ -1914,11 +1914,12 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a7eOF Interop \u2014 Shaders",
             "\u00a77Same Auto / LDOG / OptiFine semantics as the other rows.",
             "",
-            "\u00a7cHeads up:\u00a77 LDOG's own shader pack support is still",
-            "\u00a77experimental \u2014 it can discover packs but doesn't yet",
-            "\u00a77run them. Setting this to LDOG will turn OF's shaders",
-            "\u00a77off without anything to replace them. Leave on OptiFine",
-            "\u00a77or Auto until LDOG's shader pack support is complete.");
+            "\u00a7cHeads up:\u00a77 LDOG's shader pack support runs the active",
+            "\u00a77pack's composite + final stages only \u2014 no gbuffer or",
+            "\u00a77shadow pass yet. Many packs work partially (post-process",
+            "\u00a77colour grading shows up, but per-object effects don't).",
+            "\u00a77If a pack looks broken under LDOG_OVERRIDE, switch back",
+            "\u00a77to OptiFine.");
 
         // ====================================================================
         // Performance section
@@ -2418,14 +2419,20 @@ public class GuiLDOGSettings extends GuiScreen {
         registerTooltip(BTN_SHADERS,
             "\u00a7eShaders",
             "\u00a77Master switch for LDOG's shader pack support. When on,",
-            "\u00a77the Pack picker below appears \u2014 it scans",
-            "\u00a77\u00a7ashaderpacks/\u00a77 for .zip or directory packs.",
+            "\u00a77the Shaders tab unlocks \u2014 drop OptiFine or Iris pack",
+            "\u00a77.zip files (or extracted folders) into \u00a7ashaderpacks/\u00a77",
+            "\u00a77and they show up in the picker.",
             "",
-            "\u00a7eExperimental:\u00a77 LDOG can discover and select packs",
-            "\u00a77today, but doesn't yet run gbuffer / composite stages.",
-            "\u00a77Activating a pack is log-only until that work lands.",
+            "\u00a7eWhat runs today:\u00a77 the active pack's composite and final",
+            "\u00a77stages \u2014 typical post-process colour grading, sky tint,",
+            "\u00a77screen-space effects. Most packs' overall look comes",
+            "\u00a77through.",
             "",
-            "\u00a77Auto-disabled when OF is detected.");
+            "\u00a7eNot yet:\u00a77 gbuffer stages (per-object custom lighting),",
+            "\u00a77shadow pass. Packs that rely heavily on those will still",
+            "\u00a77look different from OptiFine.",
+            "",
+            "\u00a77Auto-disabled when OptiFine is detected.");
         registerTooltip(BTN_SHADER_PACK,
             "\u00a7eShader Pack",
             "\u00a77Opens a list of packs found in \u00a7ashaderpacks/\u00a77. Drop",

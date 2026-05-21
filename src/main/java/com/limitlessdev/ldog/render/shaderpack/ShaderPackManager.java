@@ -48,6 +48,7 @@ public final class ShaderPackManager {
 
     private final List<String> discoveredPackNames = new ArrayList<>();
     private ShaderPack active;
+    private ShaderPackRuntime runtime;
     private File packsDir;
     private boolean dirEnsured;
 
@@ -96,6 +97,15 @@ public final class ShaderPackManager {
     }
 
     /**
+     * The compiled runtime for the active pack, or null when no pack is
+     * active. {@link com.limitlessdev.ldog.render.pipeline.passes.ShaderPackCompositePass}
+     * reads this each frame to decide whether to run the composite chain.
+     */
+    public synchronized ShaderPackRuntime getRuntime() {
+        return runtime;
+    }
+
+    /**
      * Activate the pack matching {@code name}. Pass {@code "(none)"} or null
      * to deactivate. Closes the previously-active pack first.
      */
@@ -130,6 +140,7 @@ public final class ShaderPackManager {
         }
 
         if (active != null) active.close();
+        if (runtime != null) { runtime.dispose(); runtime = null; }
         active = created;
 
         if (!active.hasAnyProgram()) {
@@ -139,9 +150,22 @@ public final class ShaderPackManager {
         } else {
             LDOGMod.LOGGER.info("LDOG: Activated shader pack '{}'", name);
         }
+        // Compile the composite + final stages so the pipeline pass can run
+        // them. Gbuffer-side execution still TBD; this runner handles the
+        // post-process layer.
+        runtime = new ShaderPackRuntime(active);
+        if (runtime.isEmpty()) {
+            // No composite/final to drive — release immediately so the pass
+            // can short-circuit cleanly.
+            runtime = null;
+        }
     }
 
     private void deactivate() {
+        if (runtime != null) {
+            runtime.dispose();
+            runtime = null;
+        }
         if (active != null) {
             String name = active.name;
             active.close();
