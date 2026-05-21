@@ -416,6 +416,18 @@ public class LDOGConfig {
     @Config.Comment("Enable chunk rendering optimizations. Runs even alongside OptiFine.")
     public static boolean enableRenderOptimizations = true;
 
+    @Config.Comment({
+        "Phase 1 backlog A2: skip block iteration on chunk sections whose",
+        "ExtendedBlockStorage is empty (all-air). Vanilla still iterates the",
+        "4096 positions and burns 4096 getBlockState calls even when the",
+        "result is always AIR. Empty sections have no opaque cubes and no",
+        "tile entities, so the visibility graph and TE-collection side",
+        "effects produce identical state with a fast-path return.",
+        "",
+        "Conservative — default on. Off restores vanilla iteration."
+    })
+    public static boolean skipEmptyChunkSections = true;
+
     @Config.Comment("Maximum distance (in blocks) at which entities are rendered. 0 = use vanilla behavior.")
     @Config.RangeInt(min = 0, max = 512)
     public static int entityRenderDistance = 64;
@@ -426,6 +438,15 @@ public class LDOGConfig {
 
     @Config.Comment("Enable frustum culling for particles (skip rendering off-screen particles).")
     public static boolean enableParticleCulling = true;
+
+    @Config.Comment({
+        "Soft cap on particles spawned per client tick. 0 = no cap (vanilla).",
+        "Set lower (e.g. 200) on low-end systems to prevent FPS spikes during",
+        "explosions / mob farms. Vanilla still has a hard 16384-per-layer cap;",
+        "this kicks in earlier to keep frame time predictable."
+    })
+    @Config.RangeInt(min = 0, max = 10000)
+    public static int particleSpawnsPerTickLimit = 0;
 
     // ---- Per-type particle toggles (inspired by OF's per-particle controls) ----
     // Each disables a category of vanilla particles at SPAWN time — no tick or
