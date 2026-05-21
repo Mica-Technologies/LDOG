@@ -1721,6 +1721,547 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a77run them. Setting this to LDOG will turn OF's shaders",
             "\u00a77off without anything to replace them. Leave on OptiFine",
             "\u00a77or Auto until LDOG's shader pack support is complete.");
+
+        // ====================================================================
+        // Performance section
+        // ====================================================================
+        registerTooltip(BTN_RENDER_OPTS,
+            "\u00a7eRendering Optimizations",
+            "\u00a77Master switch for LDOG's chunk-level render speedups:",
+            "\u00a77skipping empty chunk sections, particle frustum culling,",
+            "\u00a77and the entity / tile-entity distance limits below.",
+            "",
+            "\u00a7aTurn on by default \u2014 free FPS, no visual cost.");
+        registerTooltip(BTN_PARTICLE_CULL,
+            "\u00a7eParticle Culling",
+            "\u00a77Skips rendering particles outside your view frustum",
+            "\u00a77(behind the camera, off-screen). Helps a lot during",
+            "\u00a77explosions, mob farms, redstone-dust areas.",
+            "",
+            "\u00a7aSafe to leave on. No visible change.");
+        String[] particleBody = new String[] {
+            "\u00a77Toggle off if a particle category is too noisy for you",
+            "\u00a77or to claw back FPS in heavy effects. Cancels the",
+            "\u00a77particles at spawn, so there's zero per-frame cost",
+            "\u00a77when off.",
+            "",
+            "\u00a77Only filters vanilla particles \u2014 modded particles are",
+            "\u00a77intentionally left alone."
+        };
+        registerTooltip(BTN_PARTICLE_FIREWORK,
+            joinTooltip("\u00a7eFirework Particles", particleBody));
+        registerTooltip(BTN_PARTICLE_PORTAL,
+            joinTooltip("\u00a7ePortal Particles", particleBody));
+        registerTooltip(BTN_PARTICLE_POTION,
+            joinTooltip("\u00a7ePotion Particles", particleBody));
+        registerTooltip(BTN_PARTICLE_WATER,
+            joinTooltip("\u00a7eWater Particles", particleBody));
+        registerTooltip(BTN_PARTICLE_DRIPPING,
+            joinTooltip("\u00a7eDripping Particles", particleBody));
+        registerTooltip(BTN_ENTITY_DIST,
+            "\u00a7eEntity Render Distance",
+            "\u00a77Maximum distance (in blocks) at which entities are drawn.",
+            "\u00a77Entities farther than this get skipped entirely \u2014 saves",
+            "\u00a77significant FPS in heavily-populated areas (farms, raids).",
+            "",
+            "\u00a77Vanilla doesn't have a separate cap for this; it just",
+            "\u00a77ties everything to render distance. 64 blocks is a sweet",
+            "\u00a77spot for most players. 0 = vanilla behavior.");
+        registerTooltip(BTN_TE_DIST,
+            "\u00a7eTile-Entity Render Distance",
+            "\u00a77Maximum distance for tile-entity special renderers \u2014 the",
+            "\u00a77custom render code for things like chests, beacons,",
+            "\u00a77banners, modded multiblocks.",
+            "",
+            "\u00a77Modded TESRs can be expensive. Lower this to recover",
+            "\u00a77FPS in tech / magic packs. 0 = vanilla.");
+        registerTooltip(BTN_ENTITY_LOD,
+            "\u00a7eEntity Level of Detail",
+            "\u00a77Reduces how often distant entities re-render each frame.",
+            "\u00a77Entities 64\u2013128 blocks away render every other frame,",
+            "\u00a77past 128 blocks every fourth. Saves vertex transform",
+            "\u00a77work in scenes with many entities.",
+            "",
+            "\u00a77Visible as mild \"stutter\" on distant mobs if too",
+            "\u00a77aggressive \u2014 sweet spot for most players is just on.");
+        registerTooltip(BTN_PERF_OVERLAY,
+            "\u00a7ePerformance Overlay",
+            "\u00a77Top-left HUD showing LDOG's per-frame stats: FPS,",
+            "\u00a77frame time, memory, culling counts. Cheap to leave on.");
+
+        // ====================================================================
+        // FPS Management
+        // ====================================================================
+        registerTooltip(BTN_FPS_REDUCER,
+            "\u00a7eFPS Reducer",
+            "\u00a77Caps frame rate when the game is unfocused or you've",
+            "\u00a77been AFK. Saves power and stops your fans spinning up",
+            "\u00a77when you're not actually playing.",
+            "",
+            "\u00a7aLeave on. The caps below set the actual values.");
+        registerTooltip(BTN_UNFOCUSED_FPS,
+            "\u00a7eUnfocused FPS Limit",
+            "\u00a77Maximum frame rate when the game window doesn't have",
+            "\u00a77focus (you've alt-tabbed to a browser, etc.).",
+            "",
+            "\u00a7a5\u20131 FPS is fine \u2014 nothing's looking at the screen.");
+        registerTooltip(BTN_AFK_TIMEOUT,
+            "\u00a7eAFK Timeout",
+            "\u00a77Seconds of no mouse/keyboard activity before the AFK",
+            "\u00a77frame cap kicks in. 0 = AFK detection off.",
+            "",
+            "\u00a77Window-focus and AFK are separate \u2014 the AFK cap applies",
+            "\u00a77even when the window has focus.");
+        registerTooltip(BTN_AFK_FPS,
+            "\u00a7eAFK FPS Limit",
+            "\u00a77Maximum frame rate while the AFK timer has elapsed.",
+            "\u00a7715\u201330 keeps the game responsive enough to react if",
+            "\u00a77something happens.");
+
+        // ====================================================================
+        // AA / Texture filtering
+        // ====================================================================
+        registerTooltip(BTN_ANISOTROPIC,
+            "\u00a7eAnisotropic Filtering",
+            "\u00a77Sharpens textures viewed at glancing angles \u2014 the",
+            "\u00a77classic 'tilted floor / distant block face' fuzziness",
+            "\u00a77vanilla has. Free quality win on any GPU made after",
+            "\u00a77~2008.",
+            "",
+            "\u00a7eRecommended:\u00a77 also turn on Extended Border Mipmaps,",
+            "\u00a77which fixes a subtle block-edge bleed AF can introduce.");
+        registerTooltip(BTN_ANISOTROPIC_LEVEL,
+            "\u00a7eAnisotropic Level",
+            "\u00a77How many extra texture samples to take along the angle",
+            "\u00a77of maximum change. Higher = sharper. 16x is the typical",
+            "\u00a77maximum supported by hardware.",
+            "",
+            "\u00a77Clamped to your GPU's reported max if you pick higher.");
+        registerTooltip(BTN_MSAA,
+            "\u00a7eMSAA \u2014 Multi-Sample Anti-Aliasing",
+            "\u00a77Hardware AA that samples each pixel multiple times along",
+            "\u00a77geometry edges. Very high quality on solid edges, but",
+            "\u00a77doesn't touch alpha-test edges (leaves, fences, grass).",
+            "",
+            "\u00a7cHeads up:\u00a77 MSAA owns the world render target while it's",
+            "\u00a77on \u2014 the Post-Process Pipeline yields to it, so things",
+            "\u00a77like FSR upscaling and TAA won't run at the same time.",
+            "\u00a77Pick MSAA OR the pipeline-driven AA, not both.");
+        registerTooltip(BTN_MSAA_SAMPLES,
+            "\u00a7eMSAA Samples",
+            "\u00a77Number of samples per pixel: 2x is cheapest, 4x is the",
+            "\u00a77sweet spot, 8x is overkill on most hardware.",
+            "",
+            "\u00a77Clamped to your GPU's max if higher.");
+        registerTooltip(BTN_FXAA,
+            "\u00a7eFXAA \u2014 Fast Approximate Anti-Aliasing",
+            "\u00a77Post-process AA that smooths edges detected from the",
+            "\u00a77final image. Cheaper than MSAA and works on alpha-test",
+            "\u00a77edges (leaves, fences) that MSAA misses.",
+            "",
+            "\u00a77When the Post Pipeline is on, LDOG's tunable FXAA with",
+            "\u00a77quality levels (see next row) is used. Otherwise MC's",
+            "\u00a77built-in fixed-quality FXAA runs.");
+
+        // ====================================================================
+        // HDR + Bloom
+        // ====================================================================
+        registerTooltip(BTN_HDR_PIPELINE,
+            "\u00a7eHDR Pipeline",
+            "\u00a77Renders the world in High Dynamic Range internally:",
+            "\u00a77bright pixels (sun, torches, lava) keep their full",
+            "\u00a77luminance instead of being clipped at white. Required",
+            "\u00a77for Bloom to look right, and improves tonemap-driven",
+            "\u00a77contrast in general.",
+            "",
+            "\u00a77Costs roughly 2x video memory on the scene target.",
+            "\u00a77Needs Post Pipeline turned on.",
+            "",
+            "\u00a78Note:\u00a77 this is a different feature from the 'HDR" +
+                " Tonemap'",
+            "\u00a77toggle in Light Customization \u2014 that one shifts the",
+            "\u00a77block-light colour curve on the CPU. This is real",
+            "\u00a77HDR-format framebuffer rendering on the GPU.");
+        registerTooltip(BTN_HDR_TONEMAP,
+            "\u00a7eTonemap Operator",
+            "\u00a77Maps the HDR scene values back into displayable range:",
+            "",
+            "\u00a7aACES:\u00a77 cinematic, slight S-curve. Best default.",
+            "\u00a7aReinhard:\u00a77 soft rolloff, no clipping, flatter look.",
+            "\u00a7aUncharted 2:\u00a77 punchy highlights, John Hable's curve.",
+            "\u00a77Linear:\u00a77 no tonemap, just clip. Useful for debugging.",
+            "",
+            "\u00a77Only consumed when HDR Pipeline is on.");
+        registerTooltip(BTN_HDR_EXPOSURE,
+            "\u00a7eExposure",
+            "\u00a77Brightness multiplier applied before tonemapping.",
+            "\u00a771.0 is neutral. Higher pushes more pixels into the",
+            "\u00a77highlight roll-off (and into Bloom), lower darkens.",
+            "",
+            "\u00a77Only consumed when HDR Pipeline is on.");
+        registerTooltip(BTN_BLOOM_ENABLE,
+            "\u00a7eBloom",
+            "\u00a77Soft glow around bright pixels \u2014 sun, torches, lava,",
+            "\u00a77fire, glowstone, etc. Adds a noticeable cinematic feel",
+            "\u00a77at the cost of one half-res blur pass per frame.",
+            "",
+            "\u00a7eRequires HDR Pipeline ON.\u00a77 Without HDR, the scene is",
+            "\u00a77already clipped to white before the bloom shader sees",
+            "\u00a77it \u2014 nothing to extract.");
+        registerTooltip(BTN_BLOOM_THRESHOLD,
+            "\u00a7eBloom Threshold",
+            "\u00a77Brightness floor for a pixel to contribute to bloom.",
+            "\u00a771.0 = only HDR values above LDR range bloom (clean,",
+            "\u00a77focused glow). Lower bleeds mid-tones too \u2014 dreamier",
+            "\u00a77look, can wash out detail.");
+        registerTooltip(BTN_BLOOM_INTENSITY,
+            "\u00a7eBloom Strength",
+            "\u00a77How strongly the blurred bloom layer composites over",
+            "\u00a77the scene.",
+            "",
+            "\u00a7a0.6\u20131.0 is the typical sweet spot.\u00a77 2.0+ gets",
+            "\u00a77aggressively dreamy.");
+
+        // ====================================================================
+        // Atmosphere
+        // ====================================================================
+        registerTooltip(BTN_CLOUD_HEIGHT,
+            "\u00a7eCloud Height",
+            "\u00a77Overrides vanilla's per-dimension cloud altitude.",
+            "\u00a77Useful for skybox builds (push clouds below your build",
+            "\u00a77limit) or cinematic shots (lift them above).",
+            "",
+            "\u00a77\"Default\" leaves the dimension's own value alone.");
+        registerTooltip(BTN_FOG_DISTANCE,
+            "\u00a7eFog Distance",
+            "\u00a77Multiplier on the start/end fog distances. Lower =",
+            "\u00a77closer fog (more atmospheric, less view distance).",
+            "\u00a77Higher = farther fog (more visibility, less mood).",
+            "",
+            "\u00a77Applied to both start and end so the gradient keeps",
+            "\u00a77its shape.");
+        registerTooltip(BTN_SUN_SIZE,
+            "\u00a7eSun Size",
+            "\u00a77Visual scale of the sun disc. 1.0 = vanilla. Cinematic",
+            "\u00a77shots love 2.0x. No gameplay effect \u2014 just visuals.");
+        registerTooltip(BTN_MOON_SIZE,
+            "\u00a7eMoon Size",
+            "\u00a77Visual scale of the moon disc. 1.0 = vanilla.");
+        registerTooltip(BTN_WEATHER_RENDER,
+            "\u00a7eRender Weather",
+            "\u00a77Off skips the rain/snow visual particles entirely.",
+            "\u00a77Gameplay weather still works (mobs get wet, fires get",
+            "\u00a77put out, etc.) \u2014 only the visual effect is suppressed.",
+            "",
+            "\u00a7aBig FPS win in heavy storms on weaker hardware.");
+        registerTooltip(BTN_WEATHER_DENSITY,
+            "\u00a7eWeather Density",
+            "\u00a77Multiplier on rain/snow particle density around the",
+            "\u00a77player. 1.0 = vanilla. 0.5 = roughly a quarter of the",
+            "\u00a77particles (density scales by the square of radius).",
+            "",
+            "\u00a77Lower for FPS, higher for cinematic.");
+        registerTooltip(BTN_BIOME_BLEND,
+            "\u00a7eBiome Blend",
+            "\u00a77How smoothly grass / foliage / water colours blend",
+            "\u00a77across biome borders.",
+            "",
+            "\u00a771:\u00a77 vanilla (3x3 sample average).",
+            "\u00a7a2:\u00a77 25-block radius. Visibly smoother transitions.",
+            "\u00a7e3:\u00a77 49-block radius. Very smooth, but adds noticeable",
+            "\u00a77chunk-rebuild cost \u2014 only use on a strong CPU.");
+
+        // ====================================================================
+        // Comfort / Cinematic / QoL / Hide HUD
+        // ====================================================================
+        registerTooltip(BTN_NO_DAMAGE_TILT,
+            "\u00a7eDisable Damage Tilt",
+            "\u00a77Stops the camera from tilting when you take damage.");
+        registerTooltip(BTN_NO_HURT_VIGNETTE,
+            "\u00a7eDisable Hurt Vignette",
+            "\u00a77Stops the red screen-edge flash when damaged.",
+            "",
+            "\u00a7cAlso disables the worldborder vignette \u2014 vanilla draws",
+            "\u00a77both in the same code, can't separate them.");
+        registerTooltip(BTN_HIDE_HAND,
+            "\u00a7eHide Hand",
+            "\u00a77Hides your held items / arm in first-person view.",
+            "\u00a77Great for cinematic shots.");
+        registerTooltip(BTN_FULLBRIGHT,
+            "\u00a7eFullbright",
+            "\u00a77Forces the lightmap to maximum brightness everywhere.",
+            "\u00a77Caves and night-time look fully lit.",
+            "",
+            "\u00a77Overrides Light Customization when both are on.");
+        registerTooltip(BTN_HIDE_CROSSHAIR,
+            "\u00a7eHide Crosshair",
+            "\u00a77Hides the crosshair / attack indicator. Useful for",
+            "\u00a77screenshots and cinematic recordings.");
+        registerTooltip(BTN_HIDE_HOTBAR,
+            "\u00a7eHide Hotbar",
+            "\u00a77Hides just the hotbar. F1 hides the whole HUD; this",
+            "\u00a77lets you keep everything else.");
+        registerTooltip(BTN_HIDE_EXP,
+            "\u00a7eHide XP Bar",
+            "\u00a77Hides the experience bar + level number.");
+        registerTooltip(BTN_HIDE_JUMP,
+            "\u00a7eHide Horse Jump Bar",
+            "\u00a77Hides the jump-charge bar shown while riding a mount.");
+        registerTooltip(BTN_HIDE_TOOLTIP,
+            "\u00a7eHide Held Item Tooltip",
+            "\u00a77Hides the floating item name that appears when you",
+            "\u00a77switch hotbar slots.");
+        registerTooltip(BTN_NO_PORTAL_OVERLAY,
+            "\u00a7eNo Portal Distortion",
+            "\u00a77Hides the purple swirl overlay while standing in a",
+            "\u00a77nether portal.",
+            "",
+            "\u00a77Doesn't affect the gameplay portal timer \u2014 you'll",
+            "\u00a77still travel to the nether after the usual delay.");
+        registerTooltip(BTN_HIDE_ARMOR,
+            "\u00a7eHide Armor Bar",
+            "\u00a77Hides the armor row above the hotbar.");
+        registerTooltip(BTN_HIDE_HUNGER,
+            "\u00a7eHide Hunger Bar",
+            "\u00a77Hides the food shanks above the hotbar.");
+        registerTooltip(BTN_HIDE_AIR,
+            "\u00a7eHide Air Bar",
+            "\u00a77Hides the breath bubbles shown when underwater.");
+        registerTooltip(BTN_HIDE_BOSS,
+            "\u00a7eHide Boss Health",
+            "\u00a77Hides boss health bars at the top of the screen",
+            "\u00a77(Wither, Ender Dragon, modded bosses).");
+        registerTooltip(BTN_ADV_TOOLTIPS,
+            "\u00a7eAdvanced Item Tooltips Always",
+            "\u00a77Keeps the F3+H breakdown (durability, NBT, lore IDs)",
+            "\u00a77visible on item hover without having to hold F3+H.");
+        registerTooltip(BTN_NO_NAUSEA,
+            "\u00a7eDisable Nausea Distortion",
+            "\u00a77Stops the screen from swirling when under the Nausea",
+            "\u00a77effect or briefly when entering a portal.",
+            "",
+            "\u00a77Gameplay isn't affected \u2014 just the visual swirl.");
+        registerTooltip(BTN_HUD_PING,
+            "\u00a7eShow Ping",
+            "\u00a77Adds your server ping to the Info HUD. Multiplayer",
+            "\u00a77only \u2014 hides itself in singleplayer.");
+        registerTooltip(BTN_HUD_DAY,
+            "\u00a7eShow Day Counter",
+            "\u00a77Adds the current in-game day number to the Info HUD.");
+        registerTooltip(BTN_HUD_CPS,
+            "\u00a7eShow CPS",
+            "\u00a77Adds a clicks-per-second counter (left + right mouse)",
+            "\u00a77to the Info HUD. Rolling 1-second window.");
+
+        // ====================================================================
+        // Visual / Water / Pack features / Lighting
+        // ====================================================================
+        registerTooltip(BTN_CLEAR_WATER,
+            "\u00a7eClear Water",
+            "\u00a77Removes vanilla's murky underwater overlay and lets you",
+            "\u00a77tune water transparency and tint below.",
+            "",
+            "\u00a77Replaces the standalone Clear Water mod.");
+        registerTooltip(BTN_WATER_OPACITY,
+            "\u00a7eWater Opacity",
+            "\u00a770.0 = fully transparent, 1.0 = vanilla murkiness,",
+            "\u00a77higher = even murkier. Affects both the surface and",
+            "\u00a77the underwater fog.");
+        registerTooltip(BTN_WATER_TINT,
+            "\u00a7eWater Tint",
+            "\u00a77When on, multiplies the biome water colour by the",
+            "\u00a77R/G/B sliders below. Lets you swing biome water toward",
+            "\u00a77more blue / green / your preference.");
+        registerTooltip(BTN_WATER_PRESET,
+            "\u00a7eWater Preset",
+            "\u00a77One-click colour bundle for clear water + tint. Cycles",
+            "\u00a77through curated looks (default, tropical, swampy, etc.).",
+            "\u00a77Editing any individual water control flips to Custom.");
+        registerTooltip(BTN_BETTER_GRASS,
+            "\u00a7eBetter Grass",
+            "\u00a77Replaces the grass side texture with the top texture",
+            "\u00a77on grass / mycelium blocks.",
+            "",
+            "\u00a77Off:\u00a77 vanilla side textures.",
+            "\u00a77Fast:\u00a77 always show the top texture on sides.",
+            "\u00a7aFancy:\u00a77 only when the neighbour below is also grass.");
+        registerTooltip(BTN_BETTER_SNOW,
+            "\u00a7eBetter Snow",
+            "\u00a77When a snow layer sits on top of an opaque block,",
+            "\u00a77renders snow-textured sides on the block beneath \u2014 the",
+            "\u00a77snow looks like it's wrapping the block edges instead",
+            "\u00a77of just sitting on top.");
+        registerTooltip(BTN_NATURAL_TEXTURES,
+            "\u00a7eNatural Textures",
+            "\u00a77Randomly rotates / flips block textures so identical",
+            "\u00a77adjacent blocks (dirt, sand, stone) don't form obvious",
+            "\u00a77tile patterns.",
+            "",
+            "\u00a77Uses your resource pack's optifine/natural.properties",
+            "\u00a77if one is present, falls back to sensible defaults.");
+        registerTooltip(BTN_CUSTOM_COLORS,
+            "\u00a7eCustom Colors",
+            "\u00a77Reads grass/foliage colormaps and color.properties from",
+            "\u00a77your resource pack \u2014 lets packs override the colours of",
+            "\u00a77grass, leaves, redstone, water per biome, potions, dyes,",
+            "\u00a77and more.");
+        registerTooltip(BTN_RANDOM_MOBS,
+            "\u00a7eRandom Entity Textures",
+            "\u00a77Picks one of multiple texture variants per mob based",
+            "\u00a77on the mob's UUID. Resource packs ship variants in",
+            "\u00a77optifine/random/entity/ \u2014 try the Faithful or Affinity",
+            "\u00a77HD packs for examples.");
+        registerTooltip(BTN_DYNAMIC_LIGHTS,
+            "\u00a7eDynamic Lights",
+            "\u00a77Held torches, lava buckets, glowstone, etc. light up",
+            "\u00a77the area around you and any other entity carrying them.",
+            "\u00a77Dropped items light their surroundings too.",
+            "",
+            "\u00a77Replaces the standalone Dynamic Lights mod.");
+        registerTooltip(BTN_DYN_LIGHT_INTERVAL,
+            "\u00a7eDynamic Lights Update Interval",
+            "\u00a77How often the dynamic-light scan runs.",
+            "",
+            "\u00a7aSmooth:\u00a77 every render frame \u2014 best quality, highest cost.",
+            "\u00a77Fast:\u00a77 every game tick (20 Hz) \u2014 good balance.",
+            "\u00a77N ticks:\u00a77 every N game ticks \u2014 cheap, mildly choppy.");
+        registerTooltip(BTN_LIGHT_TEMP,
+            "\u00a7eLight Customization",
+            "\u00a77Master switch for LDOG's lightmap tweaks: warm/cool",
+            "\u00a77light tints, brightness boost, night darkness, and",
+            "\u00a77HDR tonemap on the lightmap itself.",
+            "",
+            "\u00a77This is CPU lightmap manipulation, different from the",
+            "\u00a77HDR Pipeline framebuffer mode in the Post-Process",
+            "\u00a77section.");
+        registerTooltip(BTN_LIGHT_TEMP_PRESET,
+            "\u00a7eLighting Preset",
+            "\u00a77One-click bundle: cinematic, candlelight, moonlit,",
+            "\u00a77dark nights, horror, neon, etc. Each preset sets the",
+            "\u00a77tint, brightness, darkness, and tonemap values together.",
+            "",
+            "\u00a77Editing any individual control flips to Custom.");
+        String[] tintBody = new String[] {
+            "\u00a77Multiplier on the matching channel for the light source.",
+            "\u00a771.0 = unchanged. Lower = less of that colour, higher = more.",
+            "",
+            "\u00a77Warm torches = high R, low G, low B.",
+            "\u00a77Cool moonlight = low R, normal G, high B."
+        };
+        registerTooltip(BTN_BLOCK_LIGHT_R,
+            joinTooltip("\u00a7eBlock Light \u2014 Red", tintBody));
+        registerTooltip(BTN_BLOCK_LIGHT_G,
+            joinTooltip("\u00a7eBlock Light \u2014 Green", tintBody));
+        registerTooltip(BTN_BLOCK_LIGHT_B,
+            joinTooltip("\u00a7eBlock Light \u2014 Blue", tintBody));
+        registerTooltip(BTN_SKY_LIGHT_R,
+            joinTooltip("\u00a7eSky Light \u2014 Red", tintBody));
+        registerTooltip(BTN_SKY_LIGHT_G,
+            joinTooltip("\u00a7eSky Light \u2014 Green", tintBody));
+        registerTooltip(BTN_SKY_LIGHT_B,
+            joinTooltip("\u00a7eSky Light \u2014 Blue", tintBody));
+        registerTooltip(BTN_BRIGHTNESS_BOOST,
+            "\u00a7eBrightness Boost",
+            "\u00a77Additive shift to the whole lightmap.",
+            "\u00a77-1.0 = pitch black, 0.0 = vanilla, 1.0 = washed out.",
+            "",
+            "\u00a77Apply before Night Darkness so night still gets dark.");
+        registerTooltip(BTN_NIGHT_DARKNESS,
+            "\u00a7eNight Darkness",
+            "\u00a77Multiplier on the sky-light side of the lightmap.",
+            "\u00a771.0 = vanilla, higher = darker nights. 100 = pitch black",
+            "\u00a77at midnight (torches still work normally).",
+            "",
+            "\u00a77Better than vanilla's gamma slider \u2014 this can't be",
+            "\u00a77counteracted by the user cranking gamma in MC settings.");
+        registerTooltip(BTN_HDR,
+            "\u00a7eHDR Lightmap Tonemap",
+            "\u00a77Applies an ACES filmic curve to the lightmap before",
+            "\u00a77it's uploaded. Punchier highlights, deeper shadows,",
+            "\u00a77more cinematic feel.",
+            "",
+            "\u00a77This is the lightmap-only HDR (CPU). The HDR Pipeline",
+            "\u00a77toggle in Post-Process is the full HDR-framebuffer",
+            "\u00a77feature \u2014 they stack cleanly.");
+
+        // ====================================================================
+        // Pack-feature toggles (gated by OF detection in the GUI)
+        // ====================================================================
+        registerTooltip(BTN_CTM,
+            "\u00a7eConnected Textures (CTM)",
+            "\u00a77Glass panes, bookshelves, sandstone, and other CTM-",
+            "\u00a77aware blocks visually connect across edges based on",
+            "\u00a77your resource pack's connected-textures definitions.",
+            "",
+            "\u00a77Reads OptiFine and MCPatcher format CTM packs.",
+            "\u00a77Auto-disabled when OptiFine is detected (use the OF",
+            "\u00a77Interop section to override).");
+        registerTooltip(BTN_EMISSIVE,
+            "\u00a7eEmissive Textures",
+            "\u00a77Glow overlays on blocks and items shipped by your",
+            "\u00a77resource pack (e.g. emissive ores, redstone-lit metal).",
+            "",
+            "\u00a77Reads OptiFine and MCPatcher emissive textures",
+            "\u00a77(_e.png suffix). Auto-disabled when OF is detected.");
+        registerTooltip(BTN_CUSTOM_SKY,
+            "\u00a7eCustom Sky",
+            "\u00a77Resource-pack-driven skybox layers with time-based",
+            "\u00a77fades \u2014 nebulas, stars, custom moons, etc.",
+            "",
+            "\u00a77Reads OptiFine and MCPatcher sky definitions. Auto-",
+            "\u00a77disabled when OF is detected.");
+        registerTooltip(BTN_HD_TEXTURES,
+            "\u00a7eHD Textures",
+            "\u00a77Removes vanilla's hard 16x16 atlas-sprite limit so HD",
+            "\u00a77resource packs (32x, 64x, 128x, 256x+) load without",
+            "\u00a77crashing or being downsampled.",
+            "",
+            "\u00a77Auto-disabled when OF is detected.");
+        registerTooltip(BTN_SHADERS,
+            "\u00a7eShaders",
+            "\u00a77Master switch for LDOG's shader pack support. When on,",
+            "\u00a77the Pack picker below appears \u2014 it scans",
+            "\u00a77\u00a7ashaderpacks/\u00a77 for .zip or directory packs.",
+            "",
+            "\u00a7eExperimental:\u00a77 LDOG can discover and select packs",
+            "\u00a77today, but doesn't yet run gbuffer / composite stages.",
+            "\u00a77Activating a pack is log-only until that work lands.",
+            "",
+            "\u00a77Auto-disabled when OF is detected.");
+        registerTooltip(BTN_SHADER_PACK,
+            "\u00a7eShader Pack",
+            "\u00a77Cycles through packs found in \u00a7ashaderpacks/\u00a77. Drop",
+            "\u00a77OptiFine or Iris-format pack .zip files (or extracted",
+            "\u00a77folders) into that directory to see them here.",
+            "",
+            "\u00a77\"(none)\" deactivates the active pack.");
+        registerTooltip(BTN_SHADER_RESCAN,
+            "\u00a7eRescan Shader Packs",
+            "\u00a77Force a fresh scan of \u00a7ashaderpacks/\u00a77 \u2014 use after",
+            "\u00a77dropping a new pack in without restarting MC.");
+
+        // ====================================================================
+        // Font polish (the rows added late)
+        // ====================================================================
+        registerTooltip(BTN_TTF_BOLD,
+            "\u00a7eTTF Bold",
+            "\u00a77Requests a bold face from the selected TTF font.",
+            "\u00a77Only consumed when TTF Font is on.",
+            "",
+            "\u00a77Triggers a font reload on toggle.");
+        registerTooltip(BTN_TTF_ITALIC,
+            "\u00a7eTTF Italic",
+            "\u00a77Requests an italic face from the selected TTF font.",
+            "\u00a77Only consumed when TTF Font is on.");
+        registerTooltip(BTN_TTF_SUBPIXEL,
+            "\u00a7eLCD Subpixel Rendering",
+            "\u00a77Uses the GPU's RGB subpixel layout to triple the",
+            "\u00a77effective horizontal resolution of TTF glyphs.",
+            "\u00a77Noticeably sharper edges on horizontal-RGB LCDs.",
+            "",
+            "\u00a7cCan cause colored fringing\u00a77 on rotated panels or",
+            "\u00a77atypical subpixel layouts \u2014 turn off if you see",
+            "\u00a77red/blue tinting at glyph edges.");
     }
 
     /** Helper for OF Interop tooltips: prepend a per-feature title to a shared body. */
