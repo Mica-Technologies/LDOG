@@ -311,14 +311,14 @@ public class GuiLDOGSettings extends GuiScreen {
                 fxaaQualityLabel(com.limitlessdev.ldog.render.pipeline.FXAAQuality.selected())));
         settingsList.addButtonRow(
             new GuiButton(BTN_TAA_ENABLE, 0, 0, w, h,
-                toggleLabel("TAA (9c.1)", LDOGConfig.enableTAA)),
+                toggleLabel("TAA", LDOGConfig.enableTAA)),
             new GuiButton(BTN_TAA_WEIGHT, 0, 0, w, h,
                 taaWeightLabel(LDOGConfig.taaHistoryWeight)));
         settingsList.addButtonRow(
             new GuiButton(BTN_TAA_REACTIVE_MASK, 0, 0, w, h,
                 toggleLabel("Entity Reactive Mask", LDOGConfig.enableEntityReactiveMask)),
             new GuiButton(BTN_TAA_ENTITY_MV, 0, 0, w, h,
-                toggleLabel("Entity MV (9c.3-C)", LDOGConfig.enableEntityMotionVectors)));
+                toggleLabel("Entity MV", LDOGConfig.enableEntityMotionVectors)));
 
         // -- Display (Phase 10) --
         settingsList.addHeaderRow("Display");
@@ -1106,7 +1106,7 @@ public class GuiLDOGSettings extends GuiScreen {
                 break;
             case BTN_TAA_ENABLE:
                 LDOGConfig.enableTAA = !LDOGConfig.enableTAA;
-                button.displayString = toggleLabel("TAA (9c.1)", LDOGConfig.enableTAA);
+                button.displayString = toggleLabel("TAA", LDOGConfig.enableTAA);
                 break;
             case BTN_AUTO_SCALE: {
                 com.limitlessdev.ldog.render.pipeline.AutoScaleMode next =
@@ -1173,7 +1173,7 @@ public class GuiLDOGSettings extends GuiScreen {
                 break;
             case BTN_TAA_ENTITY_MV:
                 LDOGConfig.enableEntityMotionVectors = !LDOGConfig.enableEntityMotionVectors;
-                button.displayString = toggleLabel("Entity MV (9c.3-C)", LDOGConfig.enableEntityMotionVectors);
+                button.displayString = toggleLabel("Entity MV", LDOGConfig.enableEntityMotionVectors);
                 break;
             case BTN_FXAA_QUALITY: {
                 com.limitlessdev.ldog.render.pipeline.FXAAQuality current =
@@ -1506,18 +1506,20 @@ public class GuiLDOGSettings extends GuiScreen {
             "",
             "\u00a77Editing any individual control flips back to Custom.");
         registerTooltip(BTN_PIPELINE,
-            "\u00a7ePost-Process Pipeline (Phase 8 scaffold)",
-            "\u00a77Experimental. Allocates an offscreen scene target so",
-            "\u00a77future passes (FSR1 upscaling, sharpen, etc.) can hook",
-            "\u00a77in without reworking the renderer.",
+            "\u00a7ePost-Process Pipeline",
+            "\u00a77Master switch for LDOG's render pipeline. Required by:",
+            "\u00a77 \u2022 Render Scale below 1.0 + Upscalers (FSR1, FSR1-Quality, FSR2)",
+            "\u00a77 \u2022 RCAS post-upscale sharpening",
+            "\u00a77 \u2022 LDOG's pipeline FXAA (with quality levels)",
+            "\u00a77 \u2022 Temporal AA + Entity Motion Vectors + Reactive Mask",
+            "\u00a77 \u2022 Vignette, HDR + Bloom",
             "",
-            "\u00a7cNo visible effect yet:\u00a77 the binding hook that redirects",
-            "\u00a77world rendering into the scaled target ships in Phase 8c.",
-            "\u00a77Enabling this today is safe but only exercises lifecycle",
-            "\u00a77wiring. Flips live.",
+            "\u00a77When off, everything in this list is bypassed and the game",
+            "\u00a77renders the vanilla way.",
             "",
-            "\u00a77When enabled, yields to MSAA (which owns its own FBO);",
-            "\u00a77composes cleanly with FXAA.");
+            "\u00a7eHeads up:\u00a77 if MSAA is on, the pipeline yields the render",
+            "\u00a77target to MSAA. The two can't both own world rendering at",
+            "\u00a77once. FXAA composites cleanly either way.");
         registerTooltip(BTN_PIPELINE_SCALE,
             "\u00a7eInternal Render Scale",
             "\u00a771.0x = native resolution. Below 1.0 renders the world",
@@ -1579,9 +1581,9 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a77Three-state cycle: Off / Normal / Aggressive.",
             "",
             "\u00a77\u00a77Off:\u00a77 manual Render Scale honored.",
-            "\u00a7aNormal (Phase 9a.9):\u00a77 only Render Scale auto-adjusts.",
+            "\u00a7aNormal:\u00a77 only Render Scale auto-adjusts.",
             "\u00a77 5-tier ladder: 1.00 -> 0.85 -> 0.75 -> 0.67 -> 0.50.",
-            "\u00a76Aggressive (9a.9 ext):\u00a77 also auto-manages Upscaler",
+            "\u00a76Aggressive:\u00a77 also auto-manages Upscaler",
             "\u00a77 algorithm and FXAA quality + on/off across a 7-tier",
             "\u00a77 extended ladder. At 0.50x, FSR1-Quality drops to FSR1",
             "\u00a77 then Bilinear; FXAA Ultra -> High -> Medium -> Low -> off.",
@@ -1595,17 +1597,18 @@ public class GuiLDOGSettings extends GuiScreen {
             "",
             "\u00a77Requires Post Pipeline ON.");
         registerTooltip(BTN_TAA_ENABLE,
-            "\u00a7eTemporal AA (Phase 9c.1 MVP)",
-            "\u00a77Sub-pixel projection jitter + history-blend for temporal",
-            "\u00a77anti-aliasing. Static scenes get cleaner edges than FXAA",
-            "\u00a77alone, with accumulated sub-pixel detail over time.",
+            "\u00a7eTemporal Anti-Aliasing",
+            "\u00a77Smooths edges by blending in detail from previous frames.",
+            "\u00a77Static scenes look noticeably cleaner than FXAA alone, with",
+            "\u00a77accumulated sub-pixel detail building up over time.",
             "",
-            "\u00a7cKnown limitation:\u00a77 no motion vectors yet, so moving",
-            "\u00a77the camera shows visible ghosting. Neighborhood colour",
-            "\u00a77clamping mitigates but doesn't fully fix. Phase 9c.2 will",
-            "\u00a77add camera MV to resolve.",
+            "\u00a77Camera motion is handled by reprojecting the previous frame",
+            "\u00a77(no ghost trails from terrain). Moving entities are handled",
+            "\u00a77by the Entity MV / Reactive Mask rows below.",
             "",
-            "\u00a77Requires Post Pipeline ON.");
+            "\u00a77Tune the blend strength with TAA Blend in the next row.",
+            "",
+            "\u00a77Needs Post Pipeline turned on.");
         registerTooltip(BTN_TAA_WEIGHT,
             "\u00a7eTAA History Blend Weight",
             "\u00a770.00 = no history (TAA off effectively).",
@@ -1631,15 +1634,15 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a77Needs TAA + Post Pipeline on. Strongly recommended when",
             "\u00a77using FSR2 so moving entities don't ghost.");
         registerTooltip(BTN_TAA_REACTIVE_MASK,
-            "\u00a7eEntity Reactive Mask (Phase 9c.3-A)",
+            "\u00a7eEntity Reactive Mask",
             "\u00a77Drops TAA history weight on entity silhouettes so moving",
             "\u00a77mobs/items don't leave a smear trail. Per-frame entity",
             "\u00a77instability replaces persistent ghosting — visually less",
             "\u00a77objectionable than smear, but you'll see slight shimmer",
             "\u00a77on entity edges during motion.",
             "",
-            "\u00a77Cost: ~5-10% extra GPU memory + 1 MRT attachment write",
-            "\u00a77per entity fragment. Particles deliberately excluded.",
+            "\u00a77Costs roughly 5-10% more GPU memory. Particles are",
+            "\u00a77intentionally not covered.",
             "",
             "\u00a77Requires TAA + Post Pipeline ON.");
         registerTooltip(BTN_FXAA_QUALITY,
@@ -1713,11 +1716,11 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a7eOF Interop \u2014 Shaders",
             "\u00a77Same Auto / LDOG / OptiFine semantics as the other rows.",
             "",
-            "\u00a7cNote:\u00a77 LDOG's shader pack support is still",
-            "\u00a77scaffold-only (Phase 8 stretch). Setting this to LDOG",
-            "\u00a77today will disable OF's shaders without a working",
-            "\u00a77replacement \u2014 leave on OptiFine until LDOG's shader",
-            "\u00a77pack loader ships.");
+            "\u00a7cHeads up:\u00a77 LDOG's own shader pack support is still",
+            "\u00a77experimental \u2014 it can discover packs but doesn't yet",
+            "\u00a77run them. Setting this to LDOG will turn OF's shaders",
+            "\u00a77off without anything to replace them. Leave on OptiFine",
+            "\u00a77or Auto until LDOG's shader pack support is complete.");
     }
 
     /** Helper for OF Interop tooltips: prepend a per-feature title to a shared body. */
