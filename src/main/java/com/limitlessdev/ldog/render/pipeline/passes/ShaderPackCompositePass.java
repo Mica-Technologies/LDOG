@@ -306,7 +306,7 @@ public final class ShaderPackCompositePass implements PostProcessPass {
         int h = RenderTargetManager.INSTANCE.getScaledHeight();
         if (w <= 0 || h <= 0 || !ensureMrt(runtime, n, w, h)) return false;
 
-        copyGbufferToCur(n, w, h);
+        copyGbufferToCur(runtime, n, w, h);
 
         // Deferred lighting passes first (gbuffers -> deferred -> composite).
         for (ShaderPackRuntime.Stage stage : runtime.deferred()) {
@@ -338,10 +338,18 @@ public final class ShaderPackCompositePass implements PostProcessPass {
     }
 
     /** Copy the gbuffer colortex (scene + aux) into our writable "current" set. */
-    private void copyGbufferToCur(int n, int w, int h) {
+    private void copyGbufferToCur(ShaderPackRuntime runtime, int n, int w, int h) {
         int sceneFbo = RenderTargetManager.INSTANCE.getSceneFbo();
         int gbufFbo = ShaderPackGbufferManager.gbufferFbo();
         for (int i = 0; i <= n; i++) {
+            // Only refresh buffers the gbuffers actually wrote this frame. Buffers
+            // produced solely by the composite chain (TAA history in colortex2,
+            // reflection/colored-light accumulation, ...) must PERSIST across
+            // frames — overwriting them with empty gbuffer data zeroes the history,
+            // which drags temporal AA toward black (the BSL "invisible/dark"
+            // symptom). Their mrtCur texture survives between frames, so skipping
+            // the copy preserves last frame's content (OF colortexNClear=false).
+            if (!runtime.gbufferWrites(i)) continue;
             int srcFbo = (i == 0) ? sceneFbo : gbufFbo;
             int srcAttach = GL30.GL_COLOR_ATTACHMENT0 + i;
             if (srcFbo == 0) continue;

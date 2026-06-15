@@ -78,10 +78,45 @@ public final class ShaderPackRuntime {
      */
     private final int[] colortexFormats = new int[8];
 
+    /**
+     * Which colortex indices the {@code gbuffers_*} programs actually write
+     * (union of their resolved DRAWBUFFERS). Buffers NOT in this set are produced
+     * by the composite/deferred chain — many are temporal history (TAA's
+     * colortex2, reflection/colored-light accumulation) that MUST persist across
+     * frames. The composite pass uses this to avoid overwriting them with empty
+     * gbuffer data each frame (the OptiFine {@code colortexNClear = false} effect).
+     */
+    private final boolean[] gbufferWrites = new boolean[8];
+
     public ShaderPackRuntime(ShaderPack pack) {
         this.pack = pack;
         compileChain();
         compileGbuffers();
+        logResolvedBuffers();
+    }
+
+    /**
+     * Dump each stage's resolved {@code DRAWBUFFERS} mapping + declared colortex
+     * formats once at activation. The single highest-signal diagnostic for
+     * "dark/invisible" deferred packs: it shows whether the preprocessor picked
+     * the branch that actually writes colortex0 (the lit scene) and which aux
+     * buffers the gbuffers feed the deferred/composite chain.
+     */
+    private void logResolvedBuffers() {
+        StringBuilder sb = new StringBuilder("LDOG: '" + pack.name + "' resolved buffers — gbuffers{");
+        for (Map.Entry<String, Stage> e : gbufferPrograms.entrySet()) {
+            sb.append(e.getKey()).append('=').append(java.util.Arrays.toString(e.getValue().drawBuffers)).append(' ');
+        }
+        sb.append("} deferred{");
+        for (Stage s : deferred) sb.append(s.name).append('=').append(java.util.Arrays.toString(s.drawBuffers)).append(' ');
+        sb.append("} composite{");
+        for (Stage s : composites) sb.append(s.name).append('=').append(java.util.Arrays.toString(s.drawBuffers)).append(' ');
+        sb.append("} maxColortex=").append(maxColortex).append(" formats[");
+        for (int i = 0; i <= 7; i++) {
+            if (colortexFormats[i] != 0) sb.append(i).append("=0x").append(Integer.toHexString(colortexFormats[i])).append(' ');
+        }
+        sb.append(']');
+        LDOGMod.LOGGER.info(sb.toString());
     }
 
     /** Active composite stages in execution order. Read-only. */
@@ -103,6 +138,16 @@ public final class ShaderPackRuntime {
 
     /** True when the pack supplied at least one usable gbuffer program. */
     public boolean hasGbuffers() { return !gbufferPrograms.isEmpty(); }
+
+    /**
+     * True when the {@code gbuffers_*} programs write {@code colortexI}. False
+     * means the buffer is produced only by the composite/deferred chain — likely
+     * temporal history that must persist across frames (don't clobber it with
+     * empty gbuffer data each frame).
+     */
+    public boolean gbufferWrites(int i) {
+        return i >= 0 && i < gbufferWrites.length && gbufferWrites[i];
+    }
 
     /** Highest colortex index written by any program — drives MRT aux allocation. */
     public int maxColortex() { return maxColortex; }
@@ -275,8 +320,16 @@ public final class ShaderPackRuntime {
             if (vsh.equals("final.vsh")) continue;
             String base = vsh.substring(0, vsh.length() - ".vsh".length());
             Stage s = tryCompile(base);
-            if (s != null) gbufferPrograms.put(base, s);
+            if (s != null) {
+                gbufferPrograms.put(base, s);
+                if (!base.equals("shadow")) {
+                    for (int b : s.drawBuffers) if (b >= 0 && b < gbufferWrites.length) gbufferWrites[b] = true;
+                }
+            }
         }
+        // colortex0 is always the scene (every gbuffer writes albedo there even if
+        // a pack's directive somehow omitted it) — guarantee it's refreshed.
+        gbufferWrites[0] = true;
         if (!gbufferPrograms.isEmpty()) {
             LDOGMod.LOGGER.info("LDOG: Shader pack '{}' compiled {} gbuffer/shadow program(s): {}",
                 pack.name, gbufferPrograms.size(), gbufferPrograms.keySet());
