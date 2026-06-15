@@ -54,6 +54,16 @@ public final class ShaderPackUniforms {
     private final float[] upPos = new float[3];
     private final float[] shadowLightPos = new float[3];
 
+    // Atmospheric + player-state uniforms commonly referenced by packs.
+    private final float[] fogColor = new float[4];
+    private final float[] skyColor = new float[3];
+    private float currentNightVision;
+    private float currentBlindness;
+    private float currentScreenBrightness;
+    private float eyeBrightnessBlock;
+    private float eyeBrightnessSky;
+    private static final java.nio.FloatBuffer FOG_BUF = BufferUtils.createFloatBuffer(16);
+
     /**
      * Refresh all per-frame values from the live MC state. Call once at the
      * start of {@link com.limitlessdev.ldog.render.pipeline.passes.ShaderPackCompositePass#execute}.
@@ -128,6 +138,41 @@ public final class ShaderPackUniforms {
         GL11.glGetFloat(GL11.GL_PROJECTION_MATRIX, MAT_BUF);
         MAT_BUF.rewind();
         proj.load(MAT_BUF);
+
+        // Fog colour — read live GL fog state. Accurate during the world
+        // render (gbuffer path); may be stale in the composite/GUI context.
+        FOG_BUF.clear();
+        GL11.glGetFloat(GL11.GL_FOG_COLOR, FOG_BUF);
+        fogColor[0] = FOG_BUF.get(0);
+        fogColor[1] = FOG_BUF.get(1);
+        fogColor[2] = FOG_BUF.get(2);
+        fogColor[3] = FOG_BUF.get(3);
+
+        // Sky colour for the current view position / time.
+        if (world != null && view != null) {
+            net.minecraft.util.math.Vec3d sky = world.getSkyColor(view, partialTicks);
+            skyColor[0] = (float) sky.x;
+            skyColor[1] = (float) sky.y;
+            skyColor[2] = (float) sky.z;
+        }
+
+        // Player potion / brightness state.
+        currentScreenBrightness = mc.gameSettings != null ? mc.gameSettings.gammaSetting : 1.0f;
+        currentNightVision = 0.0f;
+        currentBlindness = 0.0f;
+        eyeBrightnessBlock = 0.0f;
+        eyeBrightnessSky = 240.0f;
+        if (mc.player != null) {
+            if (mc.player.isPotionActive(net.minecraft.init.MobEffects.NIGHT_VISION)) currentNightVision = 1.0f;
+            if (mc.player.isPotionActive(net.minecraft.init.MobEffects.BLINDNESS)) currentBlindness = 1.0f;
+            if (world != null) {
+                net.minecraft.util.math.BlockPos eye = new net.minecraft.util.math.BlockPos(
+                    mc.player.posX, mc.player.posY + mc.player.getEyeHeight(), mc.player.posZ);
+                // OF eyeBrightness is in lightmap units [0,240] (= light level * 16).
+                eyeBrightnessBlock = world.getLightFor(net.minecraft.world.EnumSkyBlock.BLOCK, eye) * 16.0f;
+                eyeBrightnessSky = world.getLightFor(net.minecraft.world.EnumSkyBlock.SKY, eye) * 16.0f;
+            }
+        }
 
         // Advance frame counter + cache prev matrices for next frame's snapshot.
         frameCounter++;
@@ -218,6 +263,16 @@ public final class ShaderPackUniforms {
             else if (m == net.minecraft.block.material.Material.LAVA) eyeIn = 2;
         }
         program.setUniform1i("isEyeInWater", eyeIn);
+
+        // Atmospheric + player state.
+        program.setUniform3f("fogColor", fogColor[0], fogColor[1], fogColor[2]);
+        program.setUniform3f("skyColor", skyColor[0], skyColor[1], skyColor[2]);
+        program.setUniform1f("nightVision", currentNightVision);
+        program.setUniform1f("blindness", currentBlindness);
+        program.setUniform1f("screenBrightness", currentScreenBrightness);
+        // eyeBrightness / eyeBrightnessSmooth: lightmap units [0,240].
+        program.setUniform2f("eyeBrightness", eyeBrightnessBlock, eyeBrightnessSky);
+        program.setUniform2f("eyeBrightnessSmooth", eyeBrightnessBlock, eyeBrightnessSky);
     }
 
     /** Rotate this frame's matrices into the "prev" slot for next frame. */

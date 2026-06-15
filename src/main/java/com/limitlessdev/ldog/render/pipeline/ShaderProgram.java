@@ -87,6 +87,11 @@ public final class ShaderProgram {
         if (loc >= 0) GL20.glUniform2f(loc, x, y);
     }
 
+    public void setUniform3f(String uniform, float x, float y, float z) {
+        int loc = locate(uniform);
+        if (loc >= 0) GL20.glUniform3f(loc, x, y, z);
+    }
+
     public void setUniform4f(String uniform, float x, float y, float z, float w) {
         int loc = locate(uniform);
         if (loc >= 0) GL20.glUniform4f(loc, x, y, z, w);

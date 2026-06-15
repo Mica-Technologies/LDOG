@@ -164,8 +164,8 @@ public final class ShaderPackCompositePass implements PostProcessPass {
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, ctx.mainFbo());
 
         ShaderProgram.unbind();
-        // Unbind all texture units we touched (0..9, incl. the shadow unit).
-        for (int i = 9; i >= 0; i--) {
+        // Unbind all texture units we touched (0..10, incl. shadow + noise).
+        for (int i = 10; i >= 0; i--) {
             GL13.glActiveTexture(GL13.GL_TEXTURE0 + i);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
         }
@@ -205,6 +205,10 @@ public final class ShaderPackCompositePass implements PostProcessPass {
             GL13.glActiveTexture(GL13.GL_TEXTURE0 + (i + 1));
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex);
         }
+        // noisetex on unit 10 (above colortex 0..8 and the shadow unit 9).
+        GL13.glActiveTexture(GL13.GL_TEXTURE0 + 10);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D,
+            com.limitlessdev.ldog.render.shaderpack.ShaderNoiseTexture.get());
 
         program.bind();
         // OF convention names — these always exist as samplers in composite
@@ -220,6 +224,9 @@ public final class ShaderPackCompositePass implements PostProcessPass {
         program.setUniform1i("colortex7", 8);
         program.setUniform1i("depthtex1", 1);  // alias to depthtex0 (no shadows)
         program.setUniform1i("depthtex2", 1);
+        program.setUniform1i("noisetex", 10);
+        program.setUniform1i("noiseTextureResolution",
+            com.limitlessdev.ldog.render.shaderpack.ShaderNoiseTexture.RESOLUTION);
         // Snapshot's standard uniforms (cameraPosition, sunPosition, ...).
         uniforms.feedTo(program);
         // Real shadow map (when the shadow pass ran this frame) on unit 9 +

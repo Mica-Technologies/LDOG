@@ -332,6 +332,9 @@ public final class ShaderPackGbufferManager {
     private static void feedSamplers(ShaderProgram program) {
         GL13.glActiveTexture(GL13.GL_TEXTURE2);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, blackTex);
+        // noisetex on unit 3 — a real tiled noise texture (water/cloud/dither).
+        GL13.glActiveTexture(GL13.GL_TEXTURE3);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, ShaderNoiseTexture.get());
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
 
         program.setUniform1i("texture", 0);
@@ -347,7 +350,8 @@ public final class ShaderPackGbufferManager {
         program.setUniform1i("shadowtex1", 2);
         program.setUniform1i("shadowcolor0", 2);
         program.setUniform1i("shadowcolor1", 2);
-        program.setUniform1i("noisetex", 2);
+        program.setUniform1i("noisetex", 3);
+        program.setUniform1i("noiseTextureResolution", ShaderNoiseTexture.RESOLUTION);
     }
 
     private static void ensureBlackTex() {
