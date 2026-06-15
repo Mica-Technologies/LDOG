@@ -43,9 +43,12 @@ void main() {
     float skyLight = lm.g;
 
     vec3 worldPos = reconstructWorld(texcoord, depth);
-    // Geometric normal from screen-space derivatives of world position.
-    vec3 normal = normalize(cross(dFdx(worldPos), dFdy(worldPos)));
-    // Make it face the camera (camera is the origin in this camera-relative space).
+    // Axis-snapped normal (stable; see Realism composite for rationale).
+    vec3 normal = cross(dFdx(worldPos), dFdy(worldPos));
+    vec3 an = abs(normal);
+    if (an.x >= an.y && an.x >= an.z)      normal = vec3(sign(normal.x), 0.0, 0.0);
+    else if (an.y >= an.z)                 normal = vec3(0.0, sign(normal.y), 0.0);
+    else                                   normal = vec3(0.0, 0.0, sign(normal.z));
     if (dot(normal, normalize(-worldPos)) < 0.0) normal = -normal;
 
     vec3 sunDir = normalize(sunPosition.xyz);

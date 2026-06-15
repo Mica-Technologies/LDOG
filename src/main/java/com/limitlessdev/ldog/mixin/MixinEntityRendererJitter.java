@@ -56,7 +56,10 @@ public abstract class MixinEntityRendererJitter {
     @Inject(method = "renderWorldPass(IFJ)V", at = @At("HEAD"))
     private void ldog$advanceJitter(int pass, float partialTicks, long finishTimeNano, CallbackInfo ci) {
         if (pass != 2) return;
-        if (!ldog$temporalActive()) return;
+        // Jitter is applied only for TAA. FSR2-without-TAA still needs the camera
+        // capture (below) but NOT jitter — LDOG's FSR2 doesn't fully resolve the
+        // sub-pixel offset, so it shows up as flicker/shimmer during motion.
+        if (!LDOGConfig.enableTAA) return;
         // No jitter while an external shader pack is driving — the per-frame
         // sub-pixel offset (unresolved without LDOG's TAA, which is skipped for
         // packs) shows up as heavy flicker.
@@ -77,7 +80,7 @@ public abstract class MixinEntityRendererJitter {
             remap = false))
     private void ldog$jitterSky(int pass, float partialTicks, long finishTimeNano, CallbackInfo ci) {
         if (pass != 2) return;
-        if (!ldog$temporalActive()) return;
+        if (!LDOGConfig.enableTAA) return;  // jitter only for TAA (see advanceJitter)
         // No jitter while an external shader pack is driving — the per-frame
         // sub-pixel offset (unresolved without LDOG's TAA, which is skipped for
         // packs) shows up as heavy flicker.
@@ -115,10 +118,13 @@ public abstract class MixinEntityRendererJitter {
         // packs) shows up as heavy flicker.
         if (com.limitlessdev.ldog.render.shaderpack.ShaderPackGbufferManager.isDeferredActive()) return;
 
-        applyJitter();
+        // Jitter only for TAA. FSR2-without-TAA renders un-jittered and captures
+        // un-jittered matrices below — consistent, and without the jitter shimmer.
+        if (LDOGConfig.enableTAA) applyJitter();
 
-        // Capture the jittered state so cur/prev MV reprojection matches the
-        // jitter that was actually applied when rendering + storing history.
+        // Capture matrices for temporal MV reprojection (needed by FSR2 too, or
+        // it draws nothing). When TAA jittered the projection above, the capture
+        // is post-jitter so cur/prev stay consistent with the stored history.
         CameraState.captureCurrentMatrices();
     }
 
