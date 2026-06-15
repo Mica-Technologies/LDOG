@@ -109,6 +109,9 @@ public final class ShaderPackGbufferManager {
     /** Number of aux colortex attachments currently allocated (colortex1..N). */
     public static int auxColortexCount() { return auxCount; }
 
+    /** The G-buffer FBO (colortex0=scene + aux1..N attached), or 0 if not built. */
+    public static int gbufferFbo() { return gbufferFbo; }
+
     /** Texture handle for colortexI: scene colour for 0, aux for 1..N, else 0. */
     public static int colortex(int i) {
         if (i == 0) return RenderTargetManager.INSTANCE.getSceneColorTexture();

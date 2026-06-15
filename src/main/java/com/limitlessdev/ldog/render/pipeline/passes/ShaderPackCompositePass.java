@@ -10,10 +10,14 @@ import com.limitlessdev.ldog.render.shaderpack.ShaderPackManager;
 import com.limitlessdev.ldog.render.shaderpack.ShaderPackRuntime;
 import com.limitlessdev.ldog.render.shaderpack.ShaderPackUniforms;
 import net.minecraft.client.renderer.GlStateManager;
+import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL13;
+import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
+
+import java.nio.IntBuffer;
 
 /**
  * Runs the active shader pack's composite chain — {@code composite.{vsh,fsh}}
@@ -64,6 +68,14 @@ public final class ShaderPackCompositePass implements PostProcessPass {
     /** The {@code colortex0} input texture — a copy of the main FB. */
     private int sceneCopyTex;
     private int sceneCopyW, sceneCopyH;
+
+    // --- multi-write (colortex-flipping) state, deferred path only ---
+    /** Per-colortex front (read) + back (scratch) textures, indices 0..mrtN. */
+    private int[] mrtCur, mrtAlt;
+    private int mrtFbo;       // dynamic MRT target (attachments re-pointed per stage)
+    private int mrtCopyFbo;   // single-attachment helper for the initial gbuffer copy
+    private int mrtN = -1;    // highest colortex index managed
+    private int mrtW, mrtH;
 
     private final ShaderPackUniforms uniforms = new ShaderPackUniforms();
     private boolean loggedFirstRun;
@@ -124,40 +136,48 @@ public final class ShaderPackCompositePass implements PostProcessPass {
         GlStateManager.disableBlend();
         GlStateManager.disableAlpha();
 
-        // Walk composite stages, ping-ponging input/output. First stage reads
-        // colortex0Input; subsequent stages read whichever ping was just written.
-        int currentInputTex = colortex0Input;
-        int currentOutputFbo = fboA;
-        int currentOutputTex = texA;
-
         int depthTex = RenderTargetManager.INSTANCE.getSceneDepthTexture();
-        for (ShaderPackRuntime.Stage stage : runtime.composites()) {
-            runStage(stage.program, currentInputTex, depthTex,
-                currentOutputFbo, mainW, mainH, deferred);
-            // Swap: this stage's output becomes next stage's input.
-            currentInputTex = currentOutputTex;
-            if (currentOutputFbo == fboA) {
-                currentOutputFbo = fboB;
-                currentOutputTex = texB;
-            } else {
-                currentOutputFbo = fboA;
-                currentOutputTex = texA;
+
+        // Multi-write path: when a deferred pack's composite chain writes to
+        // colortex beyond 0 (bloom tiles, lighting accumulation), run the full
+        // colortex-flipping model so later stages read the updated buffers.
+        boolean handled = false;
+        if (deferred && usesMultiWrite(runtime)) {
+            try {
+                handled = runMultiWriteChain(runtime, ctx, depthTex, mainW, mainH);
+            } catch (Throwable t) {
+                LDOGMod.LOGGER.error("LDOG: Multi-write composite failed; falling back to single-target", t);
+                handled = false;
             }
         }
 
-        // Final stage: draw to the main FB instead of a ping target.
-        ShaderPackRuntime.Stage finalStage = runtime.finalStage();
-        if (finalStage != null) {
-            runStage(finalStage.program, currentInputTex, depthTex,
-                ctx.mainFbo(), mainW, mainH, deferred);
-        } else {
-            // No final.fsh — blit the last composite output back to the main
-            // FB so the post-process work is actually visible.
-            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,
-                currentInputTex == texA ? fboA : (currentInputTex == texB ? fboB : 0));
-            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, ctx.mainFbo());
-            GL30.glBlitFramebuffer(0, 0, mainW, mainH, 0, 0, mainW, mainH,
-                GL11.GL_COLOR_BUFFER_BIT, GL11.GL_LINEAR);
+        if (!handled) {
+            // Single-target ping-pong: first stage reads colortex0Input,
+            // subsequent stages read whichever ping was just written.
+            int currentInputTex = colortex0Input;
+            int currentOutputFbo = fboA;
+            int currentOutputTex = texA;
+            for (ShaderPackRuntime.Stage stage : runtime.composites()) {
+                runStage(stage.program, currentInputTex, depthTex,
+                    currentOutputFbo, mainW, mainH, deferred);
+                currentInputTex = currentOutputTex;
+                if (currentOutputFbo == fboA) {
+                    currentOutputFbo = fboB; currentOutputTex = texB;
+                } else {
+                    currentOutputFbo = fboA; currentOutputTex = texA;
+                }
+            }
+            ShaderPackRuntime.Stage finalStage = runtime.finalStage();
+            if (finalStage != null) {
+                runStage(finalStage.program, currentInputTex, depthTex,
+                    ctx.mainFbo(), mainW, mainH, deferred);
+            } else {
+                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,
+                    currentInputTex == texA ? fboA : (currentInputTex == texB ? fboB : 0));
+                GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, ctx.mainFbo());
+                GL30.glBlitFramebuffer(0, 0, mainW, mainH, 0, 0, mainW, mainH,
+                    GL11.GL_COLOR_BUFFER_BIT, GL11.GL_LINEAR);
+            }
         }
 
         // Restore main FB binding so subsequent passes find it bound.
@@ -237,12 +257,178 @@ public final class ShaderPackCompositePass implements PostProcessPass {
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, targetFbo);
         GlStateManager.viewport(0, 0, w, h);
 
+        drawFullscreen();
+    }
+
+    private static void drawFullscreen() {
         // Triangle overdrawing the screen (cheaper than a quad).
         GL11.glBegin(GL11.GL_TRIANGLES);
         GL11.glVertex2f(-1.0f, -1.0f);
         GL11.glVertex2f( 3.0f, -1.0f);
         GL11.glVertex2f(-1.0f,  3.0f);
         GL11.glEnd();
+    }
+
+    // ===== Multi-write (colortex-flipping) composite path =====
+
+    private static final IntBuffer MRT_DRAW_BUF = BufferUtils.createIntBuffer(8);
+
+    /** True if any composite stage writes to a colortex beyond 0 that we allocated. */
+    private boolean usesMultiWrite(ShaderPackRuntime runtime) {
+        int aux = ShaderPackGbufferManager.auxColortexCount();
+        if (aux < 1) return false;
+        for (ShaderPackRuntime.Stage s : runtime.composites()) {
+            for (int t : s.drawBuffers) if (t >= 1 && t <= aux) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Run the composite chain with the OptiFine colortex-flipping model: each
+     * stage reads the "current" colortex set and writes its DRAWBUFFERS targets
+     * to scratch copies, which then flip in. Buffers a stage doesn't write keep
+     * their value. Returns false if the buffers couldn't be set up.
+     */
+    private boolean runMultiWriteChain(ShaderPackRuntime runtime, PostProcessContext ctx,
+                                       int depthTex, int mainW, int mainH) {
+        int n = Math.min(7, ShaderPackGbufferManager.auxColortexCount());
+        int w = RenderTargetManager.INSTANCE.getScaledWidth();
+        int h = RenderTargetManager.INSTANCE.getScaledHeight();
+        if (w <= 0 || h <= 0 || !ensureMrt(n, w, h)) return false;
+
+        copyGbufferToCur(n, w, h);
+
+        for (ShaderPackRuntime.Stage stage : runtime.composites()) {
+            runStageMrt(stage.program, stage.drawBuffers, n, w, h, depthTex);
+        }
+
+        // Final stage draws colortex0 (and any aux it reads) to the main FB.
+        ShaderPackRuntime.Stage fin = runtime.finalStage();
+        if (fin != null) {
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, ctx.mainFbo());
+            bindMrtInputs(fin.program, n, depthTex);
+            GlStateManager.viewport(0, 0, mainW, mainH);
+            drawFullscreen();
+        } else {
+            // Blit the final colortex0 to the main FB.
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, mrtCopyFbo);
+            GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
+                GL11.GL_TEXTURE_2D, mrtCur[0], 0);
+            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, mrtCopyFbo);
+            GL11.glReadBuffer(GL30.GL_COLOR_ATTACHMENT0);
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, ctx.mainFbo());
+            GL30.glBlitFramebuffer(0, 0, w, h, 0, 0, mainW, mainH,
+                GL11.GL_COLOR_BUFFER_BIT, GL11.GL_LINEAR);
+        }
+        return true;
+    }
+
+    /** Copy the gbuffer colortex (scene + aux) into our writable "current" set. */
+    private void copyGbufferToCur(int n, int w, int h) {
+        int sceneFbo = RenderTargetManager.INSTANCE.getSceneFbo();
+        int gbufFbo = ShaderPackGbufferManager.gbufferFbo();
+        for (int i = 0; i <= n; i++) {
+            int srcFbo = (i == 0) ? sceneFbo : gbufFbo;
+            int srcAttach = GL30.GL_COLOR_ATTACHMENT0 + i;
+            if (srcFbo == 0) continue;
+            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, srcFbo);
+            GL11.glReadBuffer(srcAttach);
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, mrtCopyFbo);
+            GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
+                GL11.GL_TEXTURE_2D, mrtCur[i], 0);
+            GL11.glDrawBuffer(GL30.GL_COLOR_ATTACHMENT0);
+            GL30.glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL11.GL_COLOR_BUFFER_BIT, GL11.GL_NEAREST);
+        }
+    }
+
+    /** One composite stage: write its DRAWBUFFERS targets to scratch, then flip. */
+    private void runStageMrt(ShaderProgram program, int[] drawBuffers, int n, int w, int h, int depthTex) {
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, mrtFbo);
+        MRT_DRAW_BUF.clear();
+        int count = 0;
+        for (int t : drawBuffers) {
+            if (t < 0 || t > n) continue;
+            GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0 + t,
+                GL11.GL_TEXTURE_2D, mrtAlt[t], 0);
+            MRT_DRAW_BUF.put(GL30.GL_COLOR_ATTACHMENT0 + t);
+            count++;
+        }
+        if (count == 0) {  // nothing valid to write — default to colortex0
+            GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
+                GL11.GL_TEXTURE_2D, mrtAlt[0], 0);
+            MRT_DRAW_BUF.put(GL30.GL_COLOR_ATTACHMENT0);
+        }
+        MRT_DRAW_BUF.flip();
+        GL20.glDrawBuffers(MRT_DRAW_BUF);
+
+        bindMrtInputs(program, n, depthTex);
+        GlStateManager.viewport(0, 0, w, h);
+        drawFullscreen();
+
+        // Flip written buffers in.
+        if (count == 0) { int tmp = mrtCur[0]; mrtCur[0] = mrtAlt[0]; mrtAlt[0] = tmp; }
+        else for (int t : drawBuffers) {
+            if (t < 0 || t > n) continue;
+            int tmp = mrtCur[t]; mrtCur[t] = mrtAlt[t]; mrtAlt[t] = tmp;
+        }
+    }
+
+    /** Bind the current colortex set + depth + shadow + noise + uniforms for an MRT stage. */
+    private void bindMrtInputs(ShaderProgram program, int n, int depthTex) {
+        GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, mrtCur[0]);
+        GL13.glActiveTexture(GL13.GL_TEXTURE1);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, depthTex);
+        for (int i = 1; i <= 7; i++) {
+            int tex = (i <= n) ? mrtCur[i] : blackTex;
+            GL13.glActiveTexture(GL13.GL_TEXTURE0 + (i + 1));
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex);
+        }
+        GL13.glActiveTexture(GL13.GL_TEXTURE0 + 10);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D,
+            com.limitlessdev.ldog.render.shaderpack.ShaderNoiseTexture.get());
+
+        program.bind();
+        program.setUniform1i("colortex0", 0);
+        program.setUniform1i("depthtex0", 1);
+        program.setUniform1i("colortex1", 2);
+        program.setUniform1i("colortex2", 3);
+        program.setUniform1i("colortex3", 4);
+        program.setUniform1i("colortex4", 5);
+        program.setUniform1i("colortex5", 6);
+        program.setUniform1i("colortex6", 7);
+        program.setUniform1i("colortex7", 8);
+        program.setUniform1i("depthtex1", 1);
+        program.setUniform1i("depthtex2", 1);
+        program.setUniform1i("noisetex", 10);
+        program.setUniform1i("noiseTextureResolution",
+            com.limitlessdev.ldog.render.shaderpack.ShaderNoiseTexture.RESOLUTION);
+        uniforms.feedTo(program);
+        com.limitlessdev.ldog.render.shaderpack.ShadowMapManager.feed(program, 9);
+    }
+
+    private boolean ensureMrt(int n, int w, int h) {
+        if (mrtFbo != 0 && mrtN == n && mrtW == w && mrtH == h) return true;
+        disposeMrt();
+        mrtN = n; mrtW = w; mrtH = h;
+        mrtCur = new int[n + 1];
+        mrtAlt = new int[n + 1];
+        for (int i = 0; i <= n; i++) {
+            mrtCur[i] = allocColorTex(w, h);
+            mrtAlt[i] = allocColorTex(w, h);
+        }
+        mrtFbo = GL30.glGenFramebuffers();
+        mrtCopyFbo = GL30.glGenFramebuffers();
+        return true;
+    }
+
+    private void disposeMrt() {
+        if (mrtCur != null) for (int t : mrtCur) if (t != 0) GL11.glDeleteTextures(t);
+        if (mrtAlt != null) for (int t : mrtAlt) if (t != 0) GL11.glDeleteTextures(t);
+        mrtCur = mrtAlt = null;
+        if (mrtFbo != 0) { GL30.glDeleteFramebuffers(mrtFbo); mrtFbo = 0; }
+        if (mrtCopyFbo != 0) { GL30.glDeleteFramebuffers(mrtCopyFbo); mrtCopyFbo = 0; }
+        mrtN = -1; mrtW = mrtH = 0;
     }
 
     private void ensureBuffers(int w, int h) {
@@ -309,6 +495,7 @@ public final class ShaderPackCompositePass implements PostProcessPass {
     @Override
     public void dispose() {
         disposeFramebuffers();
+        disposeMrt();
         if (blackTex != 0) { GL11.glDeleteTextures(blackTex); blackTex = 0; }
     }
 
