@@ -664,6 +664,26 @@ Captured 2026-04-18. Sorted by effort × user-visibility.
 
 ---
 
+## 11.5. Rendering Pipeline Audit (2026-06-15)
+
+Comprehensive multi-agent review of the whole rendering pipeline (post-process, mixins, shader-pack gbuffer/shadow, resource-pack features, GL resources). **Fixed** (commits `37fafaa`, `c9af34b`, `d87d97e`, `99a8789`):
+- Pipeline pass chain permanently lost passes (`it.remove()` on throw + `disableAll()` clear, never repopulated) → black screen on toggle/error. Now self-heals (`registerPasses()` rebuild when empty) + skips-not-removes a throwing pass.
+- Distance blur under shader packs — `effectiveRenderScale()` forces native 1.0 when a deferred pack drives.
+- `EntityMotionVectorPass.projectToNDC` returned a shared scratch → cur/prev aliased → **all entity MV was zero** (9c.3-C silently broken). Fixed.
+- `RandomEntityTextureHandler` `Integer.MIN_VALUE` negation (IndexOOB) + `% 0` (ArithmeticException). Fixed.
+- `DynamicLightManager.getDynamicLightLevel` cross-thread `entity.getPosition()` (race + per-call alloc) on chunk-worker threads → use `lastPos` snapshot.
+- `ShadowMapManager.render` matrix-mode not restored + `glPopAttrib` before FBO rebind (GL_INVALID_OPERATION) + dummy depth tex leak. Fixed.
+- Info/Performance overlay GL colour bleed; emissive per-block early-out (chunk-rebuild perf); `ExtendedBorderHandler.padFrameData` reload crash (bounds/null guard); Bloom targets not reallocating on live HDR toggle.
+
+**Remaining findings (not yet fixed — triage):**
+- `[ ]` MED: MSAA-vs-pipeline RETURN hook not gated on `hasConflictingFeatureOn()` + undefined mixin order between MSAA and pipeline injects → set explicit mixin `priority` + early-return.
+- `[ ]` MED: thread-safety — `CustomSkyRenderer` + `RandomEntityTextureHandler` mutate plain HashMaps on the resource-reload thread while read on render thread (CME risk on `/reload`). Publish via volatile swap or ConcurrentHashMap.
+- `[ ]` MED: `FpsReducerHandler` uses `Display.sync()` from a 20 Hz tick (can't cap render FPS) — likely no-op; verify, switch to `gameSettings.limitFramerate`.
+- `[ ]` MED: `MixinTextureAtlasSprite` non-square HD path `ci.cancel()`s without populating frame data → likely garbage sprite; pad-to-square + fall through instead.
+- `[ ]` MED: `BorderlessFullscreenHandler` null-deref on `Display.getDesktopDisplayMode()`; `FXAAHandler` leaks half-built ShaderGroup on load failure (call `unload` in catch) + unguarded Accessor cast.
+- `[ ]` MED: font atlas `16*cellSize` not clamped to `GL_MAX_TEXTURE_SIZE`.
+- `[ ]` LOW/uncertain: CTM horizontal/vertical tile-order vs OF (needs a real pack to confirm); `@ModifyConstant`/`@ModifyVariable` ordinals in weather/nausea mixins need decompiled-bytecode verification; emissive/CTM `onModelBake` O(n²) scans; NaturalTexture/CTM per-quad alloc in `getQuads`; `CustomColorHandler.parseColor` always base-16; OptiFine-coexistence gating relies solely on config flags for CTM/emissive/sky/randommobs.
+
 ## 12. Critical Gotchas — Carry Forward
 
 Non-obvious infrastructure facts a future reader (or session pickup) needs to know:
