@@ -32,6 +32,29 @@ public final class ShaderPackUniforms {
 
     private static final FloatBuffer MAT_BUF = BufferUtils.createFloatBuffer(16);
 
+    // World-render matrices, captured during renderWorldPass when GL still holds
+    // the camera transform. The composite chain runs LATER (after MC switched to
+    // the GUI ortho matrix), so without this it would feed identity/ortho for
+    // gbufferModelView/Projection — breaking any deferred pack that reconstructs
+    // world position from depth (the "black/invisible world" symptom).
+    private static final FloatBuffer WORLD_MV = BufferUtils.createFloatBuffer(16);
+    private static final FloatBuffer WORLD_PROJ = BufferUtils.createFloatBuffer(16);
+    private static boolean hasWorldMatrices;
+
+    /** Capture the live GL camera matrices. Call mid-renderWorldPass. */
+    public static void captureWorldMatrices() {
+        WORLD_MV.clear();
+        GL11.glGetFloat(GL11.GL_MODELVIEW_MATRIX, WORLD_MV);
+        WORLD_PROJ.clear();
+        GL11.glGetFloat(GL11.GL_PROJECTION_MATRIX, WORLD_PROJ);
+        hasWorldMatrices = true;
+    }
+
+    /** Drop the captured matrices (call at frame start). */
+    public static void clearWorldMatrices() {
+        hasWorldMatrices = false;
+    }
+
     // Cached one-frame-old matrices for the "previous" uniforms.
     private final Matrix4f prevModelView = new Matrix4f();
     private final Matrix4f prevProjection = new Matrix4f();
@@ -119,25 +142,30 @@ public final class ShaderPackUniforms {
         shadowLightPos[1] = isNight ? moonPos[1] : sunPos[1];
         shadowLightPos[2] = 0.0F;
 
-        // Pull current GL matrices for gbufferModelView + gbufferProjection.
-        // These are valid mid-renderWorldPass; in composite-pass context the
-        // matrices have been restored to identity by MC's GUI setup. To get
-        // useful values we snapshot the camera-state captures from Phase 9c
-        // — which were taken during world render at the correct point.
+        // gbufferModelView + gbufferProjection. Prefer the matrices captured
+        // during the world render (correct camera transform); fall back to the
+        // live GL matrices only when no capture happened this frame (e.g. a
+        // composite-only pack that never ran a gbuffer pass — it won't use these
+        // for world-space reconstruction anyway).
         Matrix4f cur = currentModelView;
-        cur.setIdentity();
         Matrix4f proj = currentProjection;
-        proj.setIdentity();
-        // Read live GL_MODELVIEW + GL_PROJECTION (overwritten in composite
-        // — caller should snapshot just before MC's GUI matrix reset).
-        MAT_BUF.clear();
-        GL11.glGetFloat(GL11.GL_MODELVIEW_MATRIX, MAT_BUF);
-        MAT_BUF.rewind();
-        cur.load(MAT_BUF);
-        MAT_BUF.clear();
-        GL11.glGetFloat(GL11.GL_PROJECTION_MATRIX, MAT_BUF);
-        MAT_BUF.rewind();
-        proj.load(MAT_BUF);
+        if (hasWorldMatrices) {
+            WORLD_MV.position(0);
+            cur.load(WORLD_MV);
+            WORLD_PROJ.position(0);
+            proj.load(WORLD_PROJ);
+        } else {
+            cur.setIdentity();
+            proj.setIdentity();
+            MAT_BUF.clear();
+            GL11.glGetFloat(GL11.GL_MODELVIEW_MATRIX, MAT_BUF);
+            MAT_BUF.rewind();
+            cur.load(MAT_BUF);
+            MAT_BUF.clear();
+            GL11.glGetFloat(GL11.GL_PROJECTION_MATRIX, MAT_BUF);
+            MAT_BUF.rewind();
+            proj.load(MAT_BUF);
+        }
 
         // Fog colour — read live GL fog state. Accurate during the world
         // render (gbuffer path); may be stale in the composite/GUI context.

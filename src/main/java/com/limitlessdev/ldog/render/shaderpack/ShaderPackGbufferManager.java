@@ -126,6 +126,7 @@ public final class ShaderPackGbufferManager {
     public static void beginFrame() {
         snapshottedThisFrame = false;
         ShadowMapManager.beginFrame();
+        ShaderPackUniforms.clearWorldMatrices();
     }
 
     /** Texture unit reserved for the shadow depth map (above the composite's 0..8). */
@@ -327,6 +328,10 @@ public final class ShaderPackGbufferManager {
     private static void ensureFrameSnapshot() {
         if (snapshottedThisFrame) return;
         Minecraft mc = Minecraft.getMinecraft();
+        // We're mid-world-render here (first gbuffer bind) — capture the camera
+        // matrices so the later composite pass feeds them as gbufferModelView/
+        // Projection instead of MC's GUI ortho matrix.
+        ShaderPackUniforms.captureWorldMatrices();
         UNIFORMS.rotatePrev();
         UNIFORMS.snapshot(mc.displayWidth, mc.displayHeight, mc.getRenderPartialTicks());
         snapshottedThisFrame = true;

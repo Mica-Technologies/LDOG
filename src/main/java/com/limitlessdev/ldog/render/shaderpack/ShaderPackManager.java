@@ -172,6 +172,13 @@ public final class ShaderPackManager {
         if (runtime.isEmpty()) {
             // Nothing compiled at all — release so the passes short-circuit.
             runtime = null;
+        } else if (!LDOGConfig.enablePostProcessPipeline) {
+            // The composite chain + deferred gbuffer path both run inside the
+            // post-process pipeline; with it off, a pack compiles but renders
+            // nothing. Enable it so activating a pack actually does something.
+            LDOGConfig.enablePostProcessPipeline = true;
+            LDOGMod.LOGGER.info(
+                "LDOG: Auto-enabled the post-process pipeline (required for shader packs to render)");
         }
     }
 
