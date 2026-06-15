@@ -65,10 +65,10 @@ void main() {
     sunColor *= (1.0 - rainStrength * 0.7);
     vec3 skyAmbient = mix(vec3(0.10, 0.13, 0.20), vec3(0.45, 0.62, 0.85), dayFactor);
 
-    vec3 sunlight = NdotL * shade * skyLight * sunColor * dayFactor * 1.5;
-    vec3 ambient  = skyAmbient * (skyLight * 0.85 + 0.05);
-    vec3 torch    = blockLight * blockLight * vec3(1.0, 0.55, 0.25) * 1.6;
-    vec3 light    = ambient + sunlight + torch + 0.025;
+    vec3 sunlight = NdotL * shade * skyLight * sunColor * dayFactor * 1.25;
+    vec3 ambient  = skyAmbient * (skyLight * 0.75 + 0.05);
+    vec3 torch    = blockLight * blockLight * vec3(1.0, 0.55, 0.25) * 1.5;
+    vec3 light    = ambient + sunlight + torch + 0.02;
 
     gl_FragData[0] = vec4(albedo * light, 1.0);
 }

@@ -14,7 +14,7 @@ vec3 aces(vec3 x) {
 void main() {
     vec3 c = texture2D(colortex0, texcoord).rgb;
 
-    c = aces(c * 1.05);
+    c = aces(c * 0.92);
 
     float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
     c = mix(vec3(l), c, 1.12);              // saturation
