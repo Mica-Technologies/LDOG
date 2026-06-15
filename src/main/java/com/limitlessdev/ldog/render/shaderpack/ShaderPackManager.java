@@ -232,7 +232,11 @@ public final class ShaderPackManager {
      * the dispose paths are no-ops anyway.
      */
     private void onPackChanged() {
-        if (Minecraft.getMinecraft().world == null) return;
+        boolean inGame = Minecraft.getMinecraft().world != null;
+        LDOGMod.LOGGER.info("LDOG: [switch-diag] onPackChanged active='{}' gbuffers={} deferred={} inGame={}",
+            active == null ? "(none)" : active.name,
+            LDOGConfig.enableShaderGbuffers, ShaderPackGbufferManager.isDeferredActive(), inGame);
+        if (!inGame) return;
         try {
             ShaderPackGbufferManager.dispose();
             ShadowMapManager.dispose();
