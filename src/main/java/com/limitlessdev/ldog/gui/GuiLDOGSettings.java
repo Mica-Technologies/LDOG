@@ -1427,8 +1427,16 @@ public class GuiLDOGSettings extends GuiScreen {
                     com.limitlessdev.ldog.config.LDOGPreset.selected();
                 com.limitlessdev.ldog.config.LDOGPreset[] all =
                     com.limitlessdev.ldog.config.LDOGPreset.values();
-                com.limitlessdev.ldog.config.LDOGPreset next =
-                    all[(current.ordinal() + 1) % all.length];
+                // Cycle through the real presets, skipping CUSTOM (an implicit
+                // state, not a pickable preset). Without this skip, Ultra wraps
+                // to CUSTOM whose apply() no-ops and never persists, so the
+                // button appears stuck on Ultra.
+                int idx = current.ordinal();
+                com.limitlessdev.ldog.config.LDOGPreset next;
+                do {
+                    idx = (idx + 1) % all.length;
+                    next = all[idx];
+                } while (next == com.limitlessdev.ldog.config.LDOGPreset.CUSTOM);
                 next.apply();
 
                 // A preset can change AA / FXAA / Ext-Border / water toggles

@@ -24,16 +24,17 @@ void main() {
            + texture2D(colortex0, texcoord + vec2( 0.0, 2.0) * invMainSize).rgb
            + texture2D(colortex0, texcoord + vec2( 0.0,-2.0) * invMainSize).rgb;
     b *= 0.25;
-    float bl = max(dot(b, vec3(0.2126, 0.7152, 0.0722)) - 0.72, 0.0);
-    col += b * bl * 0.6;
+    float bl = max(dot(b, vec3(0.2126, 0.7152, 0.0722)) - 0.6, 0.0);
+    col += b * bl * 1.3;
 
     // Exposure + filmic tonemap.
-    col *= 1.12;
+    col *= 1.28;
     col = aces(col);
 
-    // Subtle saturation lift so the HDR look reads as vivid, not washed.
+    // Saturation + contrast lift so the HDR look reads clearly vivid.
     float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
-    col = mix(vec3(l), col, 1.12);
+    col = mix(vec3(l), col, 1.35);
+    col = (col - 0.5) * 1.12 + 0.5;
 
     gl_FragColor = vec4(col, 1.0);
 }

@@ -14,10 +14,10 @@ void main() {
 
     // Split-tone: blend a teal shadow tint and an orange highlight tint by
     // luminance, then mix it over the original at moderate strength.
-    vec3 shadowTint = vec3(0.10, 0.45, 0.52);
-    vec3 highTint   = vec3(1.00, 0.62, 0.28);
+    vec3 shadowTint = vec3(0.05, 0.42, 0.58);
+    vec3 highTint   = vec3(1.05, 0.60, 0.22);
     vec3 tone = mix(shadowTint, highTint, smoothstep(0.05, 0.95, l));
-    c = mix(c, c * tone * 1.7, 0.24);
+    c = mix(c, c * tone * 1.8, 0.48);
 
     // Slight desaturation for the filmic feel, then a soft contrast curve.
     c = mix(vec3(l), c, 0.9);

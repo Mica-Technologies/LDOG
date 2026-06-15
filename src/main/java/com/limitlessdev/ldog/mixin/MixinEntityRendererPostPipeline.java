@@ -193,6 +193,22 @@ public abstract class MixinEntityRendererPostPipeline {
 
         PostProcessPipeline.INSTANCE.onFrame(ctx);
 
+        // Force the final framebuffer opaque when a shader pack is driving the
+        // image. Pack gbuffer/composite/final stages routinely write alpha < 1
+        // (they only care about RGB), and in windowed/borderless mode the OS
+        // composites a sub-1 alpha framebuffer as a see-through window — the
+        // "whole game goes transparent" symptom. Clear just the alpha to 1
+        // without touching RGB. Cheap; skipped entirely when no pack is active.
+        boolean ldog$packActive = ShaderPackGbufferManager.isActive()
+            || com.limitlessdev.ldog.render.shaderpack.ShaderPackManager.INSTANCE.getRuntime() != null;
+        if (ldog$pipelineActive && ldog$packActive) {
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, mainFbo);
+            GlStateManager.colorMask(false, false, false, true);
+            GlStateManager.clearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            GlStateManager.clear(org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT);
+            GlStateManager.colorMask(true, true, true, true);
+        }
+
         if (ldog$pipelineActive) {
             // Defensive restore — BilinearBlitPass already leaves main FB
             // bound, but a future pass might not. Keep GUI/HUD draw state
