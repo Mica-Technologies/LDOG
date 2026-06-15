@@ -70,6 +70,11 @@ public final class ShaderPackUniforms {
     private double currentCameraX, currentCameraY, currentCameraZ;
     private float currentNear, currentFar;
     private int currentViewWidth, currentViewHeight;
+    // Previous frame's camera position (OF previousCameraPosition) — motion-blur
+    // and temporal packs difference it against cameraPosition. Seeded on the
+    // first frame so frame 0 reports zero camera motion rather than a jump.
+    private double prevCameraX, prevCameraY, prevCameraZ;
+    private boolean hasPrevCamera;
     private final Matrix4f currentModelView = new Matrix4f();
     private final Matrix4f currentProjection = new Matrix4f();
     private final float[] sunPos = new float[3];
@@ -103,6 +108,12 @@ public final class ShaderPackUniforms {
             currentCameraX = view.prevPosX + (view.posX - view.prevPosX) * partialTicks;
             currentCameraY = view.prevPosY + (view.posY - view.prevPosY) * partialTicks;
             currentCameraZ = view.prevPosZ + (view.posZ - view.prevPosZ) * partialTicks;
+        }
+        if (!hasPrevCamera) {
+            prevCameraX = currentCameraX;
+            prevCameraY = currentCameraY;
+            prevCameraZ = currentCameraZ;
+            hasPrevCamera = true;
         }
 
         currentNear = 0.05F;
@@ -230,7 +241,9 @@ public final class ShaderPackUniforms {
         // Time / frame.
         program.setUniform1i("frameCounter", frameCounter);
         program.setUniform1f("frameTime", 1.0f / 60.0f);  // approximation
-        float seconds = (float) ((System.nanoTime() - startNanos) / 1_000_000_000.0);
+        // frameTimeCounter wraps at 3600s like OptiFine — packs that drive
+        // periodic animation off it (and mod/fract the value) rely on the wrap.
+        float seconds = (float) (((System.nanoTime() - startNanos) / 1_000_000_000.0) % 3600.0);
         program.setUniform1f("frameTimeCounter", seconds);
 
         // World.
@@ -249,6 +262,11 @@ public final class ShaderPackUniforms {
             (float) currentCameraX,
             (float) currentCameraY,
             (float) currentCameraZ,
+            0.0f);
+        program.setUniform4f("previousCameraPosition",
+            (float) prevCameraX,
+            (float) prevCameraY,
+            (float) prevCameraZ,
             0.0f);
 
         // Celestial directions.
@@ -307,6 +325,9 @@ public final class ShaderPackUniforms {
     public void rotatePrev() {
         prevModelView.load(currentModelView);
         prevProjection.load(currentProjection);
+        prevCameraX = currentCameraX;
+        prevCameraY = currentCameraY;
+        prevCameraZ = currentCameraZ;
         hasPrev = true;
     }
 
