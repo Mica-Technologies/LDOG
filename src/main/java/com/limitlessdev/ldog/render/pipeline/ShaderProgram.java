@@ -42,6 +42,19 @@ public final class ShaderProgram {
         int prog = GL20.glCreateProgram();
         GL20.glAttachShader(prog, vert);
         GL20.glAttachShader(prog, frag);
+        // Bind OptiFine/Iris custom vertex attributes to SAFE generic locations
+        // (11+) BEFORE linking. Otherwise the linker may auto-assign them to
+        // low locations (1..10) that alias the fixed-function arrays MC enables
+        // for terrain/entity VBOs (gl_Vertex=0, gl_Normal=2, gl_Color=3,
+        // gl_MultiTexCoord0=8, gl_MultiTexCoord1=9), producing a GL_INVALID_
+        // OPERATION on every draw — a per-chunk error flood that also tanks
+        // performance. glBindAttribLocation is a no-op for names the shader
+        // doesn't declare, so this is harmless for LDOG's own passes.
+        GL20.glBindAttribLocation(prog, 11, "mc_Entity");
+        GL20.glBindAttribLocation(prog, 12, "mc_midTexCoord");
+        GL20.glBindAttribLocation(prog, 13, "at_tangent");
+        GL20.glBindAttribLocation(prog, 14, "at_velocity");
+        GL20.glBindAttribLocation(prog, 15, "at_midBlock");
         GL20.glLinkProgram(prog);
 
         int linked = GL20.glGetProgrami(prog, GL20.GL_LINK_STATUS);

@@ -43,6 +43,10 @@ public abstract class MixinEntityRendererJitter {
     private void ldog$advanceJitter(int pass, float partialTicks, long finishTimeNano, CallbackInfo ci) {
         if (pass != 2) return;
         if (!LDOGConfig.enableTAA) return;
+        // No jitter while an external shader pack is driving — the per-frame
+        // sub-pixel offset (unresolved without LDOG's TAA, which is skipped for
+        // packs) shows up as heavy flicker.
+        if (com.limitlessdev.ldog.render.shaderpack.ShaderPackGbufferManager.isDeferredActive()) return;
         JitterHelper.advanceFrame();
     }
 
@@ -60,6 +64,10 @@ public abstract class MixinEntityRendererJitter {
     private void ldog$jitterSky(int pass, float partialTicks, long finishTimeNano, CallbackInfo ci) {
         if (pass != 2) return;
         if (!LDOGConfig.enableTAA) return;
+        // No jitter while an external shader pack is driving — the per-frame
+        // sub-pixel offset (unresolved without LDOG's TAA, which is skipped for
+        // packs) shows up as heavy flicker.
+        if (com.limitlessdev.ldog.render.shaderpack.ShaderPackGbufferManager.isDeferredActive()) return;
         applyJitter();
     }
 
@@ -88,6 +96,10 @@ public abstract class MixinEntityRendererJitter {
     private void ldog$jitterAndCaptureTerrain(int pass, float partialTicks, long finishTimeNano, CallbackInfo ci) {
         if (pass != 2) return;
         if (!LDOGConfig.enableTAA) return;
+        // No jitter while an external shader pack is driving — the per-frame
+        // sub-pixel offset (unresolved without LDOG's TAA, which is skipped for
+        // packs) shows up as heavy flicker.
+        if (com.limitlessdev.ldog.render.shaderpack.ShaderPackGbufferManager.isDeferredActive()) return;
 
         applyJitter();
 

@@ -172,11 +172,28 @@ public final class PostProcessPipeline {
     private int runPasses(PostProcessContext context) {
         int active = 0;
 
+        // When an external (deferred) shader pack is driving the image, run ONLY
+        // the scene resolve + the pack's composite chain. LDOG's own upscale /
+        // temporal (FSR2/TAA) / sharpen / AA / grade passes would fight the pack
+        // — in particular the per-frame jitter + temporal accumulation cause
+        // heavy flicker. OptiFine has no such stack underneath a pack either.
+        boolean packDrives = com.limitlessdev.ldog.render.shaderpack.ShaderPackGbufferManager.isDeferredActive();
+
         // Disable passes that throw so one bad pass cannot crash rendering.
         Iterator<PostProcessPass> it = passes.iterator();
         while (it.hasNext()) {
             PostProcessPass pass = it.next();
-            if (!pass.isEnabled()) continue;
+            if (packDrives) {
+                // BilinearBlit resolves the (possibly scaled) scene to the main
+                // FB; the composite then renders the pack on top. Force both to
+                // run regardless of their own isEnabled gating; skip everything
+                // else.
+                boolean allow = pass instanceof ShaderPackCompositePass
+                    || pass instanceof BilinearBlitPass;
+                if (!allow) continue;
+            } else if (!pass.isEnabled()) {
+                continue;
+            }
 
             try {
                 pass.execute(context);
