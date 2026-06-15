@@ -295,7 +295,8 @@ public final class ShaderPackRuntime {
         String vertCompiled = ShaderMacros.injectDefines(vertSrc, macros);
         String fragCompiled = ShaderMacros.injectDefines(fragSrc, macros);
         try {
-            ShaderProgram program = new ShaderProgram("ldogPack:" + baseName, vertCompiled, fragCompiled);
+            ShaderProgram program = new ShaderProgram("ldogPack:" + baseName, vertCompiled, fragCompiled)
+                .quietMissingUniforms();  // packs use only a subset of the uniform set
             // Resolve the ACTIVE DRAWBUFFERS by stripping inactive #if/#ifdef
             // branches first — packs gate their MRT output set behind conditionals,
             // so a raw "first directive" scan would pick a dead branch and mis-map

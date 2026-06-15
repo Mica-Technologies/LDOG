@@ -26,6 +26,14 @@ public final class ShaderProgram {
     private final String name;
     private final Map<String, Integer> uniformCache = new HashMap<>();
     private boolean disposed;
+    /**
+     * Whether to warn when a uniform isn't found. True for LDOG's own passes
+     * (a missing uniform there is a likely typo worth surfacing). Set false for
+     * shader-pack programs, which legitimately declare only a small subset of the
+     * standard OF/Iris uniform set — warning on the rest produces hundreds of
+     * noise lines per pack with no signal.
+     */
+    private boolean warnMissingUniforms = true;
 
     public ShaderProgram(String name, String vertSource, String fragSource) throws ShaderCompileException {
         this.name = name;
@@ -85,6 +93,15 @@ public final class ShaderProgram {
 
     public int programId() { return programId; }
 
+    /**
+     * Suppress "no active uniform" warnings for this program. Call for shader-pack
+     * programs, which intentionally use only part of the standard uniform set.
+     */
+    public ShaderProgram quietMissingUniforms() {
+        this.warnMissingUniforms = false;
+        return this;
+    }
+
     public void setUniform1i(String uniform, int value) {
         int loc = locate(uniform);
         if (loc >= 0) GL20.glUniform1i(loc, value);
@@ -128,9 +145,11 @@ public final class ShaderProgram {
         if (cached != null) return cached;
         int loc = GL20.glGetUniformLocation(programId, uniform);
         uniformCache.put(uniform, loc);
-        if (loc < 0) {
+        if (loc < 0 && warnMissingUniforms) {
             // Uniforms the GLSL compiler optimized out show up as -1. Log once
-            // per uniform so accidental typos surface without spamming.
+            // per uniform so accidental typos surface without spamming. Pack
+            // programs opt out (quietMissingUniforms) — they omit most uniforms
+            // by design, so the warning is pure noise there.
             LDOGMod.LOGGER.warn("LDOG: Shader '{}' has no active uniform '{}'", name, uniform);
         }
         return loc;

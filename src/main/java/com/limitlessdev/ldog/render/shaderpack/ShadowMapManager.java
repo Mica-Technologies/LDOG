@@ -167,6 +167,7 @@ public final class ShadowMapManager {
             GL11.glPopAttrib();
             GL11.glViewport(VIEWPORT[0], VIEWPORT[1], VIEWPORT[2], VIEWPORT[3]);
             renderedThisFrame = true;
+            com.limitlessdev.ldog.render.pipeline.PipelineGlProbe.drain("shadow:depth-render");
         }
 
         // Pop the shadow matrices, restoring the world camera matrices, then the
@@ -177,7 +178,7 @@ public final class ShadowMapManager {
         GL11.glPopMatrix();
         GL11.glMatrixMode(prevMatrixMode);
 
-        com.limitlessdev.ldog.render.pipeline.PipelineGlProbe.drain("shadow");
+        com.limitlessdev.ldog.render.pipeline.PipelineGlProbe.drain("shadow:matrix-restore");
     }
 
     /**

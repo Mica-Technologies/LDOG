@@ -358,6 +358,17 @@ public final class ShaderPackCompositePass implements PostProcessPass {
     /** One composite stage: write its DRAWBUFFERS targets to scratch, then flip. */
     private void runStageMrt(ShaderProgram program, int[] drawBuffers, int n, int w, int h, int depthTex) {
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, mrtFbo);
+        // Detach every color attachment left over from the previous stage FIRST.
+        // After a stage flips, the texture it wrote (still attached here) becomes
+        // the NEXT stage's mrtCur[t] and is bound as a sampler — a texture that is
+        // simultaneously attached to the bound FBO and sampled is a feedback loop
+        // and raises GL_INVALID_OPERATION on the draw, even when it isn't in the
+        // active draw-buffer list. Clearing attachments makes each stage attach
+        // only the scratch buffers it actually writes.
+        for (int t = 0; t <= n; t++) {
+            GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0 + t,
+                GL11.GL_TEXTURE_2D, 0, 0);
+        }
         MRT_DRAW_BUF.clear();
         int count = 0;
         for (int t : drawBuffers) {

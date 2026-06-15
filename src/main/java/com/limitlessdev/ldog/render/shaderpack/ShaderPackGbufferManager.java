@@ -156,6 +156,7 @@ public final class ShaderPackGbufferManager {
             GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
         }
         setDrawBuffers(SINGLE0);
+        com.limitlessdev.ldog.render.pipeline.PipelineGlProbe.drain("gbuffer:beginWorld");
         return fbo;
     }
 
@@ -198,6 +199,11 @@ public final class ShaderPackGbufferManager {
 
         // Route MRT outputs for this program.
         if (gbufferBound) setDrawBuffers(mapDrawBuffers(stage.drawBuffers));
+
+        // Localize errors from this category's program bind + uniform feed +
+        // draw-buffer routing (the subsequent vanilla draw, if it errors, still
+        // surfaces at the gbuffer-world boundary). Logged once per category.
+        com.limitlessdev.ldog.render.pipeline.PipelineGlProbe.drain("gbuffer:bind:" + category);
 
         if (!loggedFirstBind) {
             loggedFirstBind = true;
