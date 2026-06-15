@@ -80,10 +80,15 @@ public final class ShaderPackManager {
             discoveredPackNames.size(), packsDir.getAbsolutePath());
     }
 
-    /** Names suitable for cycling in the GUI. Always includes "(none)" first. */
+    /**
+     * Names suitable for cycling in the GUI: "(none)" first, then LDOG's
+     * bundled built-in packs, then the packs discovered in {@code shaderpacks/}.
+     */
     public synchronized List<String> getPackNames() {
-        List<String> out = new ArrayList<>(discoveredPackNames.size() + 1);
+        List<String> builtins = BuiltinShaderPacks.displayNames();
+        List<String> out = new ArrayList<>(discoveredPackNames.size() + builtins.size() + 1);
         out.add("(none)");
+        out.addAll(builtins);
         out.addAll(discoveredPackNames);
         return out;
     }
@@ -114,25 +119,34 @@ public final class ShaderPackManager {
             deactivate();
             return;
         }
-        ensurePacksDir();
-        if (packsDir == null) return;
-
-        File target = new File(packsDir, name);
-        if (!target.exists()) {
-            LDOGMod.LOGGER.warn("LDOG: Shader pack '{}' not found; deactivating", name);
-            deactivate();
-            return;
-        }
 
         ShaderPack created;
         try {
-            if (target.isDirectory()) {
-                File shadersDir = new File(target, "shaders");
-                created = new DirectoryShaderPack(name, shadersDir);
+            if (BuiltinShaderPacks.isBuiltin(name)) {
+                String dir = BuiltinShaderPacks.resourceDir(name);
+                if (dir == null) {
+                    LDOGMod.LOGGER.warn("LDOG: Unknown built-in shader pack '{}'; deactivating", name);
+                    deactivate();
+                    return;
+                }
+                created = new BuiltinShaderPack(name, dir);
             } else {
-                String prefix = detectZipPrefix(target);
-                created = new ZipShaderPack(name, target, prefix);
+                ensurePacksDir();
+                if (packsDir == null) return;
+                File target = new File(packsDir, name);
+                if (!target.exists()) {
+                    LDOGMod.LOGGER.warn("LDOG: Shader pack '{}' not found; deactivating", name);
+                    deactivate();
+                    return;
+                }
+                if (target.isDirectory()) {
+                    created = new DirectoryShaderPack(name, new File(target, "shaders"));
+                } else {
+                    created = new ZipShaderPack(name, target, detectZipPrefix(target));
+                }
             }
+            // Probe the current dimension's worldN/ folder first (OF/Iris layout).
+            created.worldDir = currentWorldDir();
             loadProperties(created);
         } catch (IOException e) {
             LDOGMod.LOGGER.error("LDOG: Failed to load shader pack '{}': {}", name, e.toString());
@@ -145,20 +159,32 @@ public final class ShaderPackManager {
 
         if (!active.hasAnyProgram()) {
             LDOGMod.LOGGER.warn(
-                "LDOG: Activated shader pack '{}' but no standard gbuffer programs found — pack may be incompatible",
-                name);
+                "LDOG: Activated shader pack '{}' but found no programs LDOG can load (dim folder '{}'). "
+                + "Modern GLSL 330+/Iris packs for MC 1.16+ can't run on 1.12.2's GL 2.1 — "
+                + "use a 1.12.2-format pack or an [LDOG] built-in pack.",
+                name, active.worldDir);
         } else {
-            LDOGMod.LOGGER.info("LDOG: Activated shader pack '{}'", name);
+            LDOGMod.LOGGER.info("LDOG: Activated shader pack '{}' (dim folder '{}')", name, active.worldDir);
         }
-        // Compile the composite + final stages so the pipeline pass can run
-        // them. Gbuffer-side execution still TBD; this runner handles the
-        // post-process layer.
+        // Compile the composite + final stages (and any gbuffer programs the
+        // dispatcher can use).
         runtime = new ShaderPackRuntime(active);
         if (runtime.isEmpty()) {
-            // No composite/final to drive — release immediately so the pass
-            // can short-circuit cleanly.
+            // Nothing compiled at all — release so the passes short-circuit.
             runtime = null;
         }
+    }
+
+    /** Per-dimension shaders subfolder for the current world (default world0). */
+    private static String currentWorldDir() {
+        try {
+            if (Minecraft.getMinecraft().world != null) {
+                return "world" + Minecraft.getMinecraft().world.provider.getDimension();
+            }
+        } catch (Throwable ignored) {
+            // Fall through to the overworld default.
+        }
+        return "world0";
     }
 
     private void deactivate() {

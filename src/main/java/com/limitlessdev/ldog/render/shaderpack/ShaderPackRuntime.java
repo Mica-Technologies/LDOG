@@ -5,7 +5,9 @@ import com.limitlessdev.ldog.render.pipeline.ShaderProgram;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Compiled, executable form of an activated {@link ShaderPack}. Owns the
@@ -18,9 +20,12 @@ import java.util.List;
  * than aborting the whole pack — a half-working pack is more useful than
  * no pack.
  *
- * <p>v1 scope: composite + final stages only. Gbuffer programs and shadow
- * pass are parsed (so {@code hasAnyProgram()} works) but not yet compiled
- * or hooked into the render pipeline.
+ * <p>Scope: the composite + final stages drive the post-process layer
+ * ({@link com.limitlessdev.ldog.render.pipeline.passes.ShaderPackCompositePass}),
+ * and the {@code gbuffers_*} programs drive per-object draws when the
+ * gbuffer dispatcher is enabled (see {@link ShaderPackGbufferManager}).
+ * The {@code shadow} programs are compiled and held but the shadow render
+ * pass itself is not yet wired — that's the last remaining OF-parity chunk.
  *
  * <p>{@link #dispose()} frees all GL programs; callers must call it before
  * dropping the runtime reference.
@@ -44,13 +49,41 @@ public final class ShaderPackRuntime {
     private final List<Stage> composites = new ArrayList<>();
     private Stage finalStage;
 
+    /**
+     * Compiled per-object draw programs, keyed by base name
+     * ({@code "gbuffers_terrain"}, {@code "shadow"}). Only the programs the
+     * pack actually ships + that compiled cleanly are present.
+     */
+    private final Map<String, ShaderProgram> gbufferPrograms = new LinkedHashMap<>();
+
     public ShaderPackRuntime(ShaderPack pack) {
         this.pack = pack;
         compileChain();
+        compileGbuffers();
     }
 
     /** Active composite stages in execution order. Read-only. */
     public List<Stage> composites() { return composites; }
+
+    /**
+     * Resolve the compiled program for a draw category by walking its
+     * fallback chain ({@link GbufferProgram#candidates}). Returns the first
+     * candidate the pack compiled, or null when the pack ships none of them
+     * (caller then leaves vanilla fixed-function rendering in place).
+     */
+    public ShaderProgram resolveGbuffer(GbufferProgram category) {
+        for (String base : category.candidates) {
+            ShaderProgram p = gbufferPrograms.get(base);
+            if (p != null) return p;
+        }
+        return null;
+    }
+
+    /** True when the pack supplied at least one usable gbuffer program. */
+    public boolean hasGbuffers() { return !gbufferPrograms.isEmpty(); }
+
+    /** True when there's a composite/final chain for the post-process pass to run. */
+    public boolean hasCompositeChain() { return !composites.isEmpty() || finalStage != null; }
 
     /**
      * The {@code final.{vsh,fsh}} stage, or null when the pack didn't ship
@@ -59,7 +92,7 @@ public final class ShaderPackRuntime {
      */
     public Stage finalStage() { return finalStage; }
 
-    public boolean isEmpty() { return composites.isEmpty() && finalStage == null; }
+    public boolean isEmpty() { return !hasCompositeChain() && !hasGbuffers(); }
 
     public String packName() { return pack.name; }
 
@@ -70,6 +103,10 @@ public final class ShaderPackRuntime {
         composites.clear();
         if (finalStage != null && finalStage.program != null) finalStage.program.dispose();
         finalStage = null;
+        for (ShaderProgram p : gbufferPrograms.values()) {
+            if (p != null) p.dispose();
+        }
+        gbufferPrograms.clear();
     }
 
     private void compileChain() {
@@ -97,21 +134,44 @@ public final class ShaderPackRuntime {
     }
 
     /**
+     * Compile every {@code gbuffers_*} (and {@code shadow}) program the pack
+     * ships. Each is independent — a compile failure on one drops just that
+     * program, leaving the rest available for their fallback consumers.
+     */
+    private void compileGbuffers() {
+        for (String vsh : ShaderProgramId.STANDARD_PAIRS.keySet()) {
+            // STANDARD_PAIRS also holds final.vsh, which the composite chain
+            // already owns — skip it here.
+            if (vsh.equals("final.vsh")) continue;
+            String base = vsh.substring(0, vsh.length() - ".vsh".length());
+            Stage s = tryCompile(base);
+            if (s != null) gbufferPrograms.put(base, s.program);
+        }
+        if (!gbufferPrograms.isEmpty()) {
+            LDOGMod.LOGGER.info("LDOG: Shader pack '{}' compiled {} gbuffer/shadow program(s): {}",
+                pack.name, gbufferPrograms.size(), gbufferPrograms.keySet());
+        }
+    }
+
+    /**
      * Try to load + compile a single stage by base name (e.g. "composite",
      * "composite3", "final"). Returns null when either the .vsh or .fsh is
      * missing in the pack, or when compilation fails. Failures are logged
      * but don't propagate — one broken stage shouldn't kill the rest.
      */
     private Stage tryCompile(String baseName) {
-        String vertPath = baseName + ".vsh";
-        String fragPath = baseName + ".fsh";
-        if (!pack.hasShaderResource(vertPath) || !pack.hasShaderResource(fragPath)) {
+        // Dimension-aware resolution: prefer worldN/<stage> over the root copy.
+        String vertPath = pack.resolvePath(baseName + ".vsh");
+        String fragPath = pack.resolvePath(baseName + ".fsh");
+        if (vertPath == null || fragPath == null) {
             return null;
         }
         String vertSrc, fragSrc;
         try {
-            vertSrc = pack.readShaderText(vertPath);
-            fragSrc = pack.readShaderText(fragPath);
+            // Inline #include directives so packs that split shared code across
+            // lib/ files compile as a single translation unit.
+            vertSrc = pack.readShaderWithIncludes(vertPath);
+            fragSrc = pack.readShaderWithIncludes(fragPath);
         } catch (IOException e) {
             LDOGMod.LOGGER.warn("LDOG: Could not read shader stage '{}' from pack '{}': {}",
                 baseName, pack.name, e.toString());

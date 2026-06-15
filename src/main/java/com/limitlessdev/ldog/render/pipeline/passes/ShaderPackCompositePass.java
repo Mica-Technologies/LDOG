@@ -84,7 +84,7 @@ public final class ShaderPackCompositePass implements PostProcessPass {
     @Override
     public void execute(PostProcessContext ctx) {
         ShaderPackRuntime runtime = ShaderPackManager.INSTANCE.getRuntime();
-        if (runtime == null || runtime.isEmpty()) return;
+        if (runtime == null || !runtime.hasCompositeChain()) return;
         if (!ctx.bindingActive()) return;
 
         int mainW = ctx.mainWidth();

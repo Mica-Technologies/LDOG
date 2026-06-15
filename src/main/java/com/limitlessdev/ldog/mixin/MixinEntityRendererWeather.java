@@ -1,6 +1,8 @@
 package com.limitlessdev.ldog.mixin;
 
 import com.limitlessdev.ldog.config.LDOGConfig;
+import com.limitlessdev.ldog.render.shaderpack.GbufferProgram;
+import com.limitlessdev.ldog.render.shaderpack.ShaderPackGbufferManager;
 import net.minecraft.client.renderer.EntityRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -36,7 +38,16 @@ public abstract class MixinEntityRendererWeather {
     private void ldog$skipWeather(float partialTicks, CallbackInfo ci) {
         if (!LDOGConfig.enableWeatherRender) {
             ci.cancel();
+            return;
         }
+        // Bind the pack's weather gbuffer program around the rain/snow draw.
+        // Placed after the cancel so begin/end stay balanced when weather is off.
+        ShaderPackGbufferManager.begin(GbufferProgram.WEATHER);
+    }
+
+    @Inject(method = "renderRainSnow", at = @At("RETURN"))
+    private void ldog$weatherGbufferEnd(float partialTicks, CallbackInfo ci) {
+        ShaderPackGbufferManager.end();
     }
 
     @ModifyConstant(method = "renderRainSnow",

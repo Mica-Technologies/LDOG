@@ -110,6 +110,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_CUSTOM_SKY = 43;
     private static final int BTN_HD_TEXTURES = 44;
     private static final int BTN_SHADERS = 45;
+    private static final int BTN_SHADER_GBUFFERS = 47;
     private static final int BTN_SHADER_PACK = 610;
     private static final int BTN_LIGHT_TEMP = 50;
     private static final int BTN_LIGHT_TEMP_PRESET = 51;
@@ -710,6 +711,10 @@ public class GuiLDOGSettings extends GuiScreen {
                 LDOGConfig.enableHDTextures, OptiFineCompat.shouldHandleHDTextures()),
             makeFeatureButton(BTN_SHADERS, w, h, "Shaders",
                 LDOGConfig.enableShaders, OptiFineCompat.shouldHandleShaders()));
+        settingsList.addButtonRow(
+            makeFeatureButton(BTN_SHADER_GBUFFERS, w, h, "Pack Gbuffers",
+                LDOGConfig.enableShaderGbuffers, OptiFineCompat.shouldHandleShaders()),
+            null);
         // Shader-pack picker moved to its own Shaders tab — see buildShadersTab.
 
         // -- OptiFine Interop — only shown when OF is detected --
@@ -1235,6 +1240,10 @@ public class GuiLDOGSettings extends GuiScreen {
                 LDOGConfig.enableShaders = !LDOGConfig.enableShaders;
                 button.displayString = featureLabel("Shaders", LDOGConfig.enableShaders, OptiFineCompat.shouldHandleShaders());
                 com.limitlessdev.ldog.render.shaderpack.ShaderPackManager.INSTANCE.applyConfigSelection();
+                break;
+            case BTN_SHADER_GBUFFERS:
+                LDOGConfig.enableShaderGbuffers = !LDOGConfig.enableShaderGbuffers;
+                button.displayString = featureLabel("Pack Gbuffers", LDOGConfig.enableShaderGbuffers, OptiFineCompat.shouldHandleShaders());
                 break;
             case BTN_SHADER_PACK:
                 // Open the dedicated list-style picker. Returning from it
@@ -2428,11 +2437,24 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a77screen-space effects. Most packs' overall look comes",
             "\u00a77through.",
             "",
-            "\u00a7eNot yet:\u00a77 gbuffer stages (per-object custom lighting),",
-            "\u00a77shadow pass. Packs that rely heavily on those will still",
-            "\u00a77look different from OptiFine.",
+            "\u00a7eExperimental:\u00a77 gbuffer stages (per-object shading) via",
+            "\u00a77the \u00a7aPack Gbuffers\u00a77 toggle. Shadow pass + multi-target",
+            "\u00a77G-buffers still ahead \u2014 heavy deferred packs differ from OF.",
             "",
             "\u00a77Auto-disabled when OptiFine is detected.");
+        registerTooltip(BTN_SHADER_GBUFFERS,
+            "\u00a7ePack Gbuffers \u00a78(experimental)",
+            "\u00a77Lets the active pack shade the world geometry itself \u2014 it",
+            "\u00a77binds the pack's \u00a7fgbuffers_*\u00a77 programs around each draw",
+            "\u00a77type (terrain, sky, clouds, entities, weather, hand) instead",
+            "\u00a77of only running the post-process composite chain.",
+            "",
+            "\u00a7ev1 caveats:\u00a77 single colour target (no MRT G-buffer",
+            "\u00a77channels) and no shadow pass yet, so deferred-lighting packs",
+            "\u00a77are only partially driven and may look wrong. Needs",
+            "\u00a77\u00a7aShaders\u00a77 ON plus a pack that ships gbuffers_* programs.",
+            "",
+            "\u00a77Leave off for the stable composite-only look.");
         registerTooltip(BTN_SHADER_PACK,
             "\u00a7eShader Pack",
             "\u00a77Opens a list of packs found in \u00a7ashaderpacks/\u00a77. Drop",

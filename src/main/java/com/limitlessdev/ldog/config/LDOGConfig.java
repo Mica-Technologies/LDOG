@@ -490,6 +490,19 @@ public class LDOGConfig {
     public static String shaderPackName = "(none)";
 
     @Config.Comment({
+        "Drive the active shader pack's gbuffer (per-object draw) programs.",
+        "When ON, LDOG binds the pack's gbuffers_* shaders around each world",
+        "draw type (terrain, sky, clouds, entities, weather, hand) so the pack",
+        "shades the geometry itself — not just the post-process composite chain.",
+        "",
+        "Opt-in / experimental: v1 renders to a single colour target (no MRT",
+        "G-buffer channels) and has no shadow pass yet, so deferred-lighting",
+        "packs are only partially driven. Requires enableShaders ON + a pack",
+        "that ships gbuffers_* programs. Auto-skipped when OptiFine is detected."
+    })
+    public static boolean enableShaderGbuffers = false;
+
+    @Config.Comment({
         "Enable custom sky rendering.",
         "Auto-disabled when OptiFine is detected."
     })

@@ -22,7 +22,7 @@ Key feature targets:
 | Dynamic Lights | Medium | shipped (Phase 5) |
 | HD Textures | Medium | shipped (Phase 2) |
 | Custom Sky | Medium | shipped (Phase 6d) |
-| Shader Pipeline | Stretch | foundation shipped (Phase 8) + HDR + Bloom + composite + final stage runner (2026-05-22). Gbuffer + shadow pass still open. |
+| Shader Pipeline | Stretch | foundation + HDR + Bloom + composite/final runner (2026-05-22); gbuffer dispatch v1 (opt-in, single-target) + LDOG built-in packs + dimension/include real-pack loading (2026-06-14). MRT gbuffers + shadow pass still open. |
 | Temporal upscaling | High | shipped: TAA MVP (9c.1), camera MV (9c.2), entity reactive mask (9c.3-A), entity MV via BBox stamps (9c.3-C), FSR 2 reconstruction kernel (9c.4) — all LDOG-original on the 1.12.2 OpenGL 2.1 stack |
 
 Long-term: replace 5-7 separate optimization mods in the alto modpack with one integrated mod (see §3).
@@ -35,7 +35,25 @@ Long-term: replace 5-7 separate optimization mods in the alto modpack with one i
 >
 > Build: `JAVA_HOME=/c/Users/ahawk/.jdks/azul-17.0.18 ./gradlew compileJava` (or `build` for full + tests, or `runClient` for an in-game smoke test). Currently zero compile warnings, 50 unit tests passing. Default windows shell is PowerShell — Bash tool uses bash syntax.
 
-### Where work left off (last session: 2026-05-22 — temporal upscaling + UX overhaul + shader runner)
+### Where work left off (last session: 2026-06-14 — gbuffer dispatch + built-in packs + real-pack loading)
+
+Tackled the headline OF-parity gap (per-object gbuffer shaders) plus a user request (LDOG-bundled shader packs), and fixed real-pack discovery. All compiles clean (zero mixin warnings), 50 unit tests pass, verified live in `runClient`.
+
+1. **Gbuffer dispatch v1 (opt-in)** — the active pack's `gbuffers_*` programs now shade world geometry, not just the post-process composite chain.
+   - `ShaderPackRuntime` now compiles every `gbuffers_*` + `shadow` program the pack ships (keyed map, fallback-resolvable). New `hasGbuffers()` / `hasCompositeChain()` split so a gbuffer-only pack doesn't trip the composite pass.
+   - `GbufferProgram` enum — draw categories (SKY_BASIC/TEXTURED, CLOUDS, TERRAIN_SOLID/CUTOUT/TRANSLUCENT, ENTITIES, WEATHER, HAND) each with the OF/Iris fallback chain (e.g. terrain_cutout → terrain → textured_lit → textured → basic).
+   - `ShaderPackGbufferManager` — `begin(category)`/`end()` bind the resolved program, feed the standard uniform set (reusing `ShaderPackUniforms`, snapshotted once per frame at renderSky HEAD when GL matrices are the real camera matrices) + sampler bindings (texture=0, lightmap=1, normals/specular/shadow→black). Program-stack save/restore. **Key enabler**: MC 1.12.2 renders the world fixed-function (no program bound), and both immediate-mode AND chunk-VBO draws feed `gl_Vertex`/`gl_Color`/`gl_MultiTexCoord`/`gl_ModelViewMatrix`, so a `#version 120` gbuffer shader using `ftransform()` transforms+textures correctly with no custom vertex format.
+   - Hooks (all gated behind `enableShaderGbuffers`, default OFF — the working composite-only path is never disturbed): `MixinRenderGlobal` wraps `renderBlockLayer` (per-layer terrain/water), `renderClouds`, `renderEntities`; `MixinEntityRendererWeather` wraps `renderRainSnow`; `MixinItemRendererHand` wraps `renderItemInFirstPerson`.
+   - **v1 limitations (the remaining gap)**: single colour target (no MRT `DRAWBUFFERS` → deferred-lighting packs only partially driven); no shadow pass (shadow programs compiled but not run); sky NOT dispatched (renderSky draws both untextured gradient + textured sun/moon in one method — needs finer hooks to avoid an untextured-sun regression); custom vertex attrs (mc_Entity, at_tangent) absent → degrade to zero.
+   - **runClient bug caught + fixed**: `renderClouds` in 1.12.2 is `(F,I,D,D,D)` not `(F,I)`. Wrong descriptor failed the ENTIRE `MixinRenderGlobal` apply (silently disabling entity culling + custom sky + reactive mask). Fixed; re-verified "renderSky mixin CONFIRMED".
+
+2. **Built-in LDOG shader packs** (user request — "sensible/common packs like HDR, realism, RTX") — LDOG ships its own packs inside the jar, unlike OF. `BuiltinShaderPack` (classpath-backed) + `BuiltinShaderPacks` registry, listed in the picker with an `[LDOG]` prefix after `(none)`. Four shipped, all composite/final + GLSL 120 so they ALWAYS compile + run: **HDR** (ACES + bright-pass glow + saturation), **Realism** (unsharp + balanced grade + vignette), **Cinematic** (teal/orange split-tone + filmic + vignette), **Pseudo-RTX** (screen-space depth AO contact shadows + cool ambient bounce + filmic; reads depthtex0 so needs the pipeline). GLSL under `assets/ldog/shaderpacks/<dir>/shaders/`. Verified: `[LDOG] HDR` activates, compiles, runs live in-world.
+
+3. **Real-pack loading fixes** — diagnosed why the user's downloaded packs "did nothing": `ShaderPack` now does **dimension-aware resolution** (`resolvePath` tries `worldN/<file>` then root — modern packs like BSL v10 / Complementary Reimagined put programs under `shaders/world0/` etc., not the flat root) + recursive **`#include` preprocessing** (OF/Iris semantics, abs-from-root vs relative, cycle-guarded). `worldDir` set from the current dimension at activation. Better activation log explains incompatibility (GLSL 330+/Iris 1.16+ packs can't run on 1.12.2 GL 2.1). NOTE: this makes genuine 1.12.2-format packs work far better, but does NOT make MC 1.16+ packs (BSL v10, Complementary r5, Solas, Continuum 2.0.5) run — those are GLSL-330-core and fundamentally incompatible, same as OF-for-1.12.2 can't run them.
+
+**Still deferred (next session)**: gbuffer MRT (multi colour target via `DRAWBUFFERS`) + shadow pass — the last chunks for full deferred-pack parity; sky gbuffer split; per-dimension recompile on dimension change; more built-in packs.
+
+### Where work left off (2026-05-22 — temporal upscaling + UX overhaul + shader runner)
 
 Pushed nine commits across three thematic chunks: shipped the deferred temporal-upscaling work (Option C + FSR 2), did a comprehensive UX overhaul (tooltips, tabs, GUI reorg), and built the shader-pack composite runner so activated packs actually do something visible.
 
@@ -266,7 +284,7 @@ Status: `[x]` complete (one known MSAA-edges issue documented as won't-fix; FXAA
 
 ### Phase 8 — Shader Pipeline
 
-Status: `[x]` 8a + 8b + 8c shipped 2026-04-17. `[x]` HDR + Bloom shipped 2026-05-21 (`74e468d`, `5a924c6`). `[x]` Shader-pack discovery scaffold shipped 2026-05-21 (`17f243a`). `[x]` **Composite + final stage runner shipped 2026-05-22** (`e056e67`) — activated packs now produce visible post-process output. `[ ]` Gbuffer programs (per-object draw shaders) + shadow pass still open — the next chunks for full OF compatibility.
+Status: `[x]` 8a + 8b + 8c shipped 2026-04-17. `[x]` HDR + Bloom shipped 2026-05-21 (`74e468d`, `5a924c6`). `[x]` Shader-pack discovery scaffold shipped 2026-05-21 (`17f243a`). `[x]` **Composite + final stage runner shipped 2026-05-22** (`e056e67`). `[x]` **Gbuffer dispatch v1 + built-in packs + dimension/include real-pack loading shipped 2026-06-14** (see §2 top) — per-object `gbuffers_*` programs bind around terrain/clouds/entities/weather/hand draws (opt-in `enableShaderGbuffers`, single colour target), LDOG ships 4 built-in packs, and `worldN/` + `#include` resolution makes genuine 1.12.2 packs load. `[ ]` Gbuffer MRT (`DRAWBUFFERS` multi-target) + shadow pass still open — the last chunks for full deferred-pack OF parity.
 
 **HDR pipeline (2026-05-21)**:
 - `RenderTargetManager` HDR mode: when `enableHDRPipeline` is on, scene + ping color textures allocate as `GL_RGBA16F` instead of RGBA8.
