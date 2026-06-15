@@ -234,6 +234,26 @@ public final class FSR2ReconstructionPass implements PostProcessPass {
             return;
         }
 
+        // No jitter => no temporal data => FSR2 cannot reconstruct anything the
+        // source doesn't already contain. Running the Lanczos-3 kernel here is
+        // pure downside: its negative lobes (sharpening overshoot) produce
+        // bright/dark halos on high-contrast edges that CRAWL as edges slide
+        // sub-pixel during motion -- the "flicker while flying" the user reports
+        // even with no shader pack active. A plain bilinear blit has no negative
+        // lobes, so it can't ring: the only residual shimmer is the intrinsic
+        // aliasing of the sub-native render itself (raise render scale to remove
+        // that). Full Lanczos temporal reconstruction below is gated on TAA,
+        // where jitter actually feeds it sub-pixel detail to resolve.
+        if (!LDOGConfig.enableTAA) {
+            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, ctx.sceneFbo());
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, ctx.mainFbo());
+            GL30.glBlitFramebuffer(0, 0, sceneW, sceneH, 0, 0, mainW, mainH,
+                GL11.GL_COLOR_BUFFER_BIT, GL11.GL_LINEAR);
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, ctx.mainFbo());
+            hasHistory = false; // history is stale/irrelevant while spatial-only
+            return;
+        }
+
         ensureHistory(mainW, mainH);
         if (historyTex == 0) return;
 
