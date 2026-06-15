@@ -304,7 +304,7 @@ public final class ShaderPackCompositePass implements PostProcessPass {
         int n = Math.min(7, ShaderPackGbufferManager.auxColortexCount());
         int w = RenderTargetManager.INSTANCE.getScaledWidth();
         int h = RenderTargetManager.INSTANCE.getScaledHeight();
-        if (w <= 0 || h <= 0 || !ensureMrt(n, w, h)) return false;
+        if (w <= 0 || h <= 0 || !ensureMrt(runtime, n, w, h)) return false;
 
         copyGbufferToCur(n, w, h);
 
@@ -432,15 +432,19 @@ public final class ShaderPackCompositePass implements PostProcessPass {
         com.limitlessdev.ldog.render.shaderpack.ShadowMapManager.feed(program, 9);
     }
 
-    private boolean ensureMrt(int n, int w, int h) {
+    private boolean ensureMrt(ShaderPackRuntime runtime, int n, int w, int h) {
         if (mrtFbo != 0 && mrtN == n && mrtW == w && mrtH == h) return true;
         disposeMrt();
         mrtN = n; mrtW = w; mrtH = h;
         mrtCur = new int[n + 1];
         mrtAlt = new int[n + 1];
         for (int i = 0; i <= n; i++) {
-            mrtCur[i] = allocColorTex(w, h);
-            mrtAlt[i] = allocColorTex(w, h);
+            // Match the pack's declared format per colortex so the flipping
+            // scratch keeps HDR/16-bit precision (e.g. BSL's R11F_G11F_B10F
+            // colortex0) instead of re-clipping through RGBA8 each stage.
+            int fmt = runtime.colortexFormat(i);
+            mrtCur[i] = allocColorTex(w, h, fmt);
+            mrtAlt[i] = allocColorTex(w, h, fmt);
         }
         mrtFbo = GL30.glGenFramebuffers();
         mrtCopyFbo = GL30.glGenFramebuffers();
@@ -474,10 +478,16 @@ public final class ShaderPackCompositePass implements PostProcessPass {
     }
 
     private static int allocColorTex(int w, int h) {
+        return allocColorTex(w, h, GL11.GL_RGBA8);
+    }
+
+    private static int allocColorTex(int w, int h, int internalFormat) {
         int tex = GL11.glGenTextures();
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex);
-        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, w, h, 0,
-            GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, (java.nio.ByteBuffer) null);
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, internalFormat, w, h, 0,
+            com.limitlessdev.ldog.render.shaderpack.ShaderColortexFormats.uploadFormat(internalFormat),
+            com.limitlessdev.ldog.render.shaderpack.ShaderColortexFormats.uploadType(internalFormat),
+            (java.nio.ByteBuffer) null);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
