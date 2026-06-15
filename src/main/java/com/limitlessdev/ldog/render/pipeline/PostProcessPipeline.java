@@ -288,6 +288,30 @@ public final class PostProcessPipeline {
         }
     }
 
+    /**
+     * Force a clean re-initialization on the next frame. Call when something
+     * that invalidates pass/target state changes out-of-band — notably a shader
+     * pack switch, which flips the effective render scale AND the set of passes
+     * that run (deferred packs skip the temporal upscaler). Without this, FSR2/
+     * TAA history + the G-buffer/shadow targets carry stale state across the
+     * switch, which can lock a black frame into the temporal accumulation.
+     *
+     * Disposes passes + targets here (must run on the GL thread — pack switches
+     * come from the GUI click handler, which is the client/GL thread); the
+     * empty-chain self-heal in {@link #ensureInitialized} rebuilds them next frame.
+     */
+    public void reset() {
+        for (PostProcessPass pass : passes) {
+            try { pass.dispose(); } catch (Exception ignored) { }
+        }
+        passes.clear();
+        try { RenderTargetManager.INSTANCE.dispose(); } catch (Exception ignored) { }
+        initialized = false;
+        loggedFirstBind = false;
+        framesSinceLastBind = 0;
+        loggedPassError = null;
+    }
+
     private void disableAll() {
         for (PostProcessPass pass : passes) {
             try {

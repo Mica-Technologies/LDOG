@@ -191,6 +191,8 @@ public final class ShaderPackManager {
                 LDOGMod.LOGGER.info("LDOG: Auto-enabled Pack Gbuffers for built-in pack '{}'", active.name);
             }
         }
+        // Clean state after the switch (also covers replacing one pack with another).
+        onPackChanged();
     }
 
     /** Per-dimension shaders subfolder for the current world (default world0). */
@@ -206,6 +208,7 @@ public final class ShaderPackManager {
     }
 
     private void deactivate() {
+        boolean had = active != null || runtime != null;
         if (runtime != null) {
             runtime.dispose();
             runtime = null;
@@ -215,6 +218,27 @@ public final class ShaderPackManager {
             active.close();
             active = null;
             LDOGMod.LOGGER.info("LDOG: Deactivated shader pack '{}'", name);
+        }
+        if (had) onPackChanged();
+    }
+
+    /**
+     * Clean GL state after a pack switch so nothing stale carries across:
+     * dispose the deferred G-buffer + shadow targets and force a clean
+     * post-process pipeline re-init (the temporal upscaler's history + the
+     * scene targets otherwise persist a black frame across the switch — see
+     * the "blank screen after toggling packs" bug). Only when a GL context
+     * exists (in-game) — on init/menu the resources aren't allocated yet and
+     * the dispose paths are no-ops anyway.
+     */
+    private void onPackChanged() {
+        if (Minecraft.getMinecraft().world == null) return;
+        try {
+            ShaderPackGbufferManager.dispose();
+            ShadowMapManager.dispose();
+            com.limitlessdev.ldog.render.pipeline.PostProcessPipeline.INSTANCE.reset();
+        } catch (Throwable t) {
+            LDOGMod.LOGGER.warn("LDOG: pipeline reset on pack switch failed: {}", t.toString());
         }
     }
 
