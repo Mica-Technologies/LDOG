@@ -287,16 +287,23 @@ public final class ShaderPackRuntime {
                 baseName, pack.name, e.toString());
             return null;
         }
+        // Inject OptiFine's standard builtin macros (MC_VERSION, MC_GL_VERSION,
+        // vendor/OS flags, …) so packs that gate code on them compile the right
+        // branch. The SAME map drives DRAWBUFFERS resolution below, keeping the
+        // driver and our preprocessor in lockstep.
+        Map<String, String> macros = ShaderMacros.standardDefines();
+        String vertCompiled = ShaderMacros.injectDefines(vertSrc, macros);
+        String fragCompiled = ShaderMacros.injectDefines(fragSrc, macros);
         try {
-            ShaderProgram program = new ShaderProgram("ldogPack:" + baseName, vertSrc, fragSrc);
+            ShaderProgram program = new ShaderProgram("ldogPack:" + baseName, vertCompiled, fragCompiled);
             // Resolve the ACTIVE DRAWBUFFERS by stripping inactive #if/#ifdef
             // branches first — packs gate their MRT output set behind conditionals,
             // so a raw "first directive" scan would pick a dead branch and mis-map
-            // gl_FragData[i] -> colortex. We inject no macros, so the driver and this
-            // pass see the same #define set and pick the same branch. (We still size
-            // the MRT allocation off the un-stripped source via maxDrawBufferIndex,
-            // which stays a safe over-allocation if the branch eval is ever wrong.)
-            String activeFrag = GlslPreprocessor.stripInactiveBranches(fragSrc, null);
+            // gl_FragData[i] -> colortex. Seeding the preprocessor with the same
+            // injected macros means it picks the same branch the driver does.
+            // (We still size the MRT allocation off the un-stripped source via
+            // maxDrawBufferIndex, a safe over-allocation if a branch eval is wrong.)
+            String activeFrag = GlslPreprocessor.stripInactiveBranches(fragSrc, macros);
             int[] drawBuffers = parseDrawBuffers(activeFrag);
             // Allocate for the WIDEST index this shader could write across all of
             // its (possibly #if-conditional) DRAWBUFFERS directives — e.g. BSL's
