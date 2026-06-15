@@ -4,6 +4,8 @@ import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.pipeline.CameraState;
 import com.limitlessdev.ldog.render.pipeline.JitterHelper;
 import com.limitlessdev.ldog.render.pipeline.RenderTargetManager;
+import com.limitlessdev.ldog.render.pipeline.UpscalerAlgorithm;
+import org.spongepowered.asm.mixin.Unique;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.EntityRenderer;
 import org.lwjgl.BufferUtils;
@@ -39,10 +41,22 @@ import java.nio.FloatBuffer;
 @Mixin(EntityRenderer.class)
 public abstract class MixinEntityRendererJitter {
 
+    /**
+     * Jitter + camera-matrix capture are needed by ANY temporal consumer, not
+     * just LDOG's standalone TAA. FSR2 is also temporal: it early-returns (drawing
+     * nothing → black world + stale UI ghosts) when {@code CameraState} was never
+     * captured. So this must be true whenever TAA is on OR FSR2 is the selected
+     * upscaler — otherwise FSR2-with-TAA-off renders a blank screen.
+     */
+    @Unique
+    private static boolean ldog$temporalActive() {
+        return LDOGConfig.enableTAA || UpscalerAlgorithm.selected() == UpscalerAlgorithm.FSR2;
+    }
+
     @Inject(method = "renderWorldPass(IFJ)V", at = @At("HEAD"))
     private void ldog$advanceJitter(int pass, float partialTicks, long finishTimeNano, CallbackInfo ci) {
         if (pass != 2) return;
-        if (!LDOGConfig.enableTAA) return;
+        if (!ldog$temporalActive()) return;
         // No jitter while an external shader pack is driving — the per-frame
         // sub-pixel offset (unresolved without LDOG's TAA, which is skipped for
         // packs) shows up as heavy flicker.
@@ -63,7 +77,7 @@ public abstract class MixinEntityRendererJitter {
             remap = false))
     private void ldog$jitterSky(int pass, float partialTicks, long finishTimeNano, CallbackInfo ci) {
         if (pass != 2) return;
-        if (!LDOGConfig.enableTAA) return;
+        if (!ldog$temporalActive()) return;
         // No jitter while an external shader pack is driving — the per-frame
         // sub-pixel offset (unresolved without LDOG's TAA, which is skipped for
         // packs) shows up as heavy flicker.
@@ -95,7 +109,7 @@ public abstract class MixinEntityRendererJitter {
             remap = false))
     private void ldog$jitterAndCaptureTerrain(int pass, float partialTicks, long finishTimeNano, CallbackInfo ci) {
         if (pass != 2) return;
-        if (!LDOGConfig.enableTAA) return;
+        if (!ldog$temporalActive()) return;
         // No jitter while an external shader pack is driving — the per-frame
         // sub-pixel offset (unresolved without LDOG's TAA, which is skipped for
         // packs) shows up as heavy flicker.

@@ -220,7 +220,19 @@ public final class FSR2ReconstructionPass implements PostProcessPass {
         int sceneW = ctx.sceneWidth();
         int sceneH = ctx.sceneHeight();
         if (mainW <= 0 || mainH <= 0 || sceneW <= 0 || sceneH <= 0) return;
-        if (!CameraState.isReady()) return;
+        // Without camera matrices we can't reproject — but we must STILL resolve
+        // the scene to the main FB, or the screen is left unresolved (black world
+        // + ghosted UI). Fall back to a plain blit instead of returning. (The
+        // jitter mixin captures CameraState whenever FSR2 is selected, so this is
+        // a safety net, e.g. the very first frame.)
+        if (!CameraState.isReady()) {
+            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, ctx.sceneFbo());
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, ctx.mainFbo());
+            GL30.glBlitFramebuffer(0, 0, sceneW, sceneH, 0, 0, mainW, mainH,
+                GL11.GL_COLOR_BUFFER_BIT, GL11.GL_LINEAR);
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, ctx.mainFbo());
+            return;
+        }
 
         ensureHistory(mainW, mainH);
         if (historyTex == 0) return;
