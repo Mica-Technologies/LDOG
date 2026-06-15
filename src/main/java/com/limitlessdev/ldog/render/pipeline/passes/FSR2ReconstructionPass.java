@@ -297,7 +297,13 @@ public final class FSR2ReconstructionPass implements PostProcessPass {
         shader.setUniform2f("u_invMainDim", 1.0f / mainW, 1.0f / mainH);
         shader.setUniform1f("u_scaleX", (float) sceneW / mainW);
         shader.setUniform1f("u_scaleY", (float) sceneH / mainH);
-        shader.setUniform1f("u_historyWeight", (float) LDOGConfig.taaHistoryWeight);
+        // FSR2's temporal accumulation only pays off with jitter (TAA on). With
+        // TAA off there's no sub-pixel variation to accumulate, but the history
+        // reprojection still shimmers during motion — so drop the history blend
+        // to zero and let FSR2 run as a pure spatial (Lanczos) upscale: sharp
+        // and flicker-free. Full temporal kicks in when the user enables TAA.
+        float histWeight = LDOGConfig.enableTAA ? (float) LDOGConfig.taaHistoryWeight : 0.0f;
+        shader.setUniform1f("u_historyWeight", histWeight);
         // Sharpness slider doubles as the integrated FSR2 sharpen.
         shader.setUniform1f("u_sharpness", (float) Math.min(1.0, LDOGConfig.fsr1Sharpness * 0.25));
         shader.setUniform1i("u_useEntityMV", useEntityMV ? 1 : 0);
