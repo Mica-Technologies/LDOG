@@ -155,7 +155,11 @@ public final class PostProcessPipeline {
      * mixin must agree on this, so it lives here as the single source of truth.
      */
     public static float effectiveRenderScale() {
-        if (com.limitlessdev.ldog.render.shaderpack.ShaderPackGbufferManager.isDeferredActive()) {
+        // Any active shader pack (deferred OR composite-only) renders at native
+        // resolution — the internal-scale upscaling otherwise blurs distant
+        // geometry, and the pack owns the final image. Only fall back to the
+        // user's internalRenderScale when no pack is driving the look.
+        if (com.limitlessdev.ldog.render.shaderpack.ShaderPackManager.INSTANCE.getRuntime() != null) {
             return 1.0f;
         }
         return (float) LDOGConfig.internalRenderScale;

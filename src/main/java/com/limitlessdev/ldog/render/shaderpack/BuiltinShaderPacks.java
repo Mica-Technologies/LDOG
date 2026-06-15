@@ -28,13 +28,10 @@ public final class BuiltinShaderPacks {
     /** Ordered map of display label (without prefix) → resource directory. */
     private static final Map<String, String> PACKS = new LinkedHashMap<>();
     static {
-        PACKS.put("HDR",        "hdr");
         PACKS.put("Realism",    "realism");
+        PACKS.put("HDR",        "hdr");
         PACKS.put("Cinematic",  "cinematic");
         PACKS.put("Pseudo-RTX", "pseudortx");
-        // Deferred: a full gbuffer + shadow demo (needs Pack Gbuffers, and
-        // Pack Shadows for the cast shadows). Shows the deferred path working.
-        PACKS.put("Deferred",   "deferred");
     }
 
     private BuiltinShaderPacks() {}
