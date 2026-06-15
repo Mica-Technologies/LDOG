@@ -169,31 +169,60 @@ public final class ShadowMapManager {
     }
 
     /**
-     * Bind the shadow depth texture to {@code unit} and feed the shadow
-     * sampler + matrix uniforms to {@code program}. No-op when no shadow map
-     * was produced this frame (caller's earlier black bind stays).
+     * Bind a depth texture to {@code unit} for the shadow samplers and feed the
+     * shadow uniforms. ALWAYS binds a compare-mode depth texture (the real
+     * shadow map when one was produced this frame, else a 1x1 far-depth dummy
+     * = everything lit) — packs declare {@code shadowtex0/1} as
+     * {@code sampler2DShadow}, so binding anything that isn't a compare-mode
+     * depth texture there triggers a GL_INVALID_OPERATION on every draw.
      */
     public static void feed(ShaderProgram program, int unit) {
-        if (!isReady()) return;
+        int tex = isReady() ? shadowDepthTex : ensureDummy();
         GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, shadowDepthTex);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex);
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
 
         program.setUniform1i("shadowtex0", unit);
         program.setUniform1i("shadowtex1", unit);
         program.setUniform1i("shadow", unit);
         program.setUniform1i("watershadow", unit);
-        program.setUniform1f("shadowMapResolution", resolution);
+        program.setUniform1f("shadowMapResolution", isReady() ? resolution : 1);
 
-        PROJ_BUF.position(0);
-        program.setUniformMatrix4("shadowProjection", PROJ_BUF);
-        MV_BUF.position(0);
-        program.setUniformMatrix4("shadowModelView", MV_BUF);
+        if (isReady()) {
+            PROJ_BUF.position(0);
+            program.setUniformMatrix4("shadowProjection", PROJ_BUF);
+            MV_BUF.position(0);
+            program.setUniformMatrix4("shadowModelView", MV_BUF);
+            invertInto(PROJ_BUF, INV_BUF);
+            program.setUniformMatrix4("shadowProjectionInverse", INV_BUF);
+            invertInto(MV_BUF, INV_BUF);
+            program.setUniformMatrix4("shadowModelViewInverse", INV_BUF);
+        }
+    }
 
-        invertInto(PROJ_BUF, INV_BUF);
-        program.setUniformMatrix4("shadowProjectionInverse", INV_BUF);
-        invertInto(MV_BUF, INV_BUF);
-        program.setUniformMatrix4("shadowModelViewInverse", INV_BUF);
+    /** 1x1 compare-mode depth texture (depth = 1.0 -> always lit) for shadows-off. */
+    private static int dummyDepthTex;
+    private static int ensureDummy() {
+        if (dummyDepthTex != 0) return dummyDepthTex;
+        dummyDepthTex = GL11.glGenTextures();
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, dummyDepthTex);
+        java.nio.FloatBuffer one = BufferUtils.createFloatBuffer(1);
+        one.put(1.0f).flip();
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL14.GL_DEPTH_COMPONENT24, 1, 1, 0,
+            GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, one);
+        applyDepthSamplerParams();
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+        return dummyDepthTex;
+    }
+
+    /** NEAREST + clamp + hardware-compare (LEQUAL) so sampler2DShadow matches. */
+    private static void applyDepthSamplerParams() {
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL14.GL_TEXTURE_COMPARE_MODE, GL14.GL_COMPARE_R_TO_TEXTURE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL14.GL_TEXTURE_COMPARE_FUNC, GL11.GL_LEQUAL);
     }
 
     public static void dispose() {
@@ -213,10 +242,7 @@ public final class ShadowMapManager {
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, shadowDepthTex);
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL14.GL_DEPTH_COMPONENT24, want, want, 0,
             GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, (java.nio.ByteBuffer) null);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+        applyDepthSamplerParams();  // incl. hardware-compare so sampler2DShadow matches
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
 
         shadowFbo = GL30.glGenFramebuffers();
