@@ -172,13 +172,24 @@ public final class ShaderPackManager {
         if (runtime.isEmpty()) {
             // Nothing compiled at all — release so the passes short-circuit.
             runtime = null;
-        } else if (!LDOGConfig.enablePostProcessPipeline) {
-            // The composite chain + deferred gbuffer path both run inside the
-            // post-process pipeline; with it off, a pack compiles but renders
-            // nothing. Enable it so activating a pack actually does something.
-            LDOGConfig.enablePostProcessPipeline = true;
-            LDOGMod.LOGGER.info(
-                "LDOG: Auto-enabled the post-process pipeline (required for shader packs to render)");
+        } else {
+            if (!LDOGConfig.enablePostProcessPipeline) {
+                // The composite chain + deferred gbuffer path both run inside the
+                // post-process pipeline; with it off, a pack compiles but renders
+                // nothing. Enable it so activating a pack actually does something.
+                LDOGConfig.enablePostProcessPipeline = true;
+                LDOGMod.LOGGER.info(
+                    "LDOG: Auto-enabled the post-process pipeline (required for shader packs to render)");
+            }
+            // Built-in LDOG packs are authored to be correct with the gbuffer
+            // path on, so enable it automatically — they "just work" on select
+            // without the user toggling Pack Gbuffers. External packs keep the
+            // user's explicit toggle (their gbuffer behaviour is less certain).
+            if (BuiltinShaderPacks.isBuiltin(active.name) && runtime.hasGbuffers()
+                    && !LDOGConfig.enableShaderGbuffers) {
+                LDOGConfig.enableShaderGbuffers = true;
+                LDOGMod.LOGGER.info("LDOG: Auto-enabled Pack Gbuffers for built-in pack '{}'", active.name);
+            }
         }
     }
 
