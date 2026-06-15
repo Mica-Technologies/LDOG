@@ -503,6 +503,33 @@ public class LDOGConfig {
     public static boolean enableShaderGbuffers = false;
 
     @Config.Comment({
+        "Render a sun/moon-POV shadow map for the active shader pack so its",
+        "composites can cast real shadows (shadowtex0/1 + shadow* uniforms).",
+        "Does a second depth-only render of terrain from the light's point of",
+        "view each frame.",
+        "",
+        "Opt-in / experimental: v1 covers camera-visible terrain only (chunks",
+        "behind you may not cast), and the matrices are best-effort — expect to",
+        "tune. Requires enableShaderGbuffers ON. Costs an extra terrain pass."
+    })
+    public static boolean enableShaderShadows = false;
+
+    @Config.Comment({
+        "Shadow map resolution (square). Higher = crisper shadows, more VRAM",
+        "+ fill cost. Only consumed when enableShaderShadows is on."
+    })
+    @Config.RangeInt(min = 512, max = 8192)
+    public static int shaderShadowResolution = 2048;
+
+    @Config.Comment({
+        "Half-extent (in blocks) of the orthographic shadow frustum around the",
+        "player. Larger = shadows reach further but get coarser. Only consumed",
+        "when enableShaderShadows is on."
+    })
+    @Config.RangeInt(min = 32, max = 512)
+    public static int shaderShadowDistance = 160;
+
+    @Config.Comment({
         "Enable custom sky rendering.",
         "Auto-disabled when OptiFine is detected."
     })

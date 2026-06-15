@@ -39,9 +39,17 @@ public final class ShaderPackRuntime {
     public static final class Stage {
         public final String name;
         public final ShaderProgram program;
-        public Stage(String name, ShaderProgram program) {
+        /**
+         * Color attachment indices this program writes, parsed from its
+         * {@code /* DRAWBUFFERS:NNN *​/} directive (e.g. {@code DRAWBUFFERS:028}
+         * → {0, 2, 8}). Maps {@code gl_FragData[i]} → {@code colortex[drawBuffers[i]]}.
+         * Defaults to {@code {0}} when the directive is absent.
+         */
+        public final int[] drawBuffers;
+        public Stage(String name, ShaderProgram program, int[] drawBuffers) {
             this.name = name;
             this.program = program;
+            this.drawBuffers = drawBuffers;
         }
     }
 
@@ -54,7 +62,10 @@ public final class ShaderPackRuntime {
      * ({@code "gbuffers_terrain"}, {@code "shadow"}). Only the programs the
      * pack actually ships + that compiled cleanly are present.
      */
-    private final Map<String, ShaderProgram> gbufferPrograms = new LinkedHashMap<>();
+    private final Map<String, Stage> gbufferPrograms = new LinkedHashMap<>();
+
+    /** Highest colortex index any compiled program writes to (for MRT allocation). */
+    private int maxColortex;
 
     public ShaderPackRuntime(ShaderPack pack) {
         this.pack = pack;
@@ -71,16 +82,19 @@ public final class ShaderPackRuntime {
      * candidate the pack compiled, or null when the pack ships none of them
      * (caller then leaves vanilla fixed-function rendering in place).
      */
-    public ShaderProgram resolveGbuffer(GbufferProgram category) {
+    public Stage resolveGbuffer(GbufferProgram category) {
         for (String base : category.candidates) {
-            ShaderProgram p = gbufferPrograms.get(base);
-            if (p != null) return p;
+            Stage s = gbufferPrograms.get(base);
+            if (s != null) return s;
         }
         return null;
     }
 
     /** True when the pack supplied at least one usable gbuffer program. */
     public boolean hasGbuffers() { return !gbufferPrograms.isEmpty(); }
+
+    /** Highest colortex index written by any program — drives MRT aux allocation. */
+    public int maxColortex() { return maxColortex; }
 
     /** True when there's a composite/final chain for the post-process pass to run. */
     public boolean hasCompositeChain() { return !composites.isEmpty() || finalStage != null; }
@@ -103,8 +117,8 @@ public final class ShaderPackRuntime {
         composites.clear();
         if (finalStage != null && finalStage.program != null) finalStage.program.dispose();
         finalStage = null;
-        for (ShaderProgram p : gbufferPrograms.values()) {
-            if (p != null) p.dispose();
+        for (Stage s : gbufferPrograms.values()) {
+            if (s != null && s.program != null) s.program.dispose();
         }
         gbufferPrograms.clear();
     }
@@ -133,6 +147,44 @@ public final class ShaderPackRuntime {
         }
     }
 
+    private static final int[] DEFAULT_DRAW_BUFFERS = {0};
+
+    /**
+     * Parse the MRT output mapping from a fragment shader. Supports OptiFine's
+     * {@code DRAWBUFFERS:0231} (one digit per output) and Iris's
+     * {@code RENDERTARGETS: 0,1,2,3} (comma list). Returns {@code {0}} when
+     * neither directive is present (single-target, writes colortex0).
+     */
+    static int[] parseDrawBuffers(String fragSrc) {
+        int i = fragSrc.indexOf("RENDERTARGETS:");
+        if (i >= 0) {
+            String rest = fragSrc.substring(i + "RENDERTARGETS:".length());
+            int end = rest.indexOf("*/");
+            if (end >= 0) rest = rest.substring(0, end);
+            String[] toks = rest.trim().split("[,\\s]+");
+            List<Integer> out = new ArrayList<>();
+            for (String t : toks) {
+                if (t.isEmpty()) continue;
+                try { out.add(Integer.parseInt(t.trim())); } catch (NumberFormatException ignored) { break; }
+            }
+            if (!out.isEmpty()) return out.stream().mapToInt(Integer::intValue).toArray();
+        }
+        i = fragSrc.indexOf("DRAWBUFFERS:");
+        if (i >= 0) {
+            int p = i + "DRAWBUFFERS:".length();
+            List<Integer> out = new ArrayList<>();
+            while (p < fragSrc.length()) {
+                char c = fragSrc.charAt(p);
+                if (c >= '0' && c <= '9') out.add(c - '0');
+                else if (c == ' ' || c == '\t') { /* skip */ }
+                else break;
+                p++;
+            }
+            if (!out.isEmpty()) return out.stream().mapToInt(Integer::intValue).toArray();
+        }
+        return DEFAULT_DRAW_BUFFERS;
+    }
+
     /**
      * Compile every {@code gbuffers_*} (and {@code shadow}) program the pack
      * ships. Each is independent — a compile failure on one drops just that
@@ -145,7 +197,7 @@ public final class ShaderPackRuntime {
             if (vsh.equals("final.vsh")) continue;
             String base = vsh.substring(0, vsh.length() - ".vsh".length());
             Stage s = tryCompile(base);
-            if (s != null) gbufferPrograms.put(base, s.program);
+            if (s != null) gbufferPrograms.put(base, s);
         }
         if (!gbufferPrograms.isEmpty()) {
             LDOGMod.LOGGER.info("LDOG: Shader pack '{}' compiled {} gbuffer/shadow program(s): {}",
@@ -179,7 +231,9 @@ public final class ShaderPackRuntime {
         }
         try {
             ShaderProgram program = new ShaderProgram("ldogPack:" + baseName, vertSrc, fragSrc);
-            return new Stage(baseName, program);
+            int[] drawBuffers = parseDrawBuffers(fragSrc);
+            for (int idx : drawBuffers) if (idx > maxColortex) maxColortex = idx;
+            return new Stage(baseName, program, drawBuffers);
         } catch (ShaderProgram.ShaderCompileException e) {
             // Logged at WARN rather than ERROR — the pack still has other
             // stages we might be able to use.

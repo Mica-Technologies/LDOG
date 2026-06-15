@@ -47,6 +47,9 @@ public abstract class MixinRenderGlobal {
         if (EntityReactiveMaskState.isActive()) {
             GL30.glColorMaski(1, true, true, true, true);
         }
+        // Shader pack shadow map: opaque terrain + chunk list are ready by now,
+        // so render the sun-POV depth pass here (before the entity gbuffer bind).
+        com.limitlessdev.ldog.render.shaderpack.ShadowMapManager.render(partialTicks);
         // Shader pack gbuffer dispatch: bind gbuffers_entities around the whole
         // entity loop so the pack shades mobs/items/projectiles. No-op unless
         // the gbuffer dispatcher is active and the pack ships a usable program.

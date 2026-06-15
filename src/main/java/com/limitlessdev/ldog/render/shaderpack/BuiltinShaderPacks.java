@@ -32,6 +32,9 @@ public final class BuiltinShaderPacks {
         PACKS.put("Realism",    "realism");
         PACKS.put("Cinematic",  "cinematic");
         PACKS.put("Pseudo-RTX", "pseudortx");
+        // Deferred: a full gbuffer + shadow demo (needs Pack Gbuffers, and
+        // Pack Shadows for the cast shadows). Shows the deferred path working.
+        PACKS.put("Deferred",   "deferred");
     }
 
     private BuiltinShaderPacks() {}

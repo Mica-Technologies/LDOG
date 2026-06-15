@@ -5,6 +5,7 @@ import com.limitlessdev.ldog.render.pipeline.PostProcessContext;
 import com.limitlessdev.ldog.render.pipeline.PostProcessPass;
 import com.limitlessdev.ldog.render.pipeline.RenderTargetManager;
 import com.limitlessdev.ldog.render.pipeline.ShaderProgram;
+import com.limitlessdev.ldog.render.shaderpack.ShaderPackGbufferManager;
 import com.limitlessdev.ldog.render.shaderpack.ShaderPackManager;
 import com.limitlessdev.ldog.render.shaderpack.ShaderPackRuntime;
 import com.limitlessdev.ldog.render.shaderpack.ShaderPackUniforms;
@@ -98,12 +99,21 @@ public final class ShaderPackCompositePass implements PostProcessPass {
             | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT
             | GL11.GL_VIEWPORT_BIT | GL11.GL_TEXTURE_BIT);
 
-        // Capture main FB into colortex0 (sceneCopyTex). Composite stages
-        // can then sample the scene without violating the same-attachment
-        // read/write rule.
-        GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, ctx.mainFbo());
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, sceneCopyTex);
-        GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, mainW, mainH);
+        // In the deferred (MRT) path, colortex0 is the pipeline's scene colour
+        // texture — already holding the gbuffer-shaded world, and distinct from
+        // our ping/main output FBOs, so no copy is needed. Otherwise capture the
+        // main FB into sceneCopyTex so stages can sample the scene without
+        // violating the same-attachment read/write rule.
+        boolean deferred = ShaderPackGbufferManager.isDeferredActive();
+        int colortex0Input;
+        if (deferred) {
+            colortex0Input = RenderTargetManager.INSTANCE.getSceneColorTexture();
+        } else {
+            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, ctx.mainFbo());
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, sceneCopyTex);
+            GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, mainW, mainH);
+            colortex0Input = sceneCopyTex;
+        }
 
         // Snapshot per-frame uniforms once. All stages this frame see the
         // same numbers so cross-stage temporal effects stay consistent.
@@ -114,17 +124,16 @@ public final class ShaderPackCompositePass implements PostProcessPass {
         GlStateManager.disableBlend();
         GlStateManager.disableAlpha();
 
-        // Walk composite stages, ping-ponging input/output. First stage
-        // reads sceneCopyTex as colortex0; subsequent stages read whichever
-        // ping was just written.
-        int currentInputTex = sceneCopyTex;
+        // Walk composite stages, ping-ponging input/output. First stage reads
+        // colortex0Input; subsequent stages read whichever ping was just written.
+        int currentInputTex = colortex0Input;
         int currentOutputFbo = fboA;
         int currentOutputTex = texA;
 
         int depthTex = RenderTargetManager.INSTANCE.getSceneDepthTexture();
         for (ShaderPackRuntime.Stage stage : runtime.composites()) {
             runStage(stage.program, currentInputTex, depthTex,
-                currentOutputFbo, mainW, mainH);
+                currentOutputFbo, mainW, mainH, deferred);
             // Swap: this stage's output becomes next stage's input.
             currentInputTex = currentOutputTex;
             if (currentOutputFbo == fboA) {
@@ -140,7 +149,7 @@ public final class ShaderPackCompositePass implements PostProcessPass {
         ShaderPackRuntime.Stage finalStage = runtime.finalStage();
         if (finalStage != null) {
             runStage(finalStage.program, currentInputTex, depthTex,
-                ctx.mainFbo(), mainW, mainH);
+                ctx.mainFbo(), mainW, mainH, deferred);
         } else {
             // No final.fsh — blit the last composite output back to the main
             // FB so the post-process work is actually visible.
@@ -155,8 +164,8 @@ public final class ShaderPackCompositePass implements PostProcessPass {
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, ctx.mainFbo());
 
         ShaderProgram.unbind();
-        // Unbind all texture units we touched (0..8).
-        for (int i = 8; i >= 0; i--) {
+        // Unbind all texture units we touched (0..9, incl. the shadow unit).
+        for (int i = 9; i >= 0; i--) {
             GL13.glActiveTexture(GL13.GL_TEXTURE0 + i);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
         }
@@ -178,19 +187,23 @@ public final class ShaderPackCompositePass implements PostProcessPass {
 
     /** Bind all the standard inputs for one stage and draw a fullscreen quad. */
     private void runStage(ShaderProgram program, int colortex0, int depthtex0,
-                          int targetFbo, int w, int h) {
+                          int targetFbo, int w, int h, boolean deferred) {
         // colortex0 (unit 0) — the current scene/composite-chain input.
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, colortex0);
         // depthtex0 (unit 1) — the world depth texture.
         GL13.glActiveTexture(GL13.GL_TEXTURE1);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, depthtex0);
-        // colortex1..7 (units 2..8) — bound to the safe-zero 1x1 black
-        // texture so shader-pack samples return (0,0,0,0) instead of
-        // hitting a GL error on uninitialized slots.
+        // colortex1..7 (units 2..8) — in the deferred path, bind the real aux
+        // G-buffer attachments the pack wrote (normals/material/etc.); fall back
+        // to the safe-zero 1x1 black texture for slots the pack didn't allocate.
+        // Note: colortex0 (the chain input) is intentionally NOT overwritten by
+        // the deferred aux bind so ping-pong chaining still works.
         for (int i = 1; i <= 7; i++) {
+            int tex = deferred ? ShaderPackGbufferManager.colortex(i) : 0;
+            if (tex == 0) tex = blackTex;
             GL13.glActiveTexture(GL13.GL_TEXTURE0 + (i + 1));
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, blackTex);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex);
         }
 
         program.bind();
@@ -209,6 +222,10 @@ public final class ShaderPackCompositePass implements PostProcessPass {
         program.setUniform1i("depthtex2", 1);
         // Snapshot's standard uniforms (cameraPosition, sunPosition, ...).
         uniforms.feedTo(program);
+        // Real shadow map (when the shadow pass ran this frame) on unit 9 +
+        // shadowProjection/ModelView uniforms; otherwise the depthtex1/2 alias
+        // above leaves shadow samplers reading depth (fully lit).
+        com.limitlessdev.ldog.render.shaderpack.ShadowMapManager.feed(program, 9);
 
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, targetFbo);
         GlStateManager.viewport(0, 0, w, h);

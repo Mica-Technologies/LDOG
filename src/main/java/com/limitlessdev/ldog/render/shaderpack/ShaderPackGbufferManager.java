@@ -2,60 +2,69 @@ package com.limitlessdev.ldog.render.shaderpack;
 
 import com.limitlessdev.ldog.LDOGMod;
 import com.limitlessdev.ldog.config.LDOGConfig;
+import com.limitlessdev.ldog.render.pipeline.RenderTargetManager;
 import com.limitlessdev.ldog.render.pipeline.ShaderProgram;
 import net.minecraft.client.Minecraft;
+import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL20;
+import org.lwjgl.opengl.GL30;
 
+import java.nio.IntBuffer;
 import java.util.ArrayDeque;
 import java.util.Deque;
 
 /**
  * Per-object draw-call dispatcher for an active shader pack's {@code gbuffers_*}
- * programs. Mixins wrapping each MC draw-call type call {@link #begin} before
- * the draw and {@link #end} after; in between, the matching pack program is
- * bound and fed the standard uniform set so the pack shades that geometry.
+ * programs, plus the multi-render-target (MRT) G-buffer the pack writes into.
+ * Mixins wrapping each MC draw type call {@link #begin} before the draw and
+ * {@link #end} after; in between, the matching pack program is bound, the
+ * program's {@code DRAWBUFFERS} output mapping is applied, and the standard
+ * uniform set is fed.
  *
  * <h3>How it works on MC 1.12.2's legacy pipeline</h3>
  *
- * <p>Vanilla 1.12.2 renders the world with the fixed-function pipeline (no GLSL
- * program bound — {@code GL_CURRENT_PROGRAM} is 0). Both immediate-mode draws
- * (sky, clouds, weather, hand) and the chunk VBO draws (terrain) feed the
- * classic built-in attributes {@code gl_Vertex}, {@code gl_Color},
- * {@code gl_MultiTexCoord0/1} and the {@code gl_ModelViewMatrix} /
- * {@code gl_ProjectionMatrix} matrices. A {@code #version 120} gbuffer shader
- * that uses {@code ftransform()} and those built-ins therefore transforms +
- * textures the geometry correctly without any custom vertex format. Binding the
- * pack program around the draw is enough to take over shading.
+ * <p>Vanilla 1.12.2 renders the world fixed-function (no GLSL program bound).
+ * Both immediate-mode draws (clouds, weather, hand) and chunk VBO draws
+ * (terrain) feed the built-in {@code gl_Vertex}/{@code gl_Color}/
+ * {@code gl_MultiTexCoord}/{@code gl_ModelViewMatrix} state, so a
+ * {@code #version 120} gbuffer shader using {@code ftransform()} transforms +
+ * textures correctly with no custom vertex format. The block atlas stays on
+ * unit 0 and the lightmap on unit 1, so {@code texture}/{@code lightmap}
+ * resolve to live data.
  *
- * <p>The block texture stays bound on unit 0 and the lightmap on unit 1 — the
- * units MC's world render already uses — so the {@code texture}/{@code lightmap}
- * samplers resolve to live data. {@code normals}/{@code specular} point at a
- * shared black texture (packs degrade to flat normals / no specular).
+ * <h3>MRT G-buffer</h3>
  *
- * <h3>v1 limitations (the remaining OF-parity gap)</h3>
+ * <p>When the post-process pipeline is active (so a scene FBO exists), the
+ * dispatcher builds a G-buffer FBO that <em>reuses</em> the pipeline's scene
+ * colour texture as {@code colortex0} and its depth texture, and adds aux
+ * {@code colortex1..N} attachments. Gbuffer programs writing
+ * {@code gl_FragData[i]} land in {@code colortex[drawBuffers[i]]}; the composite
+ * chain then samples real normal / material / extra-channel data instead of the
+ * 1×1 black it used to read. The world's {@code colortex0} is the same texture
+ * the rest of the LDOG pipeline (FSR / TAA / composite) already consumes, so
+ * nothing downstream changes.
+ *
+ * <h3>Remaining gap</h3>
  *
  * <ul>
- *   <li>Single render target — output goes to {@code colortex0} (the bound
- *       scene framebuffer). Packs writing extra G-buffer channels via
- *       {@code DRAWBUFFERS} / {@code gl_FragData[1..]} have those writes
- *       dropped, so deferred-lighting composites won't get normal/specular
- *       data yet. MRT attachments are the next step.</li>
- *   <li>No shadow pass — {@code shadowtex} samplers read black; the {@code shadow}
- *       programs are compiled but not yet driven by a sun-POV depth render.</li>
- *   <li>Custom vertex attributes ({@code mc_Entity}, {@code mc_midTexCoord},
- *       {@code at_tangent}) are absent, so block-id-aware and parallax effects
- *       degrade gracefully to their zero default.</li>
+ *   <li>Composite stages can READ all colortex but only WRITE colortex0 (the
+ *       existing single-target ping-pong). Multi-write composite chains aren't
+ *       driven yet.</li>
+ *   <li>Custom vertex attributes ({@code mc_Entity}, {@code at_tangent}) absent
+ *       → block-id / parallax effects degrade to zero.</li>
+ *   <li>Shadow pass wired separately (see shadow target hookup).</li>
  * </ul>
  *
- * <p>Gated behind {@link LDOGConfig#enableShaderGbuffers} (opt-in, default off)
- * so the shipped composite-only path is never disturbed.
+ * <p>Gated behind {@link LDOGConfig#enableShaderGbuffers} (opt-in, default off).
  */
 public final class ShaderPackGbufferManager {
 
     private static final int GL_CURRENT_PROGRAM = 0x8B8D;
+    /** Hard cap on aux colortex attachments (colortex1..7 alongside colortex0). */
+    private static final int MAX_AUX = 7;
 
     /** Saved {@code GL_CURRENT_PROGRAM} ids to restore on {@link #end}. */
     private static final Deque<Integer> PROGRAM_STACK = new ArrayDeque<>();
@@ -68,9 +77,18 @@ public final class ShaderPackGbufferManager {
 
     private static boolean loggedFirstBind;
 
+    // --- MRT G-buffer state ---
+    private static int gbufferFbo;
+    private static final int[] aux = new int[MAX_AUX + 1]; // aux[1..N]; aux[0] unused (colortex0 = scene)
+    private static int auxCount;
+    private static int lastSceneColor, lastSceneDepth, lastW, lastH, lastAuxCount;
+    /** Reusable scratch for glDrawBuffers. */
+    private static final IntBuffer DRAW_BUF = BufferUtils.createIntBuffer(MAX_AUX + 1);
+    private static boolean gbufferBound;
+
     private ShaderPackGbufferManager() {}
 
-    /** True when the gbuffer dispatcher should attempt to take over draws. */
+    /** True when the dispatcher should attempt to take over draws at all. */
     public static boolean isActive() {
         if (!LDOGConfig.enableShaders || !LDOGConfig.enableShaderGbuffers) return false;
         ShaderPackRuntime rt = ShaderPackManager.INSTANCE.getRuntime();
@@ -78,102 +96,250 @@ public final class ShaderPackGbufferManager {
     }
 
     /**
-     * Reset the per-frame uniform snapshot latch. Called once at the start of
-     * each world render (renderSky HEAD) so the next {@link #begin} re-snapshots
-     * the camera matrices / time / weather for this frame.
+     * True when the full MRT deferred path can run: dispatcher active, the
+     * post-process pipeline is on, and its scene target is allocated (so we have
+     * a colortex0 + depth to wrap).
      */
-    public static void beginFrame() {
-        snapshottedThisFrame = false;
+    public static boolean isDeferredActive() {
+        return isActive()
+            && LDOGConfig.enablePostProcessPipeline
+            && RenderTargetManager.INSTANCE.isReady();
+    }
+
+    /** Number of aux colortex attachments currently allocated (colortex1..N). */
+    public static int auxColortexCount() { return auxCount; }
+
+    /** Texture handle for colortexI: scene colour for 0, aux for 1..N, else 0. */
+    public static int colortex(int i) {
+        if (i == 0) return RenderTargetManager.INSTANCE.getSceneColorTexture();
+        if (i >= 1 && i <= auxCount) return aux[i];
+        return 0;
     }
 
     /**
-     * Bind the pack program for {@code category} (resolving its fallback chain)
-     * and feed it the standard uniforms. No-op — and pushes nothing — when the
-     * dispatcher is inactive or the pack ships none of the category's programs,
-     * so the paired {@link #end} stays balanced.
+     * Reset the per-frame uniform snapshot latch. Called at renderSky HEAD
+     * (first world draw of the frame).
+     */
+    public static void beginFrame() {
+        snapshottedThisFrame = false;
+        ShadowMapManager.beginFrame();
+    }
+
+    /** Texture unit reserved for the shadow depth map (above the composite's 0..8). */
+    private static final int SHADOW_UNIT = 9;
+
+    /**
+     * Bind the G-buffer FBO for the world render, clear its aux attachments, and
+     * leave {@code glDrawBuffers} at colortex0 so vanilla's clear + any
+     * un-dispatched draws only touch the scene colour. Returns the FBO handle,
+     * or 0 when MRT couldn't be set up (caller then binds the plain scene FBO).
+     * Called from the pipeline bind mixin in place of binding the scene FBO.
+     */
+    public static int beginWorldGBuffer() {
+        int fbo = ensureGBuffer();
+        if (fbo == 0) { gbufferBound = false; return 0; }
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
+        gbufferBound = true;
+        // Clear aux buffers to zero (vanilla's upcoming clear only covers the
+        // draw-buffer set, which we narrow to colortex0 next).
+        if (auxCount > 0) {
+            setDrawBuffers(rangeAux());
+            GL11.glClearColor(0f, 0f, 0f, 0f);
+            GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
+        }
+        setDrawBuffers(SINGLE0);
+        return fbo;
+    }
+
+    /** Whether the G-buffer FBO is the active world-render target this frame. */
+    public static boolean isGBufferBound() { return gbufferBound; }
+
+    /** Mark the G-buffer unbound (called at world-pass RETURN). */
+    public static void endWorldGBuffer() { gbufferBound = false; }
+
+    /**
+     * Bind the pack program for {@code category} and feed its uniforms. When the
+     * G-buffer is bound, also apply the program's {@code DRAWBUFFERS} mapping so
+     * its {@code gl_FragData[i]} outputs route to the right colortex. No-op (and
+     * pushes nothing) when inactive or the pack ships none of the category's
+     * programs, keeping the paired {@link #end} balanced.
      */
     public static void begin(GbufferProgram category) {
         if (!isActive()) return;
+        // Don't recurse into the gbuffer path while the shadow map's terrain
+        // replay is running — it renders depth-only with its own matrices.
+        if (ShadowMapManager.isShadowPass()) return;
         ShaderPackRuntime rt = ShaderPackManager.INSTANCE.getRuntime();
         if (rt == null) return;
-        ShaderProgram program = rt.resolveGbuffer(category);
-        if (program == null) return;
+        ShaderPackRuntime.Stage stage = rt.resolveGbuffer(category);
+        if (stage == null || stage.program == null) return;
 
         ensureFrameSnapshot();
         ensureBlackTex();
 
-        // Save whatever program was bound (0 during vanilla world render) so we
-        // restore exactly that on end().
         int prev = GL11.glGetInteger(GL_CURRENT_PROGRAM);
         PROGRAM_STACK.push(prev);
 
-        program.bind();
-        feedSamplers(program);
-        UNIFORMS.feedTo(program);
+        stage.program.bind();
+        feedSamplers(stage.program);
+        UNIFORMS.feedTo(stage.program);
+        ShadowMapManager.feed(stage.program, SHADOW_UNIT);
+
+        // Route MRT outputs for this program.
+        if (gbufferBound) setDrawBuffers(mapDrawBuffers(stage.drawBuffers));
 
         if (!loggedFirstBind) {
             loggedFirstBind = true;
-            LDOGMod.LOGGER.info("LDOG: Shader pack gbuffer dispatch ACTIVE — first bind for {} ({})",
-                category, rt.packName());
+            LDOGMod.LOGGER.info(
+                "LDOG: Shader gbuffer dispatch ACTIVE — first bind {} ({}), MRT={} (colortex0..{})",
+                category, rt.packName(), gbufferBound, auxCount);
         }
     }
 
-    /** Restore the program bound before the matching {@link #begin}. */
+    /** Restore the program + colortex0-only draw buffer after a {@link #begin}. */
     public static void end() {
         if (PROGRAM_STACK.isEmpty()) return;
         int prev = PROGRAM_STACK.pop();
         GL20.glUseProgram(prev);
+        if (gbufferBound) setDrawBuffers(SINGLE0);
     }
 
-    /** Free GL resources. Safe to call when nothing was allocated. */
     public static void dispose() {
-        if (blackTex != 0) {
-            GL11.glDeleteTextures(blackTex);
-            blackTex = 0;
-        }
+        if (blackTex != 0) { GL11.glDeleteTextures(blackTex); blackTex = 0; }
+        disposeGBuffer();
         PROGRAM_STACK.clear();
         snapshottedThisFrame = false;
         loggedFirstBind = false;
+        gbufferBound = false;
+    }
+
+    // --- MRT allocation ---
+
+    /**
+     * Build or rebuild the G-buffer FBO so it wraps the current scene colour +
+     * depth textures with {@code auxCount} aux attachments. Returns the FBO, or
+     * 0 if the scene target isn't ready.
+     */
+    private static int ensureGBuffer() {
+        RenderTargetManager rtm = RenderTargetManager.INSTANCE;
+        if (!rtm.isReady()) return 0;
+        int sceneColor = rtm.getSceneColorTexture();
+        int sceneDepth = rtm.getSceneDepthTexture();
+        int w = rtm.getScaledWidth();
+        int h = rtm.getScaledHeight();
+
+        ShaderPackRuntime rt = ShaderPackManager.INSTANCE.getRuntime();
+        int wantAux = rt == null ? 0 : Math.min(MAX_AUX, rt.maxColortex());
+
+        if (gbufferFbo != 0 && sceneColor == lastSceneColor && sceneDepth == lastSceneDepth
+            && w == lastW && h == lastH && wantAux == lastAuxCount) {
+            return gbufferFbo;
+        }
+
+        disposeGBuffer();
+        auxCount = wantAux;
+
+        gbufferFbo = GL30.glGenFramebuffers();
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, gbufferFbo);
+        // colortex0 = the pipeline's scene colour (shared — no extra VRAM, and
+        // downstream passes read it unchanged).
+        GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
+            GL11.GL_TEXTURE_2D, sceneColor, 0);
+        for (int i = 1; i <= auxCount; i++) {
+            aux[i] = allocAux(w, h);
+            GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0 + i,
+                GL11.GL_TEXTURE_2D, aux[i], 0);
+        }
+        GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_STENCIL_ATTACHMENT,
+            GL11.GL_TEXTURE_2D, sceneDepth, 0);
+
+        int status = GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER);
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
+        if (status != GL30.GL_FRAMEBUFFER_COMPLETE) {
+            LDOGMod.LOGGER.error("LDOG: G-buffer FBO incomplete (status=0x{}, aux={})",
+                Integer.toHexString(status), auxCount);
+            disposeGBuffer();
+            return 0;
+        }
+
+        lastSceneColor = sceneColor; lastSceneDepth = sceneDepth;
+        lastW = w; lastH = h; lastAuxCount = auxCount;
+        LDOGMod.LOGGER.info("LDOG: G-buffer ready — colortex0 (scene) + {} aux at {}x{}", auxCount, w, h);
+        return gbufferFbo;
+    }
+
+    private static int allocAux(int w, int h) {
+        int tex = GL11.glGenTextures();
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex);
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, w, h, 0,
+            GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, (java.nio.ByteBuffer) null);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+        return tex;
+    }
+
+    private static void disposeGBuffer() {
+        for (int i = 1; i <= MAX_AUX; i++) {
+            if (aux[i] != 0) { GL11.glDeleteTextures(aux[i]); aux[i] = 0; }
+        }
+        if (gbufferFbo != 0) { GL30.glDeleteFramebuffers(gbufferFbo); gbufferFbo = 0; }
+        auxCount = 0;
+        lastSceneColor = lastSceneDepth = lastW = lastH = lastAuxCount = 0;
+    }
+
+    // --- draw-buffer helpers ---
+
+    private static final int[] SINGLE0 = {0};
+
+    /** colortex indices 1..auxCount (the aux attachments) for the clear pass. */
+    private static int[] rangeAux() {
+        int[] r = new int[auxCount];
+        for (int i = 0; i < auxCount; i++) r[i] = i + 1;
+        return r;
+    }
+
+    /** Drop any target index that exceeds what we actually allocated. */
+    private static int[] mapDrawBuffers(int[] requested) {
+        int n = 0;
+        for (int idx : requested) if (idx <= auxCount) n++;
+        if (n == requested.length) return requested;
+        int[] r = new int[Math.max(1, n)];
+        if (n == 0) { r[0] = 0; return r; }
+        int j = 0;
+        for (int idx : requested) if (idx <= auxCount) r[j++] = idx;
+        return r;
+    }
+
+    /** Set glDrawBuffers to the given colortex indices (as COLOR_ATTACHMENT0+i). */
+    private static void setDrawBuffers(int[] indices) {
+        DRAW_BUF.clear();
+        for (int idx : indices) DRAW_BUF.put(GL30.GL_COLOR_ATTACHMENT0 + idx);
+        DRAW_BUF.flip();
+        GL20.glDrawBuffers(DRAW_BUF);
     }
 
     private static void ensureFrameSnapshot() {
         if (snapshottedThisFrame) return;
         Minecraft mc = Minecraft.getMinecraft();
-        int w = mc.displayWidth;
-        int h = mc.displayHeight;
-        // Roll last frame's matrices into the "previous" slot BEFORE snapshotting
-        // this frame, so gbufferPreviousModelView/Projection hold a real one-frame
-        // delta for motion-aware pack effects.
         UNIFORMS.rotatePrev();
-        // Snapshot reads the live GL_MODELVIEW / GL_PROJECTION — which, at this
-        // point in the world render, ARE the camera matrices we want for
-        // gbufferModelView / gbufferProjection.
-        UNIFORMS.snapshot(w, h, mc.getRenderPartialTicks());
+        UNIFORMS.snapshot(mc.displayWidth, mc.displayHeight, mc.getRenderPartialTicks());
         snapshottedThisFrame = true;
     }
 
-    /**
-     * Point the pack's well-known samplers at the right texture units. MC keeps
-     * the block atlas on unit 0 and the lightmap on unit 1 during world render,
-     * so those resolve to live data. Everything else gets the safe-zero black
-     * texture bound on unit 2.
-     */
     private static void feedSamplers(ShaderProgram program) {
-        // Bind black on unit 2 for normals/specular/shadow samplers, then
-        // restore the active unit to 0 (what MC's draw path expects).
         GL13.glActiveTexture(GL13.GL_TEXTURE2);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, blackTex);
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
 
-        // Color / albedo samplers (various pack naming conventions all alias 0).
         program.setUniform1i("texture", 0);
         program.setUniform1i("tex", 0);
         program.setUniform1i("gtexture", 0);
         program.setUniform1i("gcolor", 0);
         program.setUniform1i("colortex0", 0);
-        // Lightmap on unit 1.
         program.setUniform1i("lightmap", 1);
-        // Unused channels → black on unit 2.
         program.setUniform1i("normals", 2);
         program.setUniform1i("specular", 2);
         program.setUniform1i("shadow", 2);
@@ -188,7 +354,7 @@ public final class ShaderPackGbufferManager {
         if (blackTex != 0) return;
         blackTex = GL11.glGenTextures();
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, blackTex);
-        java.nio.ByteBuffer zero = org.lwjgl.BufferUtils.createByteBuffer(4);
+        java.nio.ByteBuffer zero = BufferUtils.createByteBuffer(4);
         zero.put((byte) 0).put((byte) 0).put((byte) 0).put((byte) 0).flip();
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, 1, 1, 0,
             GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, zero);

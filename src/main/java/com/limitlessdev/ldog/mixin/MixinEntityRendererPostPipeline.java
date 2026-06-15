@@ -5,6 +5,7 @@ import com.limitlessdev.ldog.render.pipeline.EntityReactiveMaskState;
 import com.limitlessdev.ldog.render.pipeline.PostProcessContext;
 import com.limitlessdev.ldog.render.pipeline.PostProcessPipeline;
 import com.limitlessdev.ldog.render.pipeline.RenderTargetManager;
+import com.limitlessdev.ldog.render.shaderpack.ShaderPackGbufferManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.EntityRenderer;
 import net.minecraft.client.renderer.GlStateManager;
@@ -111,7 +112,18 @@ public abstract class MixinEntityRendererPostPipeline {
         ldog$savedMainWidth = mainW;
         ldog$savedMainHeight = mainH;
 
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, rtm.getSceneFbo());
+        // Shader-pack deferred path: when a pack's gbuffers are driving the
+        // world, render into the MRT G-buffer (colortex0 = this same scene
+        // colour texture + aux colortex1..N) instead of the plain scene FBO.
+        // Reactive masking is mutually exclusive with the deferred path.
+        boolean deferred = false;
+        if (ShaderPackGbufferManager.isDeferredActive()) {
+            int gfbo = ShaderPackGbufferManager.beginWorldGBuffer();
+            if (gfbo != 0) deferred = true;
+        }
+        if (!deferred) {
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, rtm.getSceneFbo());
+        }
 
         // Phase 9c.3-A: when entity reactive masking is active alongside TAA,
         // expand drawBuffers to populate sceneFbo's color1 attachment too.
@@ -121,7 +133,7 @@ public abstract class MixinEntityRendererPostPipeline {
         // around the entity loop. The vanilla GlStateManager.clear that
         // runs after this HEAD inject clears BOTH attached colour buffers
         // because both are listed in drawBuffers — no manual mask clear.
-        if (LDOGConfig.enableTAA && LDOGConfig.enableEntityReactiveMask) {
+        if (!deferred && LDOGConfig.enableTAA && LDOGConfig.enableEntityReactiveMask) {
             LDOG_DRAW_BUF_MRT.position(0);
             GL20.glDrawBuffers(LDOG_DRAW_BUF_MRT);
             GL30.glColorMaski(1, false, false, false, false);
@@ -150,6 +162,9 @@ public abstract class MixinEntityRendererPostPipeline {
     @Inject(method = "renderWorldPass(IFJ)V", at = @At("RETURN"))
     private void ldog$pipelineResolve(int pass, float partialTicks, long finishTimeNano, CallbackInfo ci) {
         if (!LDOGConfig.enablePostProcessPipeline) return;
+
+        // World draw done — the G-buffer is no longer the active draw target.
+        ShaderPackGbufferManager.endWorldGBuffer();
 
         Framebuffer fb = Minecraft.getMinecraft().getFramebuffer();
         if (fb == null) return;

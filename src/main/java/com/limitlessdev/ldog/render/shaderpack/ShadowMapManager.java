@@ -1,0 +1,256 @@
+package com.limitlessdev.ldog.render.shaderpack;
+
+import com.limitlessdev.ldog.LDOGMod;
+import com.limitlessdev.ldog.config.LDOGConfig;
+import com.limitlessdev.ldog.render.pipeline.ShaderProgram;
+import net.minecraft.client.Minecraft;
+import net.minecraft.entity.Entity;
+import net.minecraft.util.BlockRenderLayer;
+import net.minecraft.world.World;
+import org.lwjgl.BufferUtils;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL12;
+import org.lwjgl.opengl.GL13;
+import org.lwjgl.opengl.GL14;
+import org.lwjgl.opengl.GL30;
+import org.lwjgl.util.glu.GLU;
+import org.lwjgl.util.vector.Matrix4f;
+
+import java.nio.FloatBuffer;
+
+/**
+ * Sun/moon-POV shadow map for the active shader pack. Renders a depth-only,
+ * camera-relative pass of the terrain from the light's point of view into
+ * {@code shadowtex0/1}, and supplies the {@code shadowModelView}/
+ * {@code shadowProjection} (+inverse) uniforms composites use to sample it.
+ *
+ * <h3>How the geometry replay works</h3>
+ *
+ * <p>MC renders terrain camera-relative (chunk VBOs are drawn with a per-chunk
+ * {@code glTranslate(chunkPos - cameraPos)} on top of the camera view matrix).
+ * To capture the same geometry from the light, we just swap the GL matrices:
+ * an orthographic projection + a {@code gluLookAt} from the light direction
+ * toward the camera origin, then re-invoke {@link net.minecraft.client.renderer.RenderGlobal#renderBlockLayer}
+ * for the opaque + cutout layers. We read the resulting GL matrices back for
+ * the uniforms, so no hand-rolled matrix math is needed.
+ *
+ * <h3>v1 limitations</h3>
+ *
+ * <ul>
+ *   <li>Uses the <em>camera</em> chunk-visibility list, so geometry behind the
+ *       camera may not cast (OptiFine prepares a separate shadow frustum).</li>
+ *   <li>Terrain only — no entity/TESR shadow casters yet.</li>
+ *   <li>Fixed-function depth (no {@code shadow.vsh/fsh} program), so colored /
+ *       alpha-blended shadows aren't produced.</li>
+ * </ul>
+ *
+ * <p>Gated behind {@link LDOGConfig#enableShaderShadows} (opt-in, default off).
+ */
+public final class ShadowMapManager {
+
+    private static final int GL_FRAMEBUFFER_BINDING = 0x8CA6;
+
+    private static int shadowFbo;
+    private static int shadowDepthTex;
+    private static int resolution;
+    private static boolean renderedThisFrame;
+
+    private static final FloatBuffer PROJ_BUF = BufferUtils.createFloatBuffer(16);
+    private static final FloatBuffer MV_BUF = BufferUtils.createFloatBuffer(16);
+    private static final FloatBuffer INV_BUF = BufferUtils.createFloatBuffer(16);
+    private static final Matrix4f SCRATCH = new Matrix4f();
+    private static final int[] VIEWPORT = new int[4];
+
+    /** Suppresses the per-object gbuffer dispatch while the shadow pass runs. */
+    private static boolean shadowPass;
+
+    private ShadowMapManager() {}
+
+    public static boolean isShadowPass() { return shadowPass; }
+
+    /** True when shadows should run: opt-in flag + deferred path available. */
+    public static boolean isEnabled() {
+        return LDOGConfig.enableShaderShadows && ShaderPackGbufferManager.isDeferredActive();
+    }
+
+    /** True when a shadow map was produced this frame (composites can sample it). */
+    public static boolean isReady() {
+        return renderedThisFrame && shadowDepthTex != 0;
+    }
+
+    public static int depthTexture() { return shadowDepthTex; }
+
+    public static void beginFrame() { renderedThisFrame = false; }
+
+    /**
+     * Render the shadow map. Saves + restores all GL matrix/FBO/viewport state
+     * so the caller's render continues unaffected. Called mid-world-pass once
+     * the opaque terrain + chunk list are ready (renderEntities HEAD).
+     */
+    public static void render(float partialTicks) {
+        if (!isEnabled()) return;
+        Minecraft mc = Minecraft.getMinecraft();
+        World world = mc.world;
+        Entity view = mc.getRenderViewEntity();
+        if (world == null || view == null || mc.renderGlobal == null) return;
+        if (!ensure()) return;
+
+        // --- compute light direction (matches ShaderPackUniforms' sun/moon) ---
+        float sa = world.getCelestialAngle(partialTicks) * (float) (2.0 * Math.PI);
+        float lx = (float) -Math.sin(sa);
+        float ly = (float) Math.cos(sa);
+        boolean night = ly < 0.0f;
+        if (night) { lx = -lx; ly = -ly; } // moon is the caster at night
+        float lz = 0.0f;
+        // Avoid a degenerate up-vector when the light is straight overhead.
+        float upx = 0f, upy = 1f, upz = 0f;
+        if (Math.abs(ly) > 0.99f) { upx = 0f; upy = 0f; upz = 1f; }
+
+        int d = LDOGConfig.shaderShadowDistance;
+        float eyeDist = d;
+        float ex = lx * eyeDist, ey = ly * eyeDist, ez = lz * eyeDist;
+
+        // --- save GL state ---
+        saveViewport();
+        int prevFbo = GL11.glGetInteger(GL_FRAMEBUFFER_BINDING);
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, shadowFbo);
+        GL11.glDrawBuffer(GL11.GL_NONE);
+        GL11.glReadBuffer(GL11.GL_NONE);
+        GL11.glViewport(0, 0, resolution, resolution);
+
+        GL11.glMatrixMode(GL11.GL_PROJECTION);
+        GL11.glPushMatrix();
+        GL11.glLoadIdentity();
+        GL11.glOrtho(-d, d, -d, d, 0.05, d * 2.5);
+
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPushMatrix();
+        GL11.glLoadIdentity();
+        GLU.gluLookAt(ex, ey, ez, 0f, 0f, 0f, upx, upy, upz);
+
+        // Snapshot the matrices for the composite/gbuffer uniforms.
+        PROJ_BUF.clear();
+        GL11.glGetFloat(GL11.GL_PROJECTION_MATRIX, PROJ_BUF);
+        MV_BUF.clear();
+        GL11.glGetFloat(GL11.GL_MODELVIEW_MATRIX, MV_BUF);
+
+        GL11.glEnable(GL11.GL_DEPTH_TEST);
+        GL11.glDepthMask(true);
+        GL11.glClear(GL11.GL_DEPTH_BUFFER_BIT);
+        // Polygon offset to fight shadow acne on near-grazing surfaces.
+        GL11.glEnable(GL11.GL_POLYGON_OFFSET_FILL);
+        GL11.glPolygonOffset(2.5f, 4.0f);
+
+        shadowPass = true;
+        try {
+            mc.renderGlobal.renderBlockLayer(BlockRenderLayer.SOLID, partialTicks, 2, view);
+            mc.renderGlobal.renderBlockLayer(BlockRenderLayer.CUTOUT_MIPPED, partialTicks, 2, view);
+        } catch (Throwable t) {
+            LDOGMod.LOGGER.error("LDOG: Shadow terrain pass failed, disabling shadows for this session", t);
+            LDOGConfig.enableShaderShadows = false;
+        } finally {
+            shadowPass = false;
+        }
+
+        GL11.glDisable(GL11.GL_POLYGON_OFFSET_FILL);
+
+        // --- restore GL state ---
+        GL11.glMatrixMode(GL11.GL_PROJECTION);
+        GL11.glPopMatrix();
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPopMatrix();
+        GL11.glPopAttrib();
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, prevFbo);
+        GL11.glViewport(VIEWPORT[0], VIEWPORT[1], VIEWPORT[2], VIEWPORT[3]);
+
+        renderedThisFrame = true;
+    }
+
+    /**
+     * Bind the shadow depth texture to {@code unit} and feed the shadow
+     * sampler + matrix uniforms to {@code program}. No-op when no shadow map
+     * was produced this frame (caller's earlier black bind stays).
+     */
+    public static void feed(ShaderProgram program, int unit) {
+        if (!isReady()) return;
+        GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, shadowDepthTex);
+        GL13.glActiveTexture(GL13.GL_TEXTURE0);
+
+        program.setUniform1i("shadowtex0", unit);
+        program.setUniform1i("shadowtex1", unit);
+        program.setUniform1i("shadow", unit);
+        program.setUniform1i("watershadow", unit);
+        program.setUniform1f("shadowMapResolution", resolution);
+
+        PROJ_BUF.position(0);
+        program.setUniformMatrix4("shadowProjection", PROJ_BUF);
+        MV_BUF.position(0);
+        program.setUniformMatrix4("shadowModelView", MV_BUF);
+
+        invertInto(PROJ_BUF, INV_BUF);
+        program.setUniformMatrix4("shadowProjectionInverse", INV_BUF);
+        invertInto(MV_BUF, INV_BUF);
+        program.setUniformMatrix4("shadowModelViewInverse", INV_BUF);
+    }
+
+    public static void dispose() {
+        if (shadowDepthTex != 0) { GL11.glDeleteTextures(shadowDepthTex); shadowDepthTex = 0; }
+        if (shadowFbo != 0) { GL30.glDeleteFramebuffers(shadowFbo); shadowFbo = 0; }
+        resolution = 0;
+        renderedThisFrame = false;
+    }
+
+    private static boolean ensure() {
+        int want = LDOGConfig.shaderShadowResolution;
+        if (shadowFbo != 0 && resolution == want) return true;
+        dispose();
+        resolution = want;
+
+        shadowDepthTex = GL11.glGenTextures();
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, shadowDepthTex);
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL14.GL_DEPTH_COMPONENT24, want, want, 0,
+            GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, (java.nio.ByteBuffer) null);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+
+        shadowFbo = GL30.glGenFramebuffers();
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, shadowFbo);
+        GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT,
+            GL11.GL_TEXTURE_2D, shadowDepthTex, 0);
+        GL11.glDrawBuffer(GL11.GL_NONE);
+        GL11.glReadBuffer(GL11.GL_NONE);
+        int status = GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER);
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
+        if (status != GL30.GL_FRAMEBUFFER_COMPLETE) {
+            LDOGMod.LOGGER.error("LDOG: Shadow FBO incomplete (status=0x{})", Integer.toHexString(status));
+            dispose();
+            return false;
+        }
+        LDOGMod.LOGGER.info("LDOG: Shadow map ready ({}x{} depth)", want, want);
+        return true;
+    }
+
+    private static final java.nio.IntBuffer VIEWPORT_BUF = BufferUtils.createIntBuffer(16);
+
+    private static void saveViewport() {
+        VIEWPORT_BUF.clear();
+        GL11.glGetInteger(GL11.GL_VIEWPORT, VIEWPORT_BUF);
+        VIEWPORT_BUF.get(VIEWPORT);
+    }
+
+    private static void invertInto(FloatBuffer src, FloatBuffer dst) {
+        src.position(0);
+        SCRATCH.load(src);
+        src.position(0);
+        Matrix4f.invert(SCRATCH, SCRATCH);
+        dst.clear();
+        SCRATCH.store(dst);
+        dst.position(0);
+    }
+}

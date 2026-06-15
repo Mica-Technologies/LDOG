@@ -111,6 +111,7 @@ public class GuiLDOGSettings extends GuiScreen {
     private static final int BTN_HD_TEXTURES = 44;
     private static final int BTN_SHADERS = 45;
     private static final int BTN_SHADER_GBUFFERS = 47;
+    private static final int BTN_SHADER_SHADOWS = 48;
     private static final int BTN_SHADER_PACK = 610;
     private static final int BTN_LIGHT_TEMP = 50;
     private static final int BTN_LIGHT_TEMP_PRESET = 51;
@@ -714,7 +715,8 @@ public class GuiLDOGSettings extends GuiScreen {
         settingsList.addButtonRow(
             makeFeatureButton(BTN_SHADER_GBUFFERS, w, h, "Pack Gbuffers",
                 LDOGConfig.enableShaderGbuffers, OptiFineCompat.shouldHandleShaders()),
-            null);
+            makeFeatureButton(BTN_SHADER_SHADOWS, w, h, "Pack Shadows",
+                LDOGConfig.enableShaderShadows, OptiFineCompat.shouldHandleShaders()));
         // Shader-pack picker moved to its own Shaders tab — see buildShadersTab.
 
         // -- OptiFine Interop — only shown when OF is detected --
@@ -1244,6 +1246,10 @@ public class GuiLDOGSettings extends GuiScreen {
             case BTN_SHADER_GBUFFERS:
                 LDOGConfig.enableShaderGbuffers = !LDOGConfig.enableShaderGbuffers;
                 button.displayString = featureLabel("Pack Gbuffers", LDOGConfig.enableShaderGbuffers, OptiFineCompat.shouldHandleShaders());
+                break;
+            case BTN_SHADER_SHADOWS:
+                LDOGConfig.enableShaderShadows = !LDOGConfig.enableShaderShadows;
+                button.displayString = featureLabel("Pack Shadows", LDOGConfig.enableShaderShadows, OptiFineCompat.shouldHandleShaders());
                 break;
             case BTN_SHADER_PACK:
                 // Open the dedicated list-style picker. Returning from it
@@ -2455,6 +2461,17 @@ public class GuiLDOGSettings extends GuiScreen {
             "\u00a77\u00a7aShaders\u00a77 ON plus a pack that ships gbuffers_* programs.",
             "",
             "\u00a77Leave off for the stable composite-only look.");
+        registerTooltip(BTN_SHADER_SHADOWS,
+            "\u00a7ePack Shadows \u00a78(experimental)",
+            "\u00a77Renders a sun/moon-POV shadow map so the pack can cast real",
+            "\u00a77shadows (feeds \u00a7fshadowtex0/1\u00a77 + \u00a7fshadowProjection/ModelView\u00a77).",
+            "\u00a77Does a second depth-only terrain render each frame.",
+            "",
+            "\u00a7ev1 caveats:\u00a77 covers camera-visible terrain only (chunks behind",
+            "\u00a77you may not cast), terrain-only (no entity shadows), matrices are",
+            "\u00a77best-effort. Resolution + distance are in the config file.",
+            "",
+            "\u00a77Requires \u00a7aPack Gbuffers\u00a77 ON. Costs an extra terrain pass.");
         registerTooltip(BTN_SHADER_PACK,
             "\u00a7eShader Pack",
             "\u00a77Opens a list of packs found in \u00a7ashaderpacks/\u00a77. Drop",
