@@ -54,6 +54,9 @@ public final class ShaderPackRuntime {
     }
 
     private final ShaderPack pack;
+    /** Deferred fullscreen passes — run AFTER gbuffers, BEFORE composite. Most
+     *  packs do their main scene lighting here, so skipping them = a dark world. */
+    private final List<Stage> deferred = new ArrayList<>();
     private final List<Stage> composites = new ArrayList<>();
     private Stage finalStage;
 
@@ -96,8 +99,10 @@ public final class ShaderPackRuntime {
     /** Highest colortex index written by any program — drives MRT aux allocation. */
     public int maxColortex() { return maxColortex; }
 
-    /** True when there's a composite/final chain for the post-process pass to run. */
-    public boolean hasCompositeChain() { return !composites.isEmpty() || finalStage != null; }
+    /** True when there's a deferred/composite/final chain for the post-process pass to run. */
+    public boolean hasCompositeChain() {
+        return !deferred.isEmpty() || !composites.isEmpty() || finalStage != null;
+    }
 
     /**
      * The {@code final.{vsh,fsh}} stage, or null when the pack didn't ship
@@ -111,6 +116,10 @@ public final class ShaderPackRuntime {
     public String packName() { return pack.name; }
 
     public void dispose() {
+        for (Stage s : deferred) {
+            if (s.program != null) s.program.dispose();
+        }
+        deferred.clear();
         for (Stage s : composites) {
             if (s.program != null) s.program.dispose();
         }
@@ -124,6 +133,14 @@ public final class ShaderPackRuntime {
     }
 
     private void compileChain() {
+        // deferred.{vsh,fsh} + deferred1..15: the deferred-lighting passes that
+        // run between gbuffers and composite. (OF/Iris program order.)
+        Stage defBase = tryCompile("deferred");
+        if (defBase != null) deferred.add(defBase);
+        for (int i = 1; i <= MAX_COMPOSITE; i++) {
+            Stage s = tryCompile("deferred" + i);
+            if (s != null) deferred.add(s);
+        }
         // composite.{vsh,fsh}: the base composite stage.
         Stage base = tryCompile("composite");
         if (base != null) composites.add(base);
@@ -141,13 +158,54 @@ public final class ShaderPackRuntime {
                 pack.name);
         } else {
             LDOGMod.LOGGER.info(
-                "LDOG: Shader pack '{}' compiled — {} composite stage(s){}",
-                pack.name, composites.size(),
+                "LDOG: Shader pack '{}' compiled — {} deferred + {} composite stage(s){}",
+                pack.name, deferred.size(), composites.size(),
                 finalStage != null ? " + final" : " (no final stage)");
         }
     }
 
+    /** Deferred-lighting passes, in execution order. Run before {@link #composites()}. */
+    public List<Stage> deferred() { return deferred; }
+
     private static final int[] DEFAULT_DRAW_BUFFERS = {0};
+
+    /**
+     * Scan EVERY {@code DRAWBUFFERS:}/{@code RENDERTARGETS:} directive in the
+     * source and return the highest colortex index referenced. Used to size the
+     * MRT allocation — a shader may select different draw-buffer sets via #if,
+     * and we can't run the preprocessor, so we allocate for the widest.
+     */
+    static int maxDrawBufferIndex(String src) {
+        int max = 0;
+        int from = 0;
+        while (true) {
+            int d = src.indexOf("DRAWBUFFERS:", from);
+            int r = src.indexOf("RENDERTARGETS:", from);
+            int at;
+            boolean rt;
+            if (d < 0 && r < 0) break;
+            if (r < 0 || (d >= 0 && d < r)) { at = d; rt = false; } else { at = r; rt = true; }
+            from = at + 1;
+            if (rt) {
+                String rest = src.substring(at + "RENDERTARGETS:".length());
+                int end = rest.indexOf("*/");
+                if (end >= 0) rest = rest.substring(0, end);
+                for (String t : rest.trim().split("[,\\s]+")) {
+                    try { max = Math.max(max, Integer.parseInt(t.trim())); }
+                    catch (NumberFormatException ignored) { break; }
+                }
+            } else {
+                int p = at + "DRAWBUFFERS:".length();
+                while (p < src.length()) {
+                    char c = src.charAt(p);
+                    if (c >= '0' && c <= '9') max = Math.max(max, c - '0');
+                    else if (c != ' ' && c != '\t') break;
+                    p++;
+                }
+            }
+        }
+        return max;
+    }
 
     /**
      * Parse the MRT output mapping from a fragment shader. Supports OptiFine's
@@ -232,7 +290,12 @@ public final class ShaderPackRuntime {
         try {
             ShaderProgram program = new ShaderProgram("ldogPack:" + baseName, vertSrc, fragSrc);
             int[] drawBuffers = parseDrawBuffers(fragSrc);
-            for (int idx : drawBuffers) if (idx > maxColortex) maxColortex = idx;
+            // Allocate for the WIDEST index this shader could write across all of
+            // its (possibly #if-conditional) DRAWBUFFERS directives — e.g. BSL's
+            // gbuffers_terrain has 0 / 08 / 08367 / 0367, so we must allocate up
+            // to colortex8 even though we can't preprocess which branch is live.
+            int wide = maxDrawBufferIndex(fragSrc);
+            if (wide > maxColortex) maxColortex = wide;
             return new Stage(baseName, program, drawBuffers);
         } catch (ShaderProgram.ShaderCompileException e) {
             // Logged at WARN rather than ERROR — the pack still has other

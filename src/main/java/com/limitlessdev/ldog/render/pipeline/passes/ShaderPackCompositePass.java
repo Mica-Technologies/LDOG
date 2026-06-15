@@ -157,7 +157,10 @@ public final class ShaderPackCompositePass implements PostProcessPass {
             int currentInputTex = colortex0Input;
             int currentOutputFbo = fboA;
             int currentOutputTex = texA;
-            for (ShaderPackRuntime.Stage stage : runtime.composites()) {
+            java.util.List<ShaderPackRuntime.Stage> chain =
+                new java.util.ArrayList<>(runtime.deferred());
+            chain.addAll(runtime.composites());
+            for (ShaderPackRuntime.Stage stage : chain) {
                 runStage(stage.program, currentInputTex, depthTex,
                     currentOutputFbo, mainW, mainH, deferred);
                 currentInputTex = currentOutputTex;
@@ -277,6 +280,9 @@ public final class ShaderPackCompositePass implements PostProcessPass {
     private boolean usesMultiWrite(ShaderPackRuntime runtime) {
         int aux = ShaderPackGbufferManager.auxColortexCount();
         if (aux < 1) return false;
+        // Any deferred stage means the pack does deferred lighting into aux
+        // buffers — always use the multi-write path so those land + persist.
+        if (!runtime.deferred().isEmpty()) return true;
         for (ShaderPackRuntime.Stage s : runtime.composites()) {
             for (int t : s.drawBuffers) if (t >= 1 && t <= aux) return true;
         }
@@ -298,6 +304,10 @@ public final class ShaderPackCompositePass implements PostProcessPass {
 
         copyGbufferToCur(n, w, h);
 
+        // Deferred lighting passes first (gbuffers -> deferred -> composite).
+        for (ShaderPackRuntime.Stage stage : runtime.deferred()) {
+            runStageMrt(stage.program, stage.drawBuffers, n, w, h, depthTex);
+        }
         for (ShaderPackRuntime.Stage stage : runtime.composites()) {
             runStageMrt(stage.program, stage.drawBuffers, n, w, h, depthTex);
         }
