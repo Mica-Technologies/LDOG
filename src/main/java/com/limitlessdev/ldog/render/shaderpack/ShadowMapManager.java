@@ -64,6 +64,9 @@ public final class ShadowMapManager {
     /** Suppresses the per-object gbuffer dispatch while the shadow pass runs. */
     private static boolean shadowPass;
 
+    /** True once this frame's shadow matrices have been computed (depth render optional). */
+    private static boolean hasMatrices;
+
     private ShadowMapManager() {}
 
     public static boolean isShadowPass() { return shadowPass; }
@@ -80,7 +83,7 @@ public final class ShadowMapManager {
 
     public static int depthTexture() { return shadowDepthTex; }
 
-    public static void beginFrame() { renderedThisFrame = false; }
+    public static void beginFrame() { renderedThisFrame = false; hasMatrices = false; }
 
     /**
      * Render the shadow map. Saves + restores all GL matrix/FBO/viewport state
@@ -88,84 +91,84 @@ public final class ShadowMapManager {
      * the opaque terrain + chunk list are ready (renderEntities HEAD).
      */
     public static void render(float partialTicks) {
-        if (!isEnabled()) return;
+        // Runs whenever a pack is driving — NOT only when shadows are enabled.
+        // Composites compute a shadow lookup unconditionally; if we don't feed
+        // valid shadowProjection/shadowModelView the coordinate degenerates to
+        // NaN and the sun term collapses to zero (the "dark even at noon" bug).
+        if (!ShaderPackGbufferManager.isDeferredActive()) return;
         Minecraft mc = Minecraft.getMinecraft();
         World world = mc.world;
         Entity view = mc.getRenderViewEntity();
         if (world == null || view == null || mc.renderGlobal == null) return;
-        if (!ensure()) return;
 
-        // --- compute light direction (matches ShaderPackUniforms' sun/moon) ---
+        // --- light direction (matches ShaderPackUniforms' sun/moon) ---
         float sa = world.getCelestialAngle(partialTicks) * (float) (2.0 * Math.PI);
         float lx = (float) -Math.sin(sa);
         float ly = (float) Math.cos(sa);
         boolean night = ly < 0.0f;
         if (night) { lx = -lx; ly = -ly; } // moon is the caster at night
         float lz = 0.0f;
-        // Avoid a degenerate up-vector when the light is straight overhead.
         float upx = 0f, upy = 1f, upz = 0f;
         if (Math.abs(ly) > 0.99f) { upx = 0f; upy = 0f; upz = 1f; }
 
         int d = LDOGConfig.shaderShadowDistance;
-        float eyeDist = d;
-        float ex = lx * eyeDist, ey = ly * eyeDist, ez = lz * eyeDist;
+        float ex = lx * d, ey = ly * d, ez = lz * d;
 
-        // --- save GL state ---
-        saveViewport();
-        int prevFbo = GL11.glGetInteger(GL_FRAMEBUFFER_BINDING);
-        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, shadowFbo);
-        GL11.glDrawBuffer(GL11.GL_NONE);
-        GL11.glReadBuffer(GL11.GL_NONE);
-        GL11.glViewport(0, 0, resolution, resolution);
-
+        // Compute the shadow matrices on the GL stack and read them back. Done
+        // every frame a pack is active (cheap) so composites always have valid
+        // matrices, even when the depth render below is disabled.
         GL11.glMatrixMode(GL11.GL_PROJECTION);
         GL11.glPushMatrix();
         GL11.glLoadIdentity();
         GL11.glOrtho(-d, d, -d, d, 0.05, d * 2.5);
-
         GL11.glMatrixMode(GL11.GL_MODELVIEW);
         GL11.glPushMatrix();
         GL11.glLoadIdentity();
         GLU.gluLookAt(ex, ey, ez, 0f, 0f, 0f, upx, upy, upz);
-
-        // Snapshot the matrices for the composite/gbuffer uniforms.
         PROJ_BUF.clear();
         GL11.glGetFloat(GL11.GL_PROJECTION_MATRIX, PROJ_BUF);
         MV_BUF.clear();
         GL11.glGetFloat(GL11.GL_MODELVIEW_MATRIX, MV_BUF);
+        hasMatrices = true;
 
-        GL11.glEnable(GL11.GL_DEPTH_TEST);
-        GL11.glDepthMask(true);
-        GL11.glClear(GL11.GL_DEPTH_BUFFER_BIT);
-        // Polygon offset to fight shadow acne on near-grazing surfaces.
-        GL11.glEnable(GL11.GL_POLYGON_OFFSET_FILL);
-        GL11.glPolygonOffset(2.5f, 4.0f);
+        // Render the actual depth map only when the shadow toggle is on.
+        if (LDOGConfig.enableShaderShadows && ensure()) {
+            saveViewport();
+            int prevFbo = GL11.glGetInteger(GL_FRAMEBUFFER_BINDING);
+            GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, shadowFbo);
+            GL11.glDrawBuffer(GL11.GL_NONE);
+            GL11.glReadBuffer(GL11.GL_NONE);
+            GL11.glViewport(0, 0, resolution, resolution);
+            GL11.glEnable(GL11.GL_DEPTH_TEST);
+            GL11.glDepthMask(true);
+            GL11.glClear(GL11.GL_DEPTH_BUFFER_BIT);
+            GL11.glEnable(GL11.GL_POLYGON_OFFSET_FILL);
+            GL11.glPolygonOffset(2.5f, 4.0f);
 
-        shadowPass = true;
-        try {
-            mc.renderGlobal.renderBlockLayer(BlockRenderLayer.SOLID, partialTicks, 2, view);
-            mc.renderGlobal.renderBlockLayer(BlockRenderLayer.CUTOUT_MIPPED, partialTicks, 2, view);
-        } catch (Throwable t) {
-            LDOGMod.LOGGER.error("LDOG: Shadow terrain pass failed, disabling shadows for this session", t);
-            LDOGConfig.enableShaderShadows = false;
-        } finally {
-            shadowPass = false;
+            shadowPass = true;
+            try {
+                mc.renderGlobal.renderBlockLayer(BlockRenderLayer.SOLID, partialTicks, 2, view);
+                mc.renderGlobal.renderBlockLayer(BlockRenderLayer.CUTOUT_MIPPED, partialTicks, 2, view);
+            } catch (Throwable t) {
+                LDOGMod.LOGGER.error("LDOG: Shadow terrain pass failed, disabling shadows for this session", t);
+                LDOGConfig.enableShaderShadows = false;
+            } finally {
+                shadowPass = false;
+            }
+
+            GL11.glDisable(GL11.GL_POLYGON_OFFSET_FILL);
+            GL11.glPopAttrib();
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, prevFbo);
+            GL11.glViewport(VIEWPORT[0], VIEWPORT[1], VIEWPORT[2], VIEWPORT[3]);
+            renderedThisFrame = true;
         }
 
-        GL11.glDisable(GL11.GL_POLYGON_OFFSET_FILL);
-
-        // --- restore GL state ---
+        // Pop the shadow matrices, restoring the world camera matrices.
         GL11.glMatrixMode(GL11.GL_PROJECTION);
         GL11.glPopMatrix();
         GL11.glMatrixMode(GL11.GL_MODELVIEW);
         GL11.glPopMatrix();
-        GL11.glPopAttrib();
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, prevFbo);
-        GL11.glViewport(VIEWPORT[0], VIEWPORT[1], VIEWPORT[2], VIEWPORT[3]);
-
-        renderedThisFrame = true;
     }
 
     /**
@@ -188,7 +191,10 @@ public final class ShadowMapManager {
         program.setUniform1i("watershadow", unit);
         program.setUniform1f("shadowMapResolution", isReady() ? resolution : 1);
 
-        if (isReady()) {
+        // Feed the matrices whenever they were computed this frame (i.e. a pack
+        // is active), even if the depth render was skipped — otherwise the
+        // composite's shadow coordinate is degenerate and kills the sun term.
+        if (hasMatrices) {
             PROJ_BUF.position(0);
             program.setUniformMatrix4("shadowProjection", PROJ_BUF);
             MV_BUF.position(0);
