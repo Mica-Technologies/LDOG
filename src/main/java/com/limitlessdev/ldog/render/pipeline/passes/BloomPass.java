@@ -130,6 +130,10 @@ public final class BloomPass implements PostProcessPass {
     private int bloomH;
     private int sceneCopyW;
     private int sceneCopyH;
+    // Track the HDR format the targets were allocated with, so a live HDR toggle
+    // at constant dimensions still forces a reallocation to the right format.
+    private boolean bloomHDR;
+    private boolean sceneCopyHDR;
     private boolean loggedFirstExecute;
 
     @Override public String id() { return "bloom"; }
@@ -272,7 +276,8 @@ public final class BloomPass implements PostProcessPass {
     }
 
     private void ensureBloomTargets(int w, int h, boolean hdr) {
-        if (bloomFboA != 0 && bloomW == w && bloomH == h) return;
+        if (bloomFboA != 0 && bloomW == w && bloomH == h && bloomHDR == hdr) return;
+        bloomHDR = hdr;
         disposeBloomTargets();
 
         bloomTexA = makeColorTex(w, h, hdr);
@@ -285,7 +290,8 @@ public final class BloomPass implements PostProcessPass {
     }
 
     private void ensureSceneCopy(int w, int h, boolean hdr) {
-        if (sceneCopyTex != 0 && sceneCopyW == w && sceneCopyH == h) return;
+        if (sceneCopyTex != 0 && sceneCopyW == w && sceneCopyH == h && sceneCopyHDR == hdr) return;
+        sceneCopyHDR = hdr;
         if (sceneCopyTex != 0) GL11.glDeleteTextures(sceneCopyTex);
         sceneCopyTex = makeColorTex(w, h, hdr);
         sceneCopyW = w;
