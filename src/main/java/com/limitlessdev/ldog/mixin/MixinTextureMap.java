@@ -62,6 +62,11 @@ public abstract class MixinTextureMap {
         int border = ExtendedBorderHandler.getBorderSize();
         int mipmapLevels = ExtendedBorderHandler.getMipmapLevels();
         int[][] padded = ExtendedBorderHandler.padFrameData(data, width, height, border, mipmapLevels);
+        if (padded == null) {
+            // Sprite data wasn't the expected shape — upload it unbordered.
+            TextureUtil.uploadTextureMipmap(data, width, height, originX, originY, blur, clamp);
+            return;
+        }
         TextureUtil.uploadTextureMipmap(padded,
             width + 2 * border, height + 2 * border,
             originX - border, originY - border,

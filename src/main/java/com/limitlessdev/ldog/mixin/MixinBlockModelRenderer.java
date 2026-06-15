@@ -34,7 +34,12 @@ public abstract class MixinBlockModelRenderer {
                                              IBlockState stateIn, BlockPos posIn,
                                              BufferBuilder buffer, boolean checkSides,
                                              long rand, CallbackInfoReturnable<Boolean> cir) {
-        if (LDOGConfig.enableEmissiveTextures && EmissiveTextureRegistry.getEmissiveSpriteCount() > 0) {
+        // Per-block early-out: only emissive-mapped blocks need the overlay.
+        // Without this, every block in a chunk rebuild paid a 6-face getQuads
+        // scan (and started the emissive layer buffer) for nothing.
+        if (LDOGConfig.enableEmissiveTextures
+                && EmissiveTextureRegistry.getEmissiveSpriteCount() > 0
+                && EmissiveTextureRegistry.isEmissiveBlock(stateIn.getBlock())) {
             EmissiveRenderHandler.renderEmissiveOverlay(
                 modelIn, stateIn, worldIn, posIn, checkSides, rand);
         }

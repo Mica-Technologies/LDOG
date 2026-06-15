@@ -81,6 +81,13 @@ public final class ExtendedBorderHandler {
      * @param mipmapLevels highest mip index to populate (inclusive)
      */
     public static int[][] padFrameData(int[][] original, int width, int height, int border, int mipmapLevels) {
+        // Defensive: some sprites (certain animations) supply fewer mip levels
+        // than the atlas's mipmapLevels, or null entries. Bail out (caller falls
+        // back to the un-bordered upload) rather than crash the resource reload.
+        if (original == null || original.length <= mipmapLevels) return null;
+        for (int level = 0; level <= mipmapLevels; level++) {
+            if (original[level] == null) return null;
+        }
         int[][] padded = new int[mipmapLevels + 1][];
         for (int level = 0; level <= mipmapLevels; level++) {
             int[] src = original[level];
