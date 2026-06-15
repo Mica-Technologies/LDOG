@@ -16,7 +16,6 @@ import com.limitlessdev.ldog.render.pipeline.passes.TAAAccumulatePass;
 import com.limitlessdev.ldog.render.pipeline.passes.VignettePass;
 
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 
 /**
@@ -49,6 +48,20 @@ public final class PostProcessPipeline {
     private int framesSinceLastBind;
 
     private PostProcessPipeline() {
+        registerPasses();
+    }
+
+    /**
+     * (Re)populate the pass chain. Idempotent — safe to call again to recover
+     * the pipeline after a pass was dropped or the chain was cleared by a
+     * fatal-error reset, so the scene→main resolve pass can never go
+     * permanently missing (which would leave a black screen).
+     */
+    private void registerPasses() {
+        for (PostProcessPass p : passes) {
+            try { p.dispose(); } catch (Exception ignored) { }
+        }
+        passes.clear();
         // Bloom runs FIRST while the scene is still HDR — the bright-pass
         // shader needs to see luminance values exceeding [0,1] to produce a
         // proper glow on suns/torches/lava. Composites bloom additively
@@ -134,9 +147,31 @@ public final class PostProcessPipeline {
         return LDOGConfig.enableMSAA;
     }
 
+    /**
+     * The render scale actually used this frame. A deferred shader pack renders
+     * at NATIVE resolution (1.0) — the internal-scale upscaling otherwise blurs
+     * distant geometry, and the pack owns the final image. Otherwise honour the
+     * user's {@code internalRenderScale}. Both the pipeline and the world-bind
+     * mixin must agree on this, so it lives here as the single source of truth.
+     */
+    public static float effectiveRenderScale() {
+        if (com.limitlessdev.ldog.render.shaderpack.ShaderPackGbufferManager.isDeferredActive()) {
+            return 1.0f;
+        }
+        return (float) LDOGConfig.internalRenderScale;
+    }
+
     private void ensureInitialized(int w, int h) throws Exception {
-        float scale = (float) LDOGConfig.internalRenderScale;
-        RenderTargetManager.INSTANCE.ensure(w, h, scale, LDOGConfig.enableHDRPipeline);
+        RenderTargetManager.INSTANCE.ensure(w, h, effectiveRenderScale(), LDOGConfig.enableHDRPipeline);
+
+        // Self-heal: if the chain was emptied (fatal-error reset) or a pass was
+        // dropped, rebuild it so re-enabling the pipeline always has its passes
+        // (including the scene→main resolve) back. Without this, toggling the
+        // pipeline off→on after any error left a black screen.
+        if (passes.isEmpty()) {
+            registerPasses();
+            initialized = false;
+        }
 
         if (!initialized) {
             this.width = w;
@@ -179,10 +214,10 @@ public final class PostProcessPipeline {
         // heavy flicker. OptiFine has no such stack underneath a pack either.
         boolean packDrives = com.limitlessdev.ldog.render.shaderpack.ShaderPackGbufferManager.isDeferredActive();
 
-        // Disable passes that throw so one bad pass cannot crash rendering.
-        Iterator<PostProcessPass> it = passes.iterator();
-        while (it.hasNext()) {
-            PostProcessPass pass = it.next();
+        // A pass that throws is skipped THIS frame (not permanently removed —
+        // removing it could drop the scene→main resolve pass and black the
+        // screen forever; a transient error must not be fatal).
+        for (PostProcessPass pass : passes) {
             if (packDrives) {
                 // BilinearBlit resolves the (possibly scaled) scene to the main
                 // FB; the composite then renders the pack on top. Force both to
@@ -199,14 +234,21 @@ public final class PostProcessPipeline {
                 pass.execute(context);
                 active++;
             } catch (Exception e) {
-                LDOGMod.LOGGER.error("LDOG: Disabling post-process pass '{}' after execution failure", pass.id(), e);
-                pass.dispose();
-                it.remove();
+                // Skip this frame only. Rate-limit the log so a persistently
+                // failing pass doesn't spam, but never remove it — the chain
+                // must keep its resolve pass.
+                if (loggedPassError != pass) {
+                    loggedPassError = pass;
+                    LDOGMod.LOGGER.error("LDOG: Post-process pass '{}' threw (skipping this frame)", pass.id(), e);
+                }
             }
         }
 
         return active;
     }
+
+    /** Last pass we logged an execution error for (rate-limits repeat spam). */
+    private PostProcessPass loggedPassError;
 
     /**
      * Diagnostic logs so operators can tell binding actually fired (the

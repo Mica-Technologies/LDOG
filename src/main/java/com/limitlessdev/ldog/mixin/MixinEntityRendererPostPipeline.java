@@ -100,7 +100,7 @@ public abstract class MixinEntityRendererPostPipeline {
         int mainH = fb.framebufferTextureHeight;
         if (mainW <= 0 || mainH <= 0) return;
 
-        float scale = (float) LDOGConfig.internalRenderScale;
+        float scale = PostProcessPipeline.effectiveRenderScale();
         RenderTargetManager rtm = RenderTargetManager.INSTANCE;
         // Pass HDR flag so this mixin stays in sync with PostProcessPipeline.
         // Earlier the 3-arg overload defaulted HDR=false here — each frame the
