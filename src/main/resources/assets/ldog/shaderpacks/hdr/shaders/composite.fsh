@@ -60,15 +60,17 @@ void main() {
         shade = shadow2D(shadowtex0, vec3(sc.xy, sc.z - 0.0008)).x;
     }
 
-    // Light terms.
-    vec3 sunColor = mix(vec3(1.0, 0.55, 0.3), vec3(1.0, 0.96, 0.88), smoothstep(0.0, 0.25, sunDir.y));
+    // HDR character: bright, high-key daylight — strong sun, lifted ambient,
+    // warm. Combined with the wide bloom in final.fsh this gives the glowy,
+    // over-exposed HDR look.
+    vec3 sunColor = mix(vec3(1.0, 0.6, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.0, 0.25, sunDir.y));
     sunColor *= (1.0 - rainStrength * 0.7);
-    vec3 skyAmbient = mix(vec3(0.10, 0.13, 0.20), vec3(0.45, 0.62, 0.85), dayFactor);
+    vec3 skyAmbient = mix(vec3(0.13, 0.16, 0.24), vec3(0.55, 0.70, 0.92), dayFactor);
 
-    vec3 sunlight = NdotL * shade * skyLight * sunColor * dayFactor * 1.25;
-    vec3 ambient  = skyAmbient * (skyLight * 0.75 + 0.05);
-    vec3 torch    = blockLight * blockLight * vec3(1.0, 0.55, 0.25) * 1.5;
-    vec3 light    = ambient + sunlight + torch + 0.02;
+    vec3 sunlight = NdotL * shade * skyLight * sunColor * dayFactor * 1.85;
+    vec3 ambient  = skyAmbient * (skyLight * 0.98 + 0.16);
+    vec3 torch    = blockLight * blockLight * vec3(1.0, 0.62, 0.32) * 1.8;
+    vec3 light    = ambient + sunlight + torch + 0.05;
 
     gl_FragData[0] = vec4(albedo * light, 1.0);
 }

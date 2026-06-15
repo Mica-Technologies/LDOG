@@ -60,15 +60,17 @@ void main() {
         shade = shadow2D(shadowtex0, vec3(sc.xy, sc.z - 0.0008)).x;
     }
 
-    // Light terms.
-    vec3 sunColor = mix(vec3(1.0, 0.55, 0.3), vec3(1.0, 0.96, 0.88), smoothstep(0.0, 0.25, sunDir.y));
+    // Cinematic character: moody, low-key — dark ambient so shadows go deep,
+    // a strong golden-hour directional sun. High contrast between lit + shade
+    // is what reads as filmic (the teal/orange grade lives in final.fsh).
+    vec3 sunColor = mix(vec3(1.0, 0.45, 0.22), vec3(1.0, 0.85, 0.62), smoothstep(0.0, 0.3, sunDir.y));
     sunColor *= (1.0 - rainStrength * 0.7);
-    vec3 skyAmbient = mix(vec3(0.10, 0.13, 0.20), vec3(0.45, 0.62, 0.85), dayFactor);
+    vec3 skyAmbient = mix(vec3(0.05, 0.07, 0.11), vec3(0.26, 0.34, 0.50), dayFactor);
 
-    vec3 sunlight = NdotL * shade * skyLight * sunColor * dayFactor * 1.25;
-    vec3 ambient  = skyAmbient * (skyLight * 0.75 + 0.05);
-    vec3 torch    = blockLight * blockLight * vec3(1.0, 0.55, 0.25) * 1.5;
-    vec3 light    = ambient + sunlight + torch + 0.02;
+    vec3 sunlight = NdotL * shade * skyLight * sunColor * dayFactor * 1.5;
+    vec3 ambient  = skyAmbient * (skyLight * 0.5 + 0.03);
+    vec3 torch    = blockLight * blockLight * vec3(1.0, 0.5, 0.2) * 1.7;
+    vec3 light    = ambient + sunlight + torch + 0.015;
 
     gl_FragData[0] = vec4(albedo * light, 1.0);
 }
