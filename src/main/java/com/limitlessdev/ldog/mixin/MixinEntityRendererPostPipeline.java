@@ -199,9 +199,13 @@ public abstract class MixinEntityRendererPostPipeline {
         // composites a sub-1 alpha framebuffer as a see-through window — the
         // "whole game goes transparent" symptom. Clear just the alpha to 1
         // without touching RGB. Cheap; skipped entirely when no pack is active.
-        boolean ldog$packActive = ShaderPackGbufferManager.isActive()
-            || com.limitlessdev.ldog.render.shaderpack.ShaderPackManager.INSTANCE.getRuntime() != null;
-        if (ldog$pipelineActive && ldog$packActive) {
+        // Force the final framebuffer opaque whenever the pipeline produced the
+        // image — NOT only when a shader pack is active. The bare LDOG chain
+        // (FSR2 / FXAA / vignette / tonemap) can also leave alpha < 1, which in
+        // windowed/borderless mode shows as a see-through (blank) window. This
+        // was masked while a pack was active (the pack path also forced alpha),
+        // so switching pack→none surfaced it.
+        if (ldog$pipelineActive) {
             GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, mainFbo);
             GlStateManager.colorMask(false, false, false, true);
             GlStateManager.clearColor(0.0f, 0.0f, 0.0f, 1.0f);

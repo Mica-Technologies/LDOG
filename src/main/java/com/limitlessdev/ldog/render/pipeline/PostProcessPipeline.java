@@ -214,8 +214,6 @@ public final class PostProcessPipeline {
         // heavy flicker. OptiFine has no such stack underneath a pack either.
         boolean packDrives = com.limitlessdev.ldog.render.shaderpack.ShaderPackGbufferManager.isDeferredActive();
 
-        StringBuilder diag = ldog$diagFrames > 0 ? new StringBuilder() : null;
-
         // A pass that throws is skipped THIS frame (not permanently removed —
         // removing it could drop the scene→main resolve pass and black the
         // screen forever; a transient error must not be fatal).
@@ -232,7 +230,6 @@ public final class PostProcessPipeline {
                 continue;
             }
 
-            if (diag != null) diag.append(pass.id()).append(' ');
             try {
                 pass.execute(context);
                 active++;
@@ -245,17 +242,6 @@ public final class PostProcessPipeline {
                     LDOGMod.LOGGER.error("LDOG: Post-process pass '{}' threw (skipping this frame)", pass.id(), e);
                 }
             }
-        }
-
-        if (diag != null) {
-            RenderTargetManager rtm = RenderTargetManager.INSTANCE;
-            LDOGMod.LOGGER.info(
-                "LDOG: [switch-diag] frame: packDrives={} scale={} sceneReady={} scene={}x{} main={}x{} bindingActive={} ran=[{}]",
-                packDrives, effectiveRenderScale(), rtm.isReady(),
-                rtm.getScaledWidth(), rtm.getScaledHeight(),
-                context.mainWidth(), context.mainHeight(), context.bindingActive(),
-                diag.toString().trim());
-            ldog$diagFrames--;
         }
 
         return active;
@@ -315,7 +301,6 @@ public final class PostProcessPipeline {
      * empty-chain self-heal in {@link #ensureInitialized} rebuilds them next frame.
      */
     public void reset() {
-        LDOGMod.LOGGER.info("LDOG: [switch-diag] pipeline.reset() — disposing {} passes + targets", passes.size());
         for (PostProcessPass pass : passes) {
             try { pass.dispose(); } catch (Exception ignored) { }
         }
@@ -325,11 +310,7 @@ public final class PostProcessPipeline {
         loggedFirstBind = false;
         framesSinceLastBind = 0;
         loggedPassError = null;
-        ldog$diagFrames = 5;  // TEMP: log the next few frames' pass execution
     }
-
-    /** TEMP diagnostic: remaining frames to log post-reset pass execution. */
-    private int ldog$diagFrames;
 
     private void disableAll() {
         for (PostProcessPass pass : passes) {
