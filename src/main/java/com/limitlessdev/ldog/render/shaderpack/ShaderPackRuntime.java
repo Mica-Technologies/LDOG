@@ -289,7 +289,15 @@ public final class ShaderPackRuntime {
         }
         try {
             ShaderProgram program = new ShaderProgram("ldogPack:" + baseName, vertSrc, fragSrc);
-            int[] drawBuffers = parseDrawBuffers(fragSrc);
+            // Resolve the ACTIVE DRAWBUFFERS by stripping inactive #if/#ifdef
+            // branches first — packs gate their MRT output set behind conditionals,
+            // so a raw "first directive" scan would pick a dead branch and mis-map
+            // gl_FragData[i] -> colortex. We inject no macros, so the driver and this
+            // pass see the same #define set and pick the same branch. (We still size
+            // the MRT allocation off the un-stripped source via maxDrawBufferIndex,
+            // which stays a safe over-allocation if the branch eval is ever wrong.)
+            String activeFrag = GlslPreprocessor.stripInactiveBranches(fragSrc, null);
+            int[] drawBuffers = parseDrawBuffers(activeFrag);
             // Allocate for the WIDEST index this shader could write across all of
             // its (possibly #if-conditional) DRAWBUFFERS directives — e.g. BSL's
             // gbuffers_terrain has 0 / 08 / 08367 / 0367, so we must allocate up
