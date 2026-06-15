@@ -263,7 +263,11 @@ public final class ShaderPackGbufferManager {
         GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
             GL11.GL_TEXTURE_2D, sceneColor, 0);
         for (int i = 1; i <= auxCount; i++) {
-            aux[i] = allocAux(w, h);
+            // Honour the pack's declared colortexI/gauxI format (HDR, 16-bit,
+            // RGB10_A2, ...) so normal/material/temporal buffers keep precision
+            // and HDR aux buffers don't clip — defaults to RGBA8 when undeclared.
+            int fmt = rt == null ? ShaderColortexFormats.DEFAULT_FORMAT : rt.colortexFormat(i);
+            aux[i] = allocAux(w, h, fmt);
             GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0 + i,
                 GL11.GL_TEXTURE_2D, aux[i], 0);
         }
@@ -285,11 +289,12 @@ public final class ShaderPackGbufferManager {
         return gbufferFbo;
     }
 
-    private static int allocAux(int w, int h) {
+    private static int allocAux(int w, int h, int internalFormat) {
         int tex = GL11.glGenTextures();
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex);
-        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, w, h, 0,
-            GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, (java.nio.ByteBuffer) null);
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, internalFormat, w, h, 0,
+            ShaderColortexFormats.uploadFormat(internalFormat),
+            ShaderColortexFormats.uploadType(internalFormat), (java.nio.ByteBuffer) null);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);

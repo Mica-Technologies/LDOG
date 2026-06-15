@@ -70,6 +70,14 @@ public final class ShaderPackRuntime {
     /** Highest colortex index any compiled program writes to (for MRT allocation). */
     private int maxColortex;
 
+    /**
+     * Per-colortex GL internal format declared by the pack (index 0..7), or 0
+     * when undeclared (caller uses {@link ShaderColortexFormats#DEFAULT_FORMAT}).
+     * Accumulated by scanning every compiled stage's source for
+     * {@code const int colortexNFormat}/{@code gauxNFormat} declarations.
+     */
+    private final int[] colortexFormats = new int[8];
+
     public ShaderPackRuntime(ShaderPack pack) {
         this.pack = pack;
         compileChain();
@@ -98,6 +106,18 @@ public final class ShaderPackRuntime {
 
     /** Highest colortex index written by any program — drives MRT aux allocation. */
     public int maxColortex() { return maxColortex; }
+
+    /**
+     * GL internal format the pack declared for {@code colortexI}, or
+     * {@link ShaderColortexFormats#DEFAULT_FORMAT} (RGBA8) when undeclared.
+     * Lets MRT aux allocation match the pack's precision (HDR/16-bit buffers).
+     */
+    public int colortexFormat(int i) {
+        if (i < 0 || i >= colortexFormats.length || colortexFormats[i] == 0) {
+            return ShaderColortexFormats.DEFAULT_FORMAT;
+        }
+        return colortexFormats[i];
+    }
 
     /** True when there's a deferred/composite/final chain for the post-process pass to run. */
     public boolean hasCompositeChain() {
@@ -312,6 +332,10 @@ public final class ShaderPackRuntime {
             // to colortex8 even though we can't preprocess which branch is live.
             int wide = maxDrawBufferIndex(fragSrc);
             if (wide > maxColortex) maxColortex = wide;
+            // Accumulate any colortexNFormat/gauxNFormat declarations this stage
+            // carries (packs usually put them in final/composite). Merging across
+            // stages is safe — each buffer is declared once pack-wide.
+            ShaderColortexFormats.parseInto(fragSrc, colortexFormats);
             return new Stage(baseName, program, drawBuffers);
         } catch (ShaderProgram.ShaderCompileException e) {
             // Logged at WARN rather than ERROR — the pack still has other
