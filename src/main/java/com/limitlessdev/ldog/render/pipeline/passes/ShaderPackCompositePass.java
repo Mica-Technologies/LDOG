@@ -198,6 +198,10 @@ public final class ShaderPackCompositePass implements PostProcessPass {
 
         GL11.glPopAttrib();
 
+        com.limitlessdev.ldog.render.pipeline.PipelineGlProbe.drain(
+            ShaderPackGbufferManager.isDeferredActive() && usesMultiWrite(runtime)
+                ? "composite (multi-write)" : "composite");
+
         if (!loggedFirstRun || !runtime.packName().equals(loggedActivePack)) {
             loggedFirstRun = true;
             loggedActivePack = runtime.packName();

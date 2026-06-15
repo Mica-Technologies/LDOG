@@ -176,6 +176,8 @@ public final class ShadowMapManager {
         GL11.glMatrixMode(GL11.GL_MODELVIEW);
         GL11.glPopMatrix();
         GL11.glMatrixMode(prevMatrixMode);
+
+        com.limitlessdev.ldog.render.pipeline.PipelineGlProbe.drain("shadow");
     }
 
     /**

@@ -124,6 +124,10 @@ public final class ShaderPackGbufferManager {
      * (first world draw of the frame).
      */
     public static void beginFrame() {
+        // Baseline drain: clear any error left by vanilla / other LDOG features
+        // BEFORE our world+pipeline stages, so a later stage's probe only sees
+        // errors it actually produced. Anything reported here originates upstream.
+        com.limitlessdev.ldog.render.pipeline.PipelineGlProbe.drain("frame-start (upstream)");
         snapshottedThisFrame = false;
         ShadowMapManager.beginFrame();
         ShaderPackUniforms.clearWorldMatrices();
@@ -159,7 +163,10 @@ public final class ShaderPackGbufferManager {
     public static boolean isGBufferBound() { return gbufferBound; }
 
     /** Mark the G-buffer unbound (called at world-pass RETURN). */
-    public static void endWorldGBuffer() { gbufferBound = false; }
+    public static void endWorldGBuffer() {
+        com.limitlessdev.ldog.render.pipeline.PipelineGlProbe.drain("gbuffer-world");
+        gbufferBound = false;
+    }
 
     /**
      * Bind the pack program for {@code category} and feed its uniforms. When the

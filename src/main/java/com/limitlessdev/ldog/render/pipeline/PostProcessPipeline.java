@@ -237,6 +237,12 @@ public final class PostProcessPipeline {
             try {
                 pass.execute(context);
                 active++;
+                // Drain + localize any GL error this pass left behind, so it
+                // can't accumulate into MC's per-frame "Post render" check (the
+                // 165×/s 1282 flood). Labelled with the pass id; passes with
+                // their own finer-grained drain (composite/fsr2) clear first, so
+                // this only catches the rest (blit, bloom, AA, ...).
+                PipelineGlProbe.drain("pass:" + pass.id());
             } catch (Exception e) {
                 // Skip this frame only. Rate-limit the log so a persistently
                 // failing pass doesn't spam, but never remove it — the chain

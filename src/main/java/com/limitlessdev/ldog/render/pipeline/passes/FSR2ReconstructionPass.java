@@ -368,6 +368,8 @@ public final class FSR2ReconstructionPass implements PostProcessPass {
 
         GL11.glPopAttrib();
 
+        com.limitlessdev.ldog.render.pipeline.PipelineGlProbe.drain("fsr2");
+
         if (!loggedFirstExecute) {
             loggedFirstExecute = true;
             LDOGMod.LOGGER.info(
