@@ -62,20 +62,23 @@ public class RandomEntityTextureHandler {
         List<ResourceLocation> variants = variantMap.get(key);
         if (variants == null || variants.size() <= 1) return null;
 
-        // UUID-based deterministic selection
-        int hash = entity.getUniqueID().hashCode();
-        if (hash < 0) hash = -hash;
+        // UUID-based deterministic selection. Mask the sign bit rather than
+        // negating — `-Integer.MIN_VALUE` stays negative and would index out of
+        // bounds.
+        int hash = entity.getUniqueID().hashCode() & 0x7fffffff;
 
         int[] weights = weightMap.get(key);
         if (weights != null && weights.length == variants.size()) {
             // Weighted selection
             int totalWeight = 0;
             for (int w : weights) totalWeight += w;
-            int roll = hash % totalWeight;
-            int cumulative = 0;
-            for (int i = 0; i < weights.length; i++) {
-                cumulative += weights[i];
-                if (roll < cumulative) return variants.get(i);
+            if (totalWeight > 0) {
+                int roll = hash % totalWeight;
+                int cumulative = 0;
+                for (int i = 0; i < weights.length; i++) {
+                    cumulative += weights[i];
+                    if (roll < cumulative) return variants.get(i);
+                }
             }
         }
 

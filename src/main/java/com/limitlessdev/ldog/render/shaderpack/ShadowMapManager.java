@@ -117,6 +117,7 @@ public final class ShadowMapManager {
         // Compute the shadow matrices on the GL stack and read them back. Done
         // every frame a pack is active (cheap) so composites always have valid
         // matrices, even when the depth render below is disabled.
+        int prevMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
         GL11.glMatrixMode(GL11.GL_PROJECTION);
         GL11.glPushMatrix();
         GL11.glLoadIdentity();
@@ -158,17 +159,23 @@ public final class ShadowMapManager {
             }
 
             GL11.glDisable(GL11.GL_POLYGON_OFFSET_FILL);
-            GL11.glPopAttrib();
+            // Rebind the previous framebuffer BEFORE popAttrib so the restored
+            // draw/read-buffer state applies to that FBO, not the (color-less)
+            // shadow FBO — restoring e.g. COLOR_ATTACHMENT0 against the shadow
+            // FBO is a GL_INVALID_OPERATION.
             GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, prevFbo);
+            GL11.glPopAttrib();
             GL11.glViewport(VIEWPORT[0], VIEWPORT[1], VIEWPORT[2], VIEWPORT[3]);
             renderedThisFrame = true;
         }
 
-        // Pop the shadow matrices, restoring the world camera matrices.
+        // Pop the shadow matrices, restoring the world camera matrices, then the
+        // caller's original matrix mode.
         GL11.glMatrixMode(GL11.GL_PROJECTION);
         GL11.glPopMatrix();
         GL11.glMatrixMode(GL11.GL_MODELVIEW);
         GL11.glPopMatrix();
+        GL11.glMatrixMode(prevMatrixMode);
     }
 
     /**
@@ -234,6 +241,7 @@ public final class ShadowMapManager {
     public static void dispose() {
         if (shadowDepthTex != 0) { GL11.glDeleteTextures(shadowDepthTex); shadowDepthTex = 0; }
         if (shadowFbo != 0) { GL30.glDeleteFramebuffers(shadowFbo); shadowFbo = 0; }
+        if (dummyDepthTex != 0) { GL11.glDeleteTextures(dummyDepthTex); dummyDepthTex = 0; }
         resolution = 0;
         renderedThisFrame = false;
     }

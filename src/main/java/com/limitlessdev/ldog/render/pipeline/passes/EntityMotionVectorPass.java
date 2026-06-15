@@ -81,7 +81,6 @@ public final class EntityMotionVectorPass implements PostProcessPass {
     private final FloatBuffer matPrevBuf = BufferUtils.createFloatBuffer(16);
     private final Matrix4f curViewProj = new Matrix4f();
     private final Matrix4f prevViewProj = new Matrix4f();
-    private final Vector4f tmpVec = new Vector4f();
 
     @Override public String id() { return "entity_mv"; }
 
@@ -242,13 +241,17 @@ public final class EntityMotionVectorPass implements PostProcessPass {
      * when the point is behind the camera (w ≤ 0) so callers can skip it.
      */
     private Vector4f projectToNDC(Matrix4f m, double wx, double wy, double wz) {
-        tmpVec.set((float) wx, (float) wy, (float) wz, 1.0f);
-        Matrix4f.transform(m, tmpVec, tmpVec);
-        if (tmpVec.w <= 1e-6f) return null;
-        tmpVec.x /= tmpVec.w;
-        tmpVec.y /= tmpVec.w;
-        tmpVec.z /= tmpVec.w;
-        return tmpVec;
+        // Must return a DISTINCT object each call — callers hold the current AND
+        // previous projections simultaneously to compute velocity. Returning a
+        // shared scratch made prev alias cur, so every motion vector was zero
+        // and per-entity MV silently never worked.
+        Vector4f v = new Vector4f((float) wx, (float) wy, (float) wz, 1.0f);
+        Matrix4f.transform(m, v, v);
+        if (v.w <= 1e-6f) return null;
+        v.x /= v.w;
+        v.y /= v.w;
+        v.z /= v.w;
+        return v;
     }
 
     @Override

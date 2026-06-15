@@ -78,6 +78,8 @@ public class PerformanceOverlayRenderer {
         for (int i = 0; i < lines.length; i++) {
             font.drawStringWithShadow(lines[i], x, y + i * lineHeight, colors[i]);
         }
+        // Reset GL colour so the last glyph tint doesn't bleed onward.
+        net.minecraft.client.renderer.GlStateManager.color(1.0f, 1.0f, 1.0f, 1.0f);
     }
 
     private static void trackFrameTime() {

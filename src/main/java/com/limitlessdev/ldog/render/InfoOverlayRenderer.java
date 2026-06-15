@@ -95,6 +95,9 @@ public final class InfoOverlayRenderer {
             font.drawStringWithShadow(line, x, y, COLOR_VALUE);
             y += lineHeight;
         }
+        // FontRenderer leaves the GL colour set to the last glyph's tint; reset
+        // it so it doesn't bleed into anything drawn after this overlay.
+        net.minecraft.client.renderer.GlStateManager.color(1.0f, 1.0f, 1.0f, 1.0f);
     }
 
     private static boolean anyEnabled() {

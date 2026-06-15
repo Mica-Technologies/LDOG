@@ -119,10 +119,16 @@ public final class DynamicLightManager {
         for (DynamicLightSource source : activeLights.values()) {
             if (source.lightLevel <= 0) continue;
 
-            // Manhattan distance for fast light falloff (matches vanilla light propagation)
-            int dx = Math.abs(pos.getX() - source.entity.getPosition().getX());
-            int dy = Math.abs(pos.getY() - source.entity.getPosition().getY());
-            int dz = Math.abs(pos.getZ() - source.entity.getPosition().getZ());
+            // Manhattan distance for fast light falloff (matches vanilla light
+            // propagation). Use the client-thread snapshot lastPos rather than
+            // entity.getPosition(): this runs on chunk-worker threads, so calling
+            // getPosition() both races the live entity coords and allocates a
+            // fresh BlockPos per source per query.
+            BlockPos lp = source.lastPos;
+            if (lp == null) continue;
+            int dx = Math.abs(pos.getX() - lp.getX());
+            int dy = Math.abs(pos.getY() - lp.getY());
+            int dz = Math.abs(pos.getZ() - lp.getZ());
             int dist = dx + dy + dz;
 
             if (dist > source.lightLevel) continue;
