@@ -213,6 +213,21 @@ public final class ShaderPackGbufferManager {
         }
     }
 
+    /**
+     * Bind + feed the standard uniform set to the pack's shadow program for the
+     * shadow-map render pass (called by {@link ShadowMapManager}). Same samplers
+     * + per-frame uniforms a gbuffer draw gets (so waving/animation matches), but
+     * the caller supplies the shadow matrices itself. Does NOT touch draw buffers
+     * or the program stack — the shadow pass manages its own GL state.
+     */
+    public static void feedShadowProgram(ShaderProgram program) {
+        ensureFrameSnapshot();
+        ensureBlackTex();
+        program.bind();
+        feedSamplers(program);
+        UNIFORMS.feedTo(program);
+    }
+
     /** Restore the program + colortex0-only draw buffer after a {@link #begin}. */
     public static void end() {
         if (PROGRAM_STACK.isEmpty()) return;

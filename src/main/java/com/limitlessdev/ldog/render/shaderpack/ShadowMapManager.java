@@ -144,8 +144,25 @@ public final class ShadowMapManager {
             GL11.glEnable(GL11.GL_DEPTH_TEST);
             GL11.glDepthMask(true);
             GL11.glClear(GL11.GL_DEPTH_BUFFER_BIT);
-            GL11.glEnable(GL11.GL_POLYGON_OFFSET_FILL);
-            GL11.glPolygonOffset(2.5f, 4.0f);
+
+            // Bind the pack's shadow program so its vertex shader applies the
+            // shadow distortion warp + depth scaling that the lighting pass
+            // assumes when sampling shadowtex0. Without it the map is rendered
+            // undistorted/unscaled and every lookup misses -> uniformly dark
+            // terrain (the BSL symptom). Falls back to fixed-function depth when
+            // the pack ships no shadow program (older/simple packs).
+            ShaderPackRuntime rt = ShaderPackManager.INSTANCE.getRuntime();
+            ShaderPackRuntime.Stage shadowStage = rt != null ? rt.shadowProgram() : null;
+            boolean usingProgram = shadowStage != null && shadowStage.program != null;
+            if (usingProgram) {
+                ShaderPackGbufferManager.feedShadowProgram(shadowStage.program);
+                feedShadowMatrices(shadowStage.program);
+            } else {
+                // Fixed-function fallback: the pack does no vertex distortion, so
+                // bias depth here to avoid shadow acne.
+                GL11.glEnable(GL11.GL_POLYGON_OFFSET_FILL);
+                GL11.glPolygonOffset(2.5f, 4.0f);
+            }
 
             shadowPass = true;
             try {
@@ -156,6 +173,7 @@ public final class ShadowMapManager {
                 LDOGConfig.enableShaderShadows = false;
             } finally {
                 shadowPass = false;
+                if (usingProgram) ShaderProgram.unbind();
             }
 
             GL11.glDisable(GL11.GL_POLYGON_OFFSET_FILL);
@@ -214,6 +232,25 @@ public final class ShadowMapManager {
             invertInto(MV_BUF, INV_BUF);
             program.setUniformMatrix4("shadowModelViewInverse", INV_BUF);
         }
+    }
+
+    /**
+     * Feed the shadow program the matrices it round-trips through. The pack's
+     * {@code shadow.vsh} un-projects {@code ftransform()} via
+     * {@code shadowModelViewInverse * shadowProjectionInverse} then re-projects
+     * via {@code shadowProjection * shadowModelView} before distorting — so these
+     * MUST equal the ortho/lookat we set on the GL matrix stack (which we read
+     * back into PROJ_BUF/MV_BUF). Otherwise the round-trip corrupts the position.
+     */
+    private static void feedShadowMatrices(ShaderProgram program) {
+        PROJ_BUF.position(0);
+        program.setUniformMatrix4("shadowProjection", PROJ_BUF);
+        MV_BUF.position(0);
+        program.setUniformMatrix4("shadowModelView", MV_BUF);
+        invertInto(PROJ_BUF, INV_BUF);
+        program.setUniformMatrix4("shadowProjectionInverse", INV_BUF);
+        invertInto(MV_BUF, INV_BUF);
+        program.setUniformMatrix4("shadowModelViewInverse", INV_BUF);
     }
 
     /** 1x1 compare-mode depth texture (depth = 1.0 -> always lit) for shadows-off. */

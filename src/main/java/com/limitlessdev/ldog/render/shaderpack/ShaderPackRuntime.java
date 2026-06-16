@@ -140,6 +140,16 @@ public final class ShaderPackRuntime {
     public boolean hasGbuffers() { return !gbufferPrograms.isEmpty(); }
 
     /**
+     * The compiled {@code shadow} program, or null when the pack ships none.
+     * Rendering the shadow map THROUGH this program (rather than fixed-function)
+     * is essential for modern packs: their {@code shadow.vsh} bakes in the shadow
+     * distortion warp + depth scaling that the lighting pass assumes when it
+     * samples the map. Fixed-function depth produces a map the pack mis-samples,
+     * reading everything as shadowed (uniformly dark terrain).
+     */
+    public Stage shadowProgram() { return gbufferPrograms.get("shadow"); }
+
+    /**
      * True when the {@code gbuffers_*} programs write {@code colortexI}. False
      * means the buffer is produced only by the composite/deferred chain — likely
      * temporal history that must persist across frames (don't clobber it with
