@@ -74,11 +74,10 @@ LDOG aims to provide all the key rendering enhancements that OptiFine offers -- 
 LDOG uses **Mixins** (via MixinBooter) to transform vanilla rendering code. This approach is more maintainable and less brittle than raw ASM. Every feature is independently toggleable via `LDOGConfig`.
 
 For detailed architecture documentation, see the `docs/` directory:
-- `docs/ATTACK_PLAN.md` -- Phased development plan with checklists
-- `docs/FEASIBILITY.md` -- Feasibility analysis of replicating OptiFine features
 - `docs/ARCHITECTURE.md` -- Planned architecture for each feature module
-- `docs/PHASE1_RESEARCH.md` -- Rendering optimization research with vanilla code analysis
-- `docs/MOD_CONSOLIDATION.md` -- Plan for absorbing/replacing other optimization mods
+- `docs/CONVENTIONS.md` -- Code/mixin/GUI conventions established during development
+
+(Development plans and session logs live in the gitignored `docs/agent-plans/` folder and are not part of the repository.)
 
 ### Source Layout
 

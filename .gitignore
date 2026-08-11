@@ -87,3 +87,6 @@ run/config/*
 logs/
 .claude/settings.local.json
 .claude/worktrees/
+
+# Agent working docs (plans, session logs) — local only, not tracked
+docs/agent-plans/

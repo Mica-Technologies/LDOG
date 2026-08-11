@@ -93,7 +93,11 @@ Version is derived from Git tags. No manual version setting needed (see `modVers
 
 ## Documentation
 
-See `docs/` for detailed project documentation:
-- `docs/MASTER_APP_PLAN.md` -- Single source of truth for roadmap, phase status, research notes, backlog, gotchas, and resume prompt
+`docs/` holds tracked technical documentation about the code:
 - `docs/ARCHITECTURE.md` -- Planned architecture for each feature module
 - `docs/CONVENTIONS.md` -- Code/mixin/GUI conventions established during development
+
+`docs/agent-plans/` is a **gitignored** folder for plans and session logs worked on with Claude/agents (local-only, never committed):
+- `docs/agent-plans/MASTER_APP_PLAN.md` -- Single source of truth for roadmap, phase status, research notes, backlog, gotchas, and resume prompt
+- `docs/agent-plans/PHASE_9B_VALIDATION.md` -- User-driven upscaler quality validation protocol
+- `docs/agent-plans/SESSION_*.md` -- Per-session work logs
