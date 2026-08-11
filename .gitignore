@@ -79,14 +79,21 @@ local.properties
 # Linux
 *~
 
+# macOS Finder metadata
+.DS_Store
+
 run/*
 !run/config/
 run/config/*
 !run/config/lwjgl3ify-early.json
 
 logs/
+crash-reports/
 .claude/settings.local.json
 .claude/worktrees/
+
+# Apple Silicon dev-client natives (see CSM's RFG 1.4.7 / Rosetta runClient setup)
+.rosetta-natives/
 
 # Agent working docs (plans, session logs) — local only, not tracked
 docs/agent-plans/

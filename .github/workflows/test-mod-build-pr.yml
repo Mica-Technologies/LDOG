@@ -2,9 +2,14 @@ name: Test Mod Build (Pull Request)
 
 on: pull_request
 
+# Superseded runs on the same PR are pointless — the server smoke test is slow.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
-  test_assemble_mod:
-    name: Test Assemble Mod
+  compile:
+    name: Compile & Unit Test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -12,14 +17,70 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set Up JDK 17
+      # RFG runs the Gradle process on Java 21+ (compiler + mod code stay Java 8 via
+      # Jabel); older Gradle-JVM Java versions are deprecated and slated for removal.
+      - name: Set Up JDK 21
         uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '21'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
 
       - name: Assemble mod with Gradle
         run: ./gradlew build -Dhttp.socketTimeout=60000 -Dhttp.connectionTimeout=60000 -Dorg.gradle.internal.http.socketTimeout=60000 -Dorg.gradle.internal.http.connectionTimeout=60000
+
+      - name: Upload unit test report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-report
+          path: build/reports/tests/test/
+          retention-days: 7
+
+  server_smoke_test:
+    name: Dedicated Server Smoke Test
+    needs: compile
+    runs-on: ubuntu-latest
+    # LDOG adds no content (world gen is vanilla), so server boot is quick; the
+    # budget mostly covers a cold-cache Gradle setup. Shorter than the content
+    # mods' 25-30 min on purpose.
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # RFG runs the Gradle process on Java 21+ (compiler + mod code stay Java 8 via
+      # Jabel); older Gradle-JVM Java versions are deprecated and slated for removal.
+      - name: Set Up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # LDOG is a client-side rendering mod that promises to be safe to install with
+      # no server dependency — and its @Mod does NOT set clientSideOnly, so a dedicated
+      # server fully loads the mod and its proxy/mixin bootstrap. `./gradlew build`
+      # passing proves nothing about that path: a client-only class (Minecraft, GL,
+      # entity renderers) reached from common/proxy code compiles cleanly and only
+      # explodes at server startup. This boot is the test of the "client-side only,
+      # server-safe" claim. (The sibling SUM mod shipped three such bugs at once in
+      # 2026.07.19; all were caught by a single `runServer`.)
+      - name: Boot dedicated server and assert startup
+        run: bash .github/scripts/server-smoke-test.sh
+        env:
+          SMOKE_TIMEOUT: '900'
+
+      - name: Upload server log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-smoke-log
+          path: server-smoke.log
+          retention-days: 7
