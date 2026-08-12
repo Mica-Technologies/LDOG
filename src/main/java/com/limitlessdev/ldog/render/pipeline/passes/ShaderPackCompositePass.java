@@ -41,11 +41,15 @@ import java.nio.IntBuffer;
  * final stage, the last composite's output is blitted to the main FB so
  * the on-screen result reflects the chain.
  *
- * <p>Scope is composite-stage only. Gbuffer programs (per-object draw
- * shaders) aren't compiled or hooked yet — that's the next phase of shader
- * pack support and a much bigger lift. Most pack visual identity DOES live
- * in composite, so even this restricted runner produces visible output
- * for the typical pack.
+ * <p>Two execution models: a single-target ping-pong for composite-only packs,
+ * and the OptiFine colortex-flipping multi-write model when the pack's gbuffer
+ * programs are driving (see {@link ShaderPackGbufferManager}) and its composite
+ * stages write beyond colortex0.
+ *
+ * <p>Uniforms come from the frame-wide snapshot owned by
+ * {@link ShaderPackGbufferManager#uniforms()} — the same instance the gbuffer
+ * and shadow stages were fed, so every stage of the frame agrees on
+ * frameCounter, camera position and the gbuffer matrices.
  */
 public final class ShaderPackCompositePass implements PostProcessPass {
 
@@ -77,7 +81,13 @@ public final class ShaderPackCompositePass implements PostProcessPass {
     private int mrtN = -1;    // highest colortex index managed
     private int mrtW, mrtH;
 
-    private final ShaderPackUniforms uniforms = new ShaderPackUniforms();
+    /**
+     * The frame's shared uniform snapshot, borrowed from
+     * {@link ShaderPackGbufferManager#uniforms()} at the top of each
+     * {@link #execute}. Never owned by this pass — one instance per frame is
+     * what keeps gbuffer and composite stages in lockstep.
+     */
+    private ShaderPackUniforms uniforms;
     private boolean loggedFirstRun;
     private String loggedActivePack;
 
@@ -127,9 +137,13 @@ public final class ShaderPackCompositePass implements PostProcessPass {
             colortex0Input = sceneCopyTex;
         }
 
-        // Snapshot per-frame uniforms once. All stages this frame see the
-        // same numbers so cross-stage temporal effects stay consistent.
-        uniforms.snapshot(mainW, mainH, 0.0f);
+        // Take the frame's uniform snapshot if no earlier stage did (a
+        // composite-only pack has no gbuffer draws to trigger it). Uses the
+        // REAL partialTicks — snapshotting at 0 while the gbuffer matrices were
+        // captured at the true partialTicks put cameraPosition and
+        // gbufferModelView a fraction of a tick apart, oscillating every frame.
+        ShaderPackGbufferManager.ensureFrameSnapshot(ctx.partialTicks());
+        uniforms = ShaderPackGbufferManager.uniforms();
 
         GlStateManager.disableDepth();
         GlStateManager.disableCull();
@@ -193,10 +207,15 @@ public final class ShaderPackCompositePass implements PostProcessPass {
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
         }
 
-        // Cache prev-frame matrices for the next snapshot.
-        uniforms.rotatePrev();
-
         GL11.glPopAttrib();
+        // glPopAttrib restored real GL but not GlStateManager's cache of it —
+        // re-converge the two or the next vanilla GlStateManager call is
+        // silently dropped as redundant. (The prev-frame matrices are rotated
+        // by the shared snapshot at the START of the next frame, so there is
+        // nothing to rotate here.)
+        com.limitlessdev.ldog.render.pipeline.GlStateSync.afterPopAttrib();
+        // Last pack consumer of the frame — release the snapshot latch.
+        ShaderPackGbufferManager.releaseFrameSnapshot();
 
         com.limitlessdev.ldog.render.pipeline.PipelineGlProbe.drain(
             ShaderPackGbufferManager.isDeferredActive() && usesMultiWrite(runtime)
@@ -377,16 +396,25 @@ public final class ShaderPackCompositePass implements PostProcessPass {
             GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0 + t,
                 GL11.GL_TEXTURE_2D, 0, 0);
         }
+        // Slot index == gl_FragData[i], so an unallocatable target must be
+        // MASKED (GL_NONE), never removed: dropping it shifts every later
+        // output one colortex to the left and silently corrupts buffers the
+        // pack reads back (BSL's `DRAWBUFFERS:08367` with only 0..7 allocated).
         MRT_DRAW_BUF.clear();
         int count = 0;
         for (int t : drawBuffers) {
-            if (t < 0 || t > n) continue;
+            if (!MRT_DRAW_BUF.hasRemaining()) break;  // more outputs than attachments
+            if (t < 0 || t > n) {
+                MRT_DRAW_BUF.put(GL11.GL_NONE);
+                continue;
+            }
             GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0 + t,
                 GL11.GL_TEXTURE_2D, mrtAlt[t], 0);
             MRT_DRAW_BUF.put(GL30.GL_COLOR_ATTACHMENT0 + t);
             count++;
         }
         if (count == 0) {  // nothing valid to write — default to colortex0
+            MRT_DRAW_BUF.clear();
             GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
                 GL11.GL_TEXTURE_2D, mrtAlt[0], 0);
             MRT_DRAW_BUF.put(GL30.GL_COLOR_ATTACHMENT0);

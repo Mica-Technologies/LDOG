@@ -162,6 +162,13 @@ public abstract class MixinEntityRendererPostPipeline {
     @Inject(method = "renderWorldPass(IFJ)V", at = @At("RETURN"))
     private void ldog$pipelineResolve(int pass, float partialTicks, long finishTimeNano, CallbackInfo ci) {
         if (!LDOGConfig.enablePostProcessPipeline) return;
+        // Same pass gate as the HEAD bind. With anaglyph 3D on, vanilla calls
+        // renderWorldPass TWICE (pass 0 = red eye, pass 1 = green+blue eye) and
+        // never with pass 2 — the bind never activates, but without this guard
+        // the pipeline still ticked on both eyes, so the passes that don't
+        // require bindingActive (RCAS, FXAA, vignette) applied themselves twice
+        // to the same framebuffer every frame.
+        if (pass != 2) return;
 
         // World draw done — the G-buffer is no longer the active draw target.
         ShaderPackGbufferManager.endWorldGBuffer();

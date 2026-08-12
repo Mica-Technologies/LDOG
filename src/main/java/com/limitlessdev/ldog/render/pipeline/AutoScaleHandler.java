@@ -3,6 +3,7 @@ package com.limitlessdev.ldog.render.pipeline;
 import com.limitlessdev.ldog.LDOGMod;
 import com.limitlessdev.ldog.Tags;
 import com.limitlessdev.ldog.config.LDOGConfig;
+import com.limitlessdev.ldog.render.FpsReducerHandler;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
@@ -40,6 +41,17 @@ import org.lwjgl.opengl.DisplayMode;
  *   ladder downgrades FSR1-Quality → FSR1 → Bilinear and FXAA quality Ultra →
  *   High → Medium → Low → off, then disables FXAA. Handler OWNS those settings
  *   while in this mode — manual GUI changes are overwritten on the next tick.
+ *   Exception: a user-selected FSR2 is never downgraded (see
+ *   {@link #applyAggressiveTier}).
+ *
+ * Skipped entirely when the measured FPS isn't a quality signal:
+ *   - {@link FpsReducerHandler} is actively capping (window unfocused / AFK).
+ *     Its cap makes FPS look catastrophic, and the handler would walk quality
+ *     down to the floor while the user is alt-tabbed — then walk it back up
+ *     one 2-second step at a time once they return.
+ *   - MSAA owns the world-pass framebuffer
+ *     ({@link PostProcessPipeline#hasConflictingFeatureOn()}), so the pipeline
+ *     yields and none of the settings we'd tune are in the frame at all.
  *
  * Limitations:
  *   - Uses MC's rolling-1s FPS counter; could track a longer window for
@@ -145,6 +157,10 @@ public final class AutoScaleHandler {
         AutoScaleMode mode = AutoScaleMode.selected();
         if (mode == AutoScaleMode.OFF) return;
         if (!LDOGConfig.enablePostProcessPipeline) return;
+        // MSAA owns the world-pass FBO; the pipeline yields to it, so none of
+        // the settings this handler tunes affect the frame. Adjusting them
+        // against MSAA's frame rate would just churn config.
+        if (PostProcessPipeline.hasConflictingFeatureOn()) return;
 
         tickCounter++;
         if (tickCounter < TICK_INTERVAL) return;
@@ -152,6 +168,14 @@ public final class AutoScaleHandler {
 
         Minecraft mc = Minecraft.getMinecraft();
         if (mc == null || mc.world == null) return; // only adjust while a world is loaded
+
+        // FPS is being deliberately held down (unfocused window / AFK), so it
+        // says nothing about rendering cost. Hold the current quality — don't
+        // read the cap as "this GPU can't keep up".
+        if (FpsReducerHandler.getTargetFpsLimit() > 0) {
+            LDOGMod.LOGGER.debug("LDOG: AutoScale HOLD — FPS reducer is capping this frame");
+            return;
+        }
 
         int fps = Minecraft.getDebugFPS();
         int target = computeTargetFPS(mc);
@@ -190,6 +214,7 @@ public final class AutoScaleHandler {
 
         if (newIdx != currentIdx) {
             LDOGConfig.internalRenderScale = LADDER[newIdx];
+            markPresetCustom();
             LDOGMod.LOGGER.info(
                 "LDOG: AutoScale {} to {} (fps={}, target={})",
                 decision,
@@ -248,12 +273,37 @@ public final class AutoScaleHandler {
         }
     }
 
-    /** Apply all four settings of an aggressive tier in one shot. */
+    /**
+     * Apply an aggressive tier.
+     *
+     * <p>FSR2 is preserved when the user selected it: the ladder only names
+     * spatial upscalers, so writing {@code t.upscalerKey} would silently
+     * demote a deliberate FSR2 choice to FSR1/bilinear — a change of image
+     * character (temporal reconstruction gone) that no FPS reading justifies,
+     * and one the user can't undo because the next tick would overwrite it
+     * again. Scale and FXAA still move: those are the tier's actual perf
+     * levers, and FSR2 reconstructs from whatever scale it is handed.
+     */
     private static void applyAggressiveTier(AggressiveTier t) {
         LDOGConfig.internalRenderScale = t.scale;
-        LDOGConfig.upscalerAlgorithm = t.upscalerKey;
+        if (UpscalerAlgorithm.selected() != UpscalerAlgorithm.FSR2) {
+            LDOGConfig.upscalerAlgorithm = t.upscalerKey;
+        }
         LDOGConfig.fxaaQuality = t.fxaaKey;
         LDOGConfig.enableFXAA = t.fxaaEnabled;
+        markPresetCustom();
+    }
+
+    /**
+     * The auto-tuned values no longer match whatever named preset the GUI is
+     * displaying — flip it to Custom, exactly as a manual edit in the GUI does.
+     * Without this the settings screen keeps claiming e.g. "Quality" while the
+     * handler has moved scale/upscaler/FXAA somewhere else entirely.
+     */
+    private static void markPresetCustom() {
+        if (UpscalerPreset.selected() != UpscalerPreset.CUSTOM) {
+            UpscalerPreset.markCustom();
+        }
     }
 
     /**
@@ -264,6 +314,10 @@ public final class AutoScaleHandler {
      * same scale but different upscaler aren't equally matched — the weight
      * order encodes "scale matters most, then upscaler, then FXAA on/off,
      * then FXAA quality."
+     *
+     * <p>With FSR2 selected no tier's upscaler matches, so that term becomes a
+     * constant offset and the snap falls back to scale + FXAA — which is the
+     * intent, since {@link #applyAggressiveTier} leaves FSR2 in place.
      */
     private static int snapToAggressiveTier() {
         int best = 0;

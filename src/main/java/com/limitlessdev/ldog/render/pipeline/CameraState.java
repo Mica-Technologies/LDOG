@@ -17,12 +17,14 @@ import java.nio.FloatBuffer;
  * Not thread-safe — MC's render loop is single-threaded on the client
  * thread, which is the only caller.
  *
- * Matrices captured SHOULD be the un-jittered camera state. Caller is
- * responsible for calling {@link #captureCurrentMatrices()} at a point in
- * the render pass where GL_PROJECTION + GL_MODELVIEW reflect the camera's
- * actual view of the world (not the jittered version used for sample
- * placement). In practice the capture fires right after MC's terrain
- * {@code gluPerspective} but BEFORE the jitter mixin applies its offset.
+ * Matrices are captured POST-jitter, on purpose. History textures store each
+ * frame with that frame's jitter baked in, so cur/prev must describe what was
+ * actually rendered — capturing the un-jittered "logical" camera makes the
+ * reprojection unproject to the wrong world position and land on the wrong
+ * history texel, a fractional offset that swings with the Halton cycle (the
+ * "swimming" artifact). {@code MixinEntityRendererJitter} therefore calls
+ * {@link #captureCurrentMatrices()} right after applying the jitter to the
+ * terrain projection. See that mixin for the full rationale.
  */
 public final class CameraState {
 

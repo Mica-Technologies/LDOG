@@ -23,10 +23,14 @@ import java.nio.FloatBuffer;
  * pack's composite stage compiles and links against our feed without
  * source modification.
  *
- * <p>Scope is the composite-chain subset of uniforms. Gbuffer-only uniforms
- * (per-vertex / per-fragment from MC's draw calls) are not provided — the
- * gbuffer phase isn't implemented yet. Packs that only check uniforms at
- * the composite stage will see correct values for the common cases.
+ * <p>One instance is shared by every stage of a frame — see
+ * {@link ShaderPackGbufferManager#uniforms()}. Gbuffer, shadow, deferred and
+ * composite stages must agree on frameCounter / camera position / the gbuffer
+ * matrices, so the snapshot is taken once (at the first stage that needs it)
+ * and fed to each program in turn.
+ *
+ * <p>Scope is the frame-uniform subset. Per-vertex attributes packs may want
+ * ({@code mc_Entity}, {@code at_tangent}) are not supplied.
  */
 public final class ShaderPackUniforms {
 
@@ -93,8 +97,12 @@ public final class ShaderPackUniforms {
     private static final java.nio.FloatBuffer FOG_BUF = BufferUtils.createFloatBuffer(16);
 
     /**
-     * Refresh all per-frame values from the live MC state. Call once at the
-     * start of {@link com.limitlessdev.ldog.render.pipeline.passes.ShaderPackCompositePass#execute}.
+     * Refresh all per-frame values from the live MC state. Call ONCE per frame
+     * (via {@link ShaderPackGbufferManager#ensureFrameSnapshot(float)}) with the
+     * frame's real partialTicks — interpolating the camera at a different
+     * partialTicks than the one the gbuffer matrices were captured at leaves
+     * cameraPosition and gbufferModelView describing slightly different moments,
+     * which oscillates frame to frame.
      */
     public void snapshot(int viewWidth, int viewHeight, float partialTicks) {
         currentViewWidth = viewWidth;
@@ -258,23 +266,29 @@ public final class ShaderPackUniforms {
         // OF convention: cameraPosition is the player's world-space position.
         // GL precision means we feed it as floats; sub-meter precision lost
         // far from the origin is the same compromise OF makes.
-        program.setUniform4f("cameraPosition",
+        //
+        // TYPE NOTE (applies to this block and the celestial one below): the
+        // OF / Iris spec declares all of these as `uniform vec3`. GL matches
+        // the setter's component count to the DECLARED type — pushing a vec3
+        // through glUniform4f raises GL_INVALID_OPERATION and leaves the
+        // uniform at (0,0,0), which reads to a pack as "camera at world
+        // origin / sun straight through the ground". That mismatch was the
+        // source of the one-shot 1282 errors the GL probe kept draining.
+        program.setUniform3f("cameraPosition",
             (float) currentCameraX,
             (float) currentCameraY,
-            (float) currentCameraZ,
-            0.0f);
-        program.setUniform4f("previousCameraPosition",
+            (float) currentCameraZ);
+        program.setUniform3f("previousCameraPosition",
             (float) prevCameraX,
             (float) prevCameraY,
-            (float) prevCameraZ,
-            0.0f);
+            (float) prevCameraZ);
 
-        // Celestial directions.
-        program.setUniform4f("sunPosition", sunPos[0], sunPos[1], sunPos[2], 0);
-        program.setUniform4f("moonPosition", moonPos[0], moonPos[1], moonPos[2], 0);
-        program.setUniform4f("upPosition",  upPos[0],   upPos[1],   upPos[2],  0);
-        program.setUniform4f("shadowLightPosition",
-            shadowLightPos[0], shadowLightPos[1], shadowLightPos[2], 0);
+        // Celestial directions (vec3 — see the type note above).
+        program.setUniform3f("sunPosition", sunPos[0], sunPos[1], sunPos[2]);
+        program.setUniform3f("moonPosition", moonPos[0], moonPos[1], moonPos[2]);
+        program.setUniform3f("upPosition",  upPos[0],   upPos[1],   upPos[2]);
+        program.setUniform3f("shadowLightPosition",
+            shadowLightPos[0], shadowLightPos[1], shadowLightPos[2]);
 
         // Matrices.
         writeMat4(MAT_BUF, currentModelView);
@@ -316,9 +330,14 @@ public final class ShaderPackUniforms {
         program.setUniform1f("nightVision", currentNightVision);
         program.setUniform1f("blindness", currentBlindness);
         program.setUniform1f("screenBrightness", currentScreenBrightness);
-        // eyeBrightness / eyeBrightnessSmooth: lightmap units [0,240].
-        program.setUniform2f("eyeBrightness", eyeBrightnessBlock, eyeBrightnessSky);
-        program.setUniform2f("eyeBrightnessSmooth", eyeBrightnessBlock, eyeBrightnessSky);
+        // eyeBrightness / eyeBrightnessSmooth: lightmap units [0,240], and the
+        // OF spec declares them `uniform ivec2` — they MUST be fed as integers
+        // (glUniform2f against an ivec2 is a GL_INVALID_OPERATION that leaves
+        // the value at zero, i.e. "player is in pitch darkness").
+        int eyeBlock = (int) eyeBrightnessBlock;
+        int eyeSky = (int) eyeBrightnessSky;
+        program.setUniform2i("eyeBrightness", eyeBlock, eyeSky);
+        program.setUniform2i("eyeBrightnessSmooth", eyeBlock, eyeSky);
     }
 
     /** Rotate this frame's matrices into the "prev" slot for next frame. */

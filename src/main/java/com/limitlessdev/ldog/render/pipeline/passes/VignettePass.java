@@ -128,6 +128,9 @@ public final class VignettePass implements PostProcessPass {
 
         ShaderProgram.unbind();
         GL11.glPopAttrib();
+        // Re-converge GlStateManager's cache with the state glPopAttrib just
+        // restored; otherwise the next vanilla state call is silently dropped.
+        com.limitlessdev.ldog.render.pipeline.GlStateSync.afterPopAttrib();
 
         if (!loggedFirstExecute) {
             loggedFirstExecute = true;

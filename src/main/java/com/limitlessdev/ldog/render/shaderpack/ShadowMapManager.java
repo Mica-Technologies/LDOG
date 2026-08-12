@@ -40,7 +40,10 @@ import java.nio.FloatBuffer;
  *   <li>Uses the <em>camera</em> chunk-visibility list, so geometry behind the
  *       camera may not cast (OptiFine prepares a separate shadow frustum).</li>
  *   <li>Terrain only — no entity/TESR shadow casters yet.</li>
- *   <li>Fixed-function depth (no {@code shadow.vsh/fsh} program), so colored /
+ *   <li>The pack's {@code shadow.vsh/fsh} program IS bound when it ships one
+ *       (so its distortion warp matches what the lighting pass expects);
+ *       packs without one fall back to fixed-function depth. Either way the
+ *       target is depth-only — no {@code shadowcolor} attachments, so colored /
  *       alpha-blended shadows aren't produced.</li>
  * </ul>
  *
@@ -183,6 +186,10 @@ public final class ShadowMapManager {
             // FBO is a GL_INVALID_OPERATION.
             GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, prevFbo);
             GL11.glPopAttrib();
+            // renderBlockLayer above drove plenty of GlStateManager calls whose
+            // cache glPopAttrib can't roll back — re-converge cache and reality
+            // or the caller's next state change is silently skipped.
+            com.limitlessdev.ldog.render.pipeline.GlStateSync.afterPopAttrib();
             GL11.glViewport(VIEWPORT[0], VIEWPORT[1], VIEWPORT[2], VIEWPORT[3]);
             renderedThisFrame = true;
             com.limitlessdev.ldog.render.pipeline.PipelineGlProbe.drain("shadow:depth-render");
@@ -232,6 +239,29 @@ public final class ShadowMapManager {
             invertInto(MV_BUF, INV_BUF);
             program.setUniformMatrix4("shadowModelViewInverse", INV_BUF);
         }
+    }
+
+    /**
+     * Point the shadow samplers at the 1x1 compare-mode DUMMY depth texture.
+     *
+     * <p>For the shadow program itself, which renders INTO the real shadow map —
+     * binding that map here would make it simultaneously an attachment of the
+     * bound FBO and a sampled texture (a framebuffer feedback loop). The dummy
+     * is still a depth texture with GL_COMPARE_R_TO_TEXTURE set, which is what
+     * a {@code sampler2DShadow} declaration requires; binding a plain RGBA
+     * texture there is a GL_INVALID_OPERATION on every draw of the pass.
+     */
+    public static void feedDummyShadowSamplers(ShaderProgram program, int unit) {
+        GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, ensureDummy());
+        GL13.glActiveTexture(GL13.GL_TEXTURE0);
+
+        program.setUniform1i("shadowtex0", unit);
+        program.setUniform1i("shadowtex1", unit);
+        program.setUniform1i("shadow", unit);
+        program.setUniform1i("watershadow", unit);
+        // The real resolution — shadow.vsh distortion maths scales by it.
+        program.setUniform1f("shadowMapResolution", resolution > 0 ? resolution : 1);
     }
 
     /**

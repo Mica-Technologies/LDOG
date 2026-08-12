@@ -15,32 +15,23 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 /**
- * Phase 8 stretch — shader pack discovery + activation glue.
+ * Shader pack discovery + activation.
  *
  * <p>Scans {@code <.minecraft>/shaderpacks/} (created on first use), lists
- * directory-style packs and {@code .zip} packs, lets the user activate one
- * via the GUI, and exposes the currently-active pack for the rendering
- * pipeline to consume. The actual gbuffer/composite/final compilation +
- * dispatch is the next layer ({@code ShaderPackPipeline}, not yet written)
- * — this scaffold ships the discovery + selection model so the user-facing
- * GUI can list packs and the pipeline can be wired incrementally.
+ * directory-style packs and {@code .zip} packs alongside LDOG's bundled
+ * built-ins, lets the user activate one via the GUI, and owns the compiled
+ * {@link ShaderPackRuntime} the rendering pipeline consumes.
  *
- * <h3>What's intentionally NOT in v1</h3>
+ * <p>Activation resolves the pack against the current dimension's
+ * {@code worldN/} folder (OF/Iris layout); {@link #onDimensionChanged(int)}
+ * re-runs it when the player changes dimension.
  *
- * <ul>
- *   <li>No actual gbuffer hooking — vanilla rendering continues unmodified.</li>
- *   <li>No composite/final chain compilation — files are discoverable but
- *       not compiled to GL programs.</li>
- *   <li>No per-program uniform feed (cameraPosition, projectionMatrix,
- *       sunPosition, etc.). The full uniform table is documented at OF /
- *       Iris but implementing the feed is a separate pass.</li>
- *   <li>No shadow pass — needs a depth-only second world-render path.</li>
- * </ul>
- *
- * These are all known unknowns in the master plan §13 expansion ideas.
- * Building them out without a working scaffold first leads to dead code,
- * so v1 ships the scaffold and the test plan calls out shader-pack work
- * as separately track-able.
+ * <p>Downstream: {@link ShaderPackRuntime} compiles the gbuffer / deferred /
+ * composite / final / shadow programs,
+ * {@link ShaderPackGbufferManager} dispatches per-object draws and owns the
+ * frame's uniform snapshot,
+ * {@link com.limitlessdev.ldog.render.pipeline.passes.ShaderPackCompositePass}
+ * runs the fullscreen chain, and {@link ShadowMapManager} renders the shadow map.
  */
 public final class ShaderPackManager {
 
@@ -111,10 +102,25 @@ public final class ShaderPackManager {
     }
 
     /**
-     * Activate the pack matching {@code name}. Pass {@code "(none)"} or null
-     * to deactivate. Closes the previously-active pack first.
+     * Activate the pack matching {@code name} for the dimension the client is
+     * currently in. Pass {@code "(none)"} or null to deactivate.
      */
     public synchronized void activate(String name) {
+        activate(name, currentWorldDir());
+    }
+
+    /**
+     * Activate the pack matching {@code name}, resolving its per-dimension
+     * {@code worldN/} folder against {@code worldDir}. Closes the
+     * previously-active pack first.
+     *
+     * <p>The explicit {@code worldDir} exists for the dimension-change path:
+     * {@code WorldEvent.Load} fires from the WorldClient constructor, while
+     * {@code Minecraft.world} still points at the world being left — so the
+     * caller passes the incoming dimension rather than letting us read a stale
+     * one off the client.
+     */
+    public synchronized void activate(String name, String worldDir) {
         if (name == null || name.equals("(none)") || name.isEmpty()) {
             deactivate();
             return;
@@ -145,8 +151,8 @@ public final class ShaderPackManager {
                     created = new ZipShaderPack(name, target, detectZipPrefix(target));
                 }
             }
-            // Probe the current dimension's worldN/ folder first (OF/Iris layout).
-            created.worldDir = currentWorldDir();
+            // Probe the dimension's worldN/ folder first (OF/Iris layout).
+            created.worldDir = worldDir == null ? currentWorldDir() : worldDir;
             loadProperties(created);
         } catch (IOException e) {
             LDOGMod.LOGGER.error("LDOG: Failed to load shader pack '{}': {}", name, e.toString());
@@ -173,11 +179,13 @@ public final class ShaderPackManager {
             // Nothing compiled at all — release so the passes short-circuit.
             runtime = null;
         } else {
+            boolean configDirty = false;
             if (!LDOGConfig.enablePostProcessPipeline) {
                 // The composite chain + deferred gbuffer path both run inside the
                 // post-process pipeline; with it off, a pack compiles but renders
                 // nothing. Enable it so activating a pack actually does something.
                 LDOGConfig.enablePostProcessPipeline = true;
+                configDirty = true;
                 LDOGMod.LOGGER.info(
                     "LDOG: Auto-enabled the post-process pipeline (required for shader packs to render)");
             }
@@ -188,11 +196,49 @@ public final class ShaderPackManager {
             if (BuiltinShaderPacks.isBuiltin(active.name) && runtime.hasGbuffers()
                     && !LDOGConfig.enableShaderGbuffers) {
                 LDOGConfig.enableShaderGbuffers = true;
+                configDirty = true;
                 LDOGMod.LOGGER.info("LDOG: Auto-enabled Pack Gbuffers for built-in pack '{}'", active.name);
             }
+            // Those two flags were flipped in memory only. Without a sync the
+            // change is lost on restart (and the config GUI keeps showing the
+            // old value), so the pack silently stops rendering next session.
+            if (configDirty) persistConfig();
         }
         // Clean state after the switch (also covers replacing one pack with another).
         onPackChanged();
+    }
+
+    /**
+     * Write LDOGConfig's in-memory state back to the config file. Mirrors what
+     * the settings GUI does on save.
+     */
+    private static void persistConfig() {
+        try {
+            net.minecraftforge.common.config.ConfigManager.sync(
+                com.limitlessdev.ldog.Tags.MODID,
+                net.minecraftforge.common.config.Config.Type.INSTANCE);
+        } catch (Throwable t) {
+            LDOGMod.LOGGER.warn("LDOG: Failed to persist shader config changes: {}", t.toString());
+        }
+    }
+
+    /**
+     * Re-resolve the active pack against a newly-entered dimension. The
+     * {@code worldN/} folder a pack is loaded from is fixed at activation time,
+     * so without this an Overworld→Nether trip keeps running {@code world0}'s
+     * programs (and a pack activated from the main menu is stuck on the
+     * {@code world0} default forever).
+     *
+     * <p>No-op when nothing is active or the folder wouldn't change.
+     */
+    public synchronized void onDimensionChanged(int dimension) {
+        if (!LDOGConfig.enableShaders || active == null) return;
+        String want = "world" + dimension;
+        if (want.equals(active.worldDir)) return;
+        String name = active.name;
+        LDOGMod.LOGGER.info("LDOG: Dimension folder {} -> {}; reloading shader pack '{}'",
+            active.worldDir, want, name);
+        activate(name, want);
     }
 
     /** Per-dimension shaders subfolder for the current world (default world0). */

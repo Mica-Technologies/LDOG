@@ -142,9 +142,15 @@ public final class PostProcessPipeline {
      * The 8c binding hook must yield to MSAA (which wraps renderWorldPass with
      * its own multisampled FBO). Consolidated here as a single source of
      * truth so the mixin and any future pass share the check.
+     *
+     * <p>The availability check matters: with {@code enableMSAA} on but the MSAA
+     * FBO unsupported (or failed allocation, which latches it unsupported), MSAA
+     * never actually binds anything — yet the pipeline would keep yielding to it
+     * forever, so neither feature renders.
      */
     public static boolean hasConflictingFeatureOn() {
-        return LDOGConfig.enableMSAA;
+        return LDOGConfig.enableMSAA
+            && com.limitlessdev.ldog.render.msaa.MSAAFramebuffer.isSupported();
     }
 
     /**
@@ -210,6 +216,7 @@ public final class PostProcessPipeline {
 
     private int runPasses(PostProcessContext context) {
         int active = 0;
+        activeChain.clear();
 
         // When an external (deferred) shader pack is driving the image, run ONLY
         // the scene resolve + the pack's composite chain. LDOG's own upscale /
@@ -237,6 +244,7 @@ public final class PostProcessPipeline {
             try {
                 pass.execute(context);
                 active++;
+                activeChain.add(pass.id());
                 // Drain + localize any GL error this pass left behind, so it
                 // can't accumulate into MC's per-frame "Post render" check (the
                 // 165×/s 1282 flood). Labelled with the pass id; passes with
@@ -254,11 +262,57 @@ public final class PostProcessPipeline {
             }
         }
 
+        logChainIfChanged(packDrives);
         return active;
     }
 
     /** Last pass we logged an execution error for (rate-limits repeat spam). */
     private PostProcessPass loggedPassError;
+
+    // --- pass-chain composition instrumentation ---
+
+    /** Ids of the passes that actually ran this frame (reused; no per-frame alloc). */
+    private final List<String> activeChain = new ArrayList<>();
+    private int lastChainSignature;
+    private boolean loggedChain;
+
+    /**
+     * Log the active pass chain + the state that selected it, ONCE per distinct
+     * composition. Lets an in-game A/B ("flicker appears when X is on") be
+     * attributed to a concrete chain instead of guessed at from settings.
+     *
+     * <p>Cheap by construction: the per-frame cost is a handful of int mixes
+     * over already-computed values (String.hashCode is cached), and the message
+     * is only built when the signature actually changes.
+     */
+    private void logChainIfChanged(boolean packDrives) {
+        int sig = 1;
+        for (int i = 0; i < activeChain.size(); i++) {
+            sig = 31 * sig + activeChain.get(i).hashCode();
+        }
+        sig = 31 * sig + UpscalerAlgorithm.selected().ordinal();
+        sig = 31 * sig + Float.floatToIntBits((float) LDOGConfig.internalRenderScale);
+        sig = 31 * sig + AutoScaleMode.selected().ordinal();
+        sig = 31 * sig + (LDOGConfig.enableRcasSharpen ? 1 : 0);
+        sig = 31 * sig + (LDOGConfig.enableTAA ? 2 : 0);
+        sig = 31 * sig + (packDrives ? 4 : 0);
+
+        if (loggedChain && sig == lastChainSignature) return;
+        loggedChain = true;
+        lastChainSignature = sig;
+
+        LDOGMod.LOGGER.info(
+            "LDOG: Pipeline chain = [{}] (algorithm={}, renderScale={}, effectiveScale={}, "
+                + "taa={}, rcasSharpen={}, autoScale={}, packDrives={})",
+            String.join(" -> ", activeChain),
+            UpscalerAlgorithm.selected().configKey(),
+            String.format("%.2f", LDOGConfig.internalRenderScale),
+            String.format("%.2f", effectiveRenderScale()),
+            LDOGConfig.enableTAA ? "on" : "off",
+            LDOGConfig.enableRcasSharpen ? "on" : "off",
+            AutoScaleMode.selected(),
+            packDrives);
+    }
 
     /**
      * Diagnostic logs so operators can tell binding actually fired (the

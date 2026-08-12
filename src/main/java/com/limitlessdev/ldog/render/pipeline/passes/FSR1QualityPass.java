@@ -179,6 +179,9 @@ public final class FSR1QualityPass implements PostProcessPass {
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
 
         GL11.glPopAttrib();
+        // Re-converge GlStateManager's cache with the state glPopAttrib just
+        // restored; otherwise the next vanilla state call is silently dropped.
+        com.limitlessdev.ldog.render.pipeline.GlStateSync.afterPopAttrib();
     }
 
     @Override

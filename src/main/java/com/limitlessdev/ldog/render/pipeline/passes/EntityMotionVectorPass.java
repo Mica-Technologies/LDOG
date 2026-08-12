@@ -5,6 +5,7 @@ import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.pipeline.CameraState;
 import com.limitlessdev.ldog.render.pipeline.EntityRenderState;
 import com.limitlessdev.ldog.render.pipeline.EntityRenderStateCache;
+import com.limitlessdev.ldog.render.pipeline.GlStateSync;
 import com.limitlessdev.ldog.render.pipeline.PostProcessContext;
 import com.limitlessdev.ldog.render.pipeline.PostProcessPass;
 import com.limitlessdev.ldog.render.pipeline.RenderTargetManager;
@@ -149,6 +150,10 @@ public final class EntityMotionVectorPass implements PostProcessPass {
 
         ShaderProgram.unbind();
         GL11.glPopAttrib();
+        // Re-converge GlStateManager's cache with the state glPopAttrib just
+        // restored — this pass changes the enable bits AND the clear colour
+        // through GlStateManager, both of which it caches.
+        GlStateSync.afterPopAttrib();
 
         if (!loggedFirstExecute) {
             loggedFirstExecute = true;
@@ -199,12 +204,11 @@ public final class EntityMotionVectorPass implements PostProcessPass {
             double cy = (i & 2) == 0 ? box.minY : box.maxY;
             double cz = (i & 4) == 0 ? box.minZ : box.maxZ;
             Vector4f n = projectToNDC(curViewProj, cx, cy, cz);
-            if (n == null) continue;
-            // Clip behind-camera corners — only count in-frustum points.
-            if (n.z < -1.0f || n.z > 1.0f) {
-                // Still expand bbox by clipped point so partial-occlusion works.
-                // (NDC z outside [-1,1] but x/y can be valid for tall entities)
-            }
+            if (n == null) continue;  // behind the camera — no usable projection
+            // Corners with NDC z outside [-1,1] are deliberately KEPT: their x/y
+            // is still valid, and dropping them would shrink the stamp for tall
+            // entities clipped by the near/far plane. Only the w <= 0 case above
+            // is rejected, since its x/y is meaningless.
             anyInside = true;
             if (n.x < minX) minX = n.x;
             if (n.y < minY) minY = n.y;

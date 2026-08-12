@@ -25,13 +25,17 @@ import java.util.Map;
  * picks the dead branch and mis-maps {@code gl_FragData[i]} → colortex. Stripping
  * inactive branches first makes the first <em>surviving</em> directive the real one.
  *
- * <p><b>Scope &amp; parity.</b> We inject no builtin macros into compiled sources,
- * so the driver only ever sees the source's own {@code #define}s (include-expanded
- * upstream). Running the same evaluation here over the same starting macro set
- * yields the same branch decisions the driver makes — which is all that matters
- * for picking the right DRAWBUFFERS. Builtin OF macros ({@code MC_VERSION}, vendor
- * flags, …) are absent in both, so {@code #ifdef MC_VERSION} resolves false in both
- * — consistent, even if not full OptiFine semantics (that's a separate task).
+ * <p><b>Scope &amp; parity.</b> What matters is that this resolver evaluates the
+ * SAME macro set the driver will see. Builtin OF macros ({@code MC_VERSION},
+ * vendor/OS flags, …) ARE injected into the compiled source —
+ * {@code ShaderPackRuntime.tryCompile} prepends them via
+ * {@code ShaderMacros.injectDefines} — so callers must seed this resolver with
+ * that same {@code ShaderMacros.standardDefines()} map (tryCompile does).
+ * Otherwise a directive gated on a builtin resolves one way here and the other
+ * way in the driver, and the DRAWBUFFERS mapping silently disagrees with what
+ * the shader actually writes. Macros defined by neither the pack nor
+ * {@code ShaderMacros} are absent on both sides, so {@code #ifdef} on them
+ * resolves false consistently.
  *
  * <p>Supported: {@code #define}/{@code #undef} (object-like macros only),
  * {@code #ifdef}/{@code #ifndef}/{@code #if}/{@code #elif}/{@code #else}/{@code #endif},

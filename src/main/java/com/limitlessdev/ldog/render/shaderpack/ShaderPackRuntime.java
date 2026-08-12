@@ -24,8 +24,8 @@ import java.util.Map;
  * ({@link com.limitlessdev.ldog.render.pipeline.passes.ShaderPackCompositePass}),
  * and the {@code gbuffers_*} programs drive per-object draws when the
  * gbuffer dispatcher is enabled (see {@link ShaderPackGbufferManager}).
- * The {@code shadow} programs are compiled and held but the shadow render
- * pass itself is not yet wired — that's the last remaining OF-parity chunk.
+ * The {@code shadow} program is compiled and held, and {@link ShadowMapManager}
+ * binds it for the sun/moon-POV depth pass.
  *
  * <p>{@link #dispose()} frees all GL programs; callers must call it before
  * dropping the runtime reference.

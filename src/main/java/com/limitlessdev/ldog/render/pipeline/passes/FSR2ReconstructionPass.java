@@ -3,6 +3,8 @@ package com.limitlessdev.ldog.render.pipeline.passes;
 import com.limitlessdev.ldog.LDOGMod;
 import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.pipeline.CameraState;
+import com.limitlessdev.ldog.render.pipeline.GlStateSync;
+import com.limitlessdev.ldog.render.pipeline.JitterHelper;
 import com.limitlessdev.ldog.render.pipeline.PostProcessContext;
 import com.limitlessdev.ldog.render.pipeline.PostProcessPass;
 import com.limitlessdev.ldog.render.pipeline.RenderTargetManager;
@@ -29,9 +31,13 @@ import java.nio.FloatBuffer;
  *       falls back to camera-only depth-based MV (9c.2) otherwise. Disocclusion
  *       is detected when the reprojected UV exits the screen.</li>
  *   <li><b>Lanczos-3 source sampling</b> — gathers source texels from the
- *       scaled scene at sub-pixel offsets driven by the current jitter cycle
- *       (9c.1), weights by sinc·sinc, accumulates. This is what gives FSR2
- *       its sharper output vs FSR1's spatial-only kernel.</li>
+ *       scaled scene, weights by sinc·sinc, accumulates. The kernel centre is
+ *       offset by the current frame's jitter ({@code u_jitter}, fed from
+ *       {@link com.limitlessdev.ldog.render.pipeline.JitterHelper}) because the
+ *       source was rasterised through the jittered projection — that offset is
+ *       what turns the 16-frame Halton cycle into accumulated sub-pixel detail
+ *       instead of a kernel that wobbles ±0.5 source texel per frame. This is
+ *       what gives FSR2 its sharper output vs FSR1's spatial-only kernel.</li>
  *   <li><b>Neighborhood color clamping</b> — clamps the reprojected history
  *       to the 3×3 source-pixel color box (anti-ghost guard).</li>
  *   <li><b>Reactive weighting</b> — pixels flagged by the reactive mask
@@ -82,6 +88,7 @@ public final class FSR2ReconstructionPass implements PostProcessPass {
         "uniform float u_scaleY;\n" +
         "uniform float u_historyWeight;\n" +
         "uniform float u_sharpness;\n" +
+        "uniform vec2 u_jitter;\n" +         // current-frame jitter, in SOURCE texels
         "uniform mat4 u_invCurViewProj;\n" +
         "uniform mat4 u_prevViewProj;\n" +
         "uniform bool u_useEntityMV;\n" +
@@ -102,10 +109,15 @@ public final class FSR2ReconstructionPass implements PostProcessPass {
         "    vec2 sUV = v_texCoord;\n" +
         "\n" +
         "    // 2. Lanczos-3 source kernel: 5x5 taps around the projected\n" +
-        "    //    sub-pixel location in scaled space. Sub-pixel offset within\n" +
-        "    //    the source texel is what drives temporal detail accumulation\n" +
-        "    //    across the jitter cycle.\n" +
-        "    vec2 sceneTexel = sUV / u_invScaledDim;\n" +
+        "    //    sub-pixel location in scaled space. The source was rasterised\n" +
+        "    //    through a projection shifted by u_jitter texels, so the scene\n" +
+        "    //    content belonging to this output pixel sits u_jitter texels\n" +
+        "    //    away in the source — centre the kernel there. Skipping this\n" +
+        "    //    leaves the window mis-centred by up to +/-0.5 texel and\n" +
+        "    //    swinging with the 16-frame Halton cycle (per-frame wobble\n" +
+        "    //    instead of accumulated sub-pixel detail).\n" +
+        "    vec2 kUV = sUV + u_jitter * u_invScaledDim;\n" +
+        "    vec2 sceneTexel = kUV / u_invScaledDim;\n" +
         "    vec2 frac = sceneTexel - floor(sceneTexel) - 0.5;\n" +
         "    vec3 srcAcc = vec3(0.0);\n" +
         "    float weightAcc = 0.0;\n" +
@@ -113,7 +125,7 @@ public final class FSR2ReconstructionPass implements PostProcessPass {
         "    vec3 maxC = vec3(-1e6);\n" +
         "    for (int y = -2; y <= 2; y++) {\n" +
         "        for (int x = -2; x <= 2; x++) {\n" +
-        "            vec2 tapUV = sUV + vec2(float(x), float(y)) * u_invScaledDim;\n" +
+        "            vec2 tapUV = kUV + vec2(float(x), float(y)) * u_invScaledDim;\n" +
         "            vec3 c = texture2D(u_sceneColor, tapUV).rgb;\n" +
         "            float wx = lanczos3(float(x) - frac.x);\n" +
         "            float wy = lanczos3(float(y) - frac.y);\n" +
@@ -326,6 +338,20 @@ public final class FSR2ReconstructionPass implements PostProcessPass {
         shader.setUniform1f("u_historyWeight", histWeight);
         // Sharpness slider doubles as the integrated FSR2 sharpen.
         shader.setUniform1f("u_sharpness", (float) Math.min(1.0, LDOGConfig.fsr1Sharpness * 0.25));
+        // Current-frame jitter, in SOURCE texels — MixinEntityRendererJitter
+        // shifted the projection by this much before the world was rasterised
+        // (it only jitters while TAA is on, which is also the only path that
+        // reaches here). The kernel has to be centred on the same offset or the
+        // reconstruction chases the Halton cycle every frame.
+        //
+        // CAVEAT: that mixin adds the offset to projection element 12/13 (the w
+        // column), so the resulting NDC shift is jitter/clip.w — full strength
+        // about a block away and fading with distance, rather than the
+        // depth-independent shift you get from offsetting element 8/9 (the z
+        // column, the usual TAA formulation). This uniform therefore describes
+        // the near-field shift exactly and over-states it for distant geometry.
+        // Fixing that belongs in the jitter mixin, not here.
+        shader.setUniform2f("u_jitter", JitterHelper.jitterX(), JitterHelper.jitterY());
         shader.setUniform1i("u_useEntityMV", useEntityMV ? 1 : 0);
         shader.setUniform1i("u_useReactiveMask", useMask ? 1 : 0);
 
@@ -367,6 +393,10 @@ public final class FSR2ReconstructionPass implements PostProcessPass {
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
 
         GL11.glPopAttrib();
+        // glPopAttrib restores real GL but leaves GlStateManager's cache holding
+        // the values we set above — the next vanilla GlStateManager call would be
+        // dropped as "already set" against the opposite reality. Re-converge.
+        GlStateSync.afterPopAttrib();
 
         com.limitlessdev.ldog.render.pipeline.PipelineGlProbe.drain("fsr2");
 

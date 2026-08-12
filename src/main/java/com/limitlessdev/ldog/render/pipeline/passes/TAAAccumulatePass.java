@@ -3,6 +3,7 @@ package com.limitlessdev.ldog.render.pipeline.passes;
 import com.limitlessdev.ldog.LDOGMod;
 import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.pipeline.CameraState;
+import com.limitlessdev.ldog.render.pipeline.GlStateSync;
 import com.limitlessdev.ldog.render.pipeline.PostProcessContext;
 import com.limitlessdev.ldog.render.pipeline.PostProcessPass;
 import com.limitlessdev.ldog.render.pipeline.RenderTargetManager;
@@ -345,6 +346,9 @@ public final class TAAAccumulatePass implements PostProcessPass {
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
 
         GL11.glPopAttrib();
+        // Re-converge GlStateManager's cache with the state glPopAttrib just
+        // restored; otherwise the next vanilla state call is silently dropped.
+        GlStateSync.afterPopAttrib();
 
         if (!loggedFirstExecute) {
             loggedFirstExecute = true;

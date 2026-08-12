@@ -117,6 +117,18 @@ public final class ShaderProgram {
         if (loc >= 0) GL20.glUniform2f(loc, x, y);
     }
 
+    /**
+     * Integer 2-vector. GL matches uniform setter type to the DECLARED GLSL
+     * type — feeding an {@code ivec2} through glUniform2f raises
+     * GL_INVALID_OPERATION and silently leaves the uniform at zero. The OF /
+     * Iris spec declares {@code eyeBrightness} / {@code eyeBrightnessSmooth}
+     * as {@code ivec2}, so they must come through here.
+     */
+    public void setUniform2i(String uniform, int x, int y) {
+        int loc = locate(uniform);
+        if (loc >= 0) GL20.glUniform2i(loc, x, y);
+    }
+
     public void setUniform3f(String uniform, float x, float y, float z) {
         int loc = locate(uniform);
         if (loc >= 0) GL20.glUniform3f(loc, x, y, z);

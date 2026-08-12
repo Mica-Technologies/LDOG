@@ -30,13 +30,14 @@ import java.nio.FloatBuffer;
  *
  * Two injection points:
  *   - Sky gluPerspective (ordinal=0): apply jitter only.
- *   - Terrain gluPerspective (ordinal=1): capture un-jittered matrices FIRST
- *     (for motion-vector reprojection in TAA), then apply jitter.
+ *   - Terrain gluPerspective (ordinal=1): apply jitter FIRST, then capture the
+ *     resulting (post-jitter) matrices for motion-vector reprojection.
  *
- * Capture order matters: CameraState reads GL_PROJECTION directly, so it
- * must happen BEFORE the glLoadMatrix that applies jitter. The un-jittered
- * projection is the correct one for MV reprojection — jitter is for sample
- * placement, not for the logical camera pose that MV should track.
+ * Capture order matters, and post-jitter is the correct order: history stores
+ * each frame as it was actually rendered (jitter baked in), so cur/prev must
+ * match that. See ldog$jitterAndCaptureTerrain for the full rationale — the
+ * intuitive "capture the logical camera" order produces a per-frame swimming
+ * artifact.
  */
 @Mixin(EntityRenderer.class)
 public abstract class MixinEntityRendererJitter {

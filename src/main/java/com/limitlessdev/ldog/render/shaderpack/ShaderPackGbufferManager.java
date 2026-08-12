@@ -5,6 +5,7 @@ import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.pipeline.RenderTargetManager;
 import com.limitlessdev.ldog.render.pipeline.ShaderProgram;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.GlStateManager;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
@@ -50,12 +51,12 @@ import java.util.Deque;
  * <h3>Remaining gap</h3>
  *
  * <ul>
- *   <li>Composite stages can READ all colortex but only WRITE colortex0 (the
- *       existing single-target ping-pong). Multi-write composite chains aren't
- *       driven yet.</li>
  *   <li>Custom vertex attributes ({@code mc_Entity}, {@code at_tangent}) absent
  *       → block-id / parallax effects degrade to zero.</li>
- *   <li>Shadow pass wired separately (see shadow target hookup).</li>
+ *   <li>Aux attachments cap at {@code colortex1..7} ({@link #MAX_AUX}); a pack
+ *       asking for more gets GL_NONE in those DRAWBUFFERS slots (the write is
+ *       discarded, but the surviving slots keep their gl_FragData index).</li>
+ *   <li>Shadow pass wired separately (see {@link ShadowMapManager}).</li>
  * </ul>
  *
  * <p>Gated behind {@link LDOGConfig#enableShaderGbuffers} (opt-in, default off).
@@ -69,6 +70,15 @@ public final class ShaderPackGbufferManager {
     /** Saved {@code GL_CURRENT_PROGRAM} ids to restore on {@link #end}. */
     private static final Deque<Integer> PROGRAM_STACK = new ArrayDeque<>();
 
+    /**
+     * The per-frame uniform snapshot shared by EVERY stage of the pack —
+     * gbuffer draws, the shadow program, and the composite chain. One instance
+     * is deliberate: separate instances drift apart on {@code frameCounter} /
+     * {@code frameTimeCounter} (each advances on its own snapshot) and, worse,
+     * interpolate {@code cameraPosition} at different partialTicks than the
+     * {@code gbufferModelView} the same frame was rendered with — an
+     * oscillating translation mismatch that reads as in-motion shimmer.
+     */
     private static final ShaderPackUniforms UNIFORMS = new ShaderPackUniforms();
     private static boolean snapshottedThisFrame;
 
@@ -152,7 +162,13 @@ public final class ShaderPackGbufferManager {
         // draw-buffer set, which we narrow to colortex0 next).
         if (auxCount > 0) {
             setDrawBuffers(rangeAux());
-            GL11.glClearColor(0f, 0f, 0f, 0f);
+            // MUST go through GlStateManager: it caches the clear colour and
+            // skips redundant glClearColor calls. A raw GL11.glClearColor here
+            // desyncs that cache, so vanilla's very next
+            // GlStateManager.clearColor(fog...) sees "already set" and no-ops —
+            // leaving the world cleared to OUR transparent black instead of the
+            // fog colour.
+            GlStateManager.clearColor(0f, 0f, 0f, 0f);
             GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
         }
         setDrawBuffers(SINGLE0);
@@ -186,7 +202,7 @@ public final class ShaderPackGbufferManager {
         ShaderPackRuntime.Stage stage = rt.resolveGbuffer(category);
         if (stage == null || stage.program == null) return;
 
-        ensureFrameSnapshot();
+        ensureWorldFrameSnapshot();
         ensureBlackTex();
 
         int prev = GL11.glGetInteger(GL_CURRENT_PROGRAM);
@@ -221,11 +237,19 @@ public final class ShaderPackGbufferManager {
      * or the program stack — the shadow pass manages its own GL state.
      */
     public static void feedShadowProgram(ShaderProgram program) {
-        ensureFrameSnapshot();
+        ensureWorldFrameSnapshot();
         ensureBlackTex();
         program.bind();
         feedSamplers(program);
         UNIFORMS.feedTo(program);
+        // feedSamplers points shadow/shadowtex0/1 at the 1x1 RGBA black texture.
+        // A shadow.fsh that declares them sampler2DShadow would then sample a
+        // non-compare, non-depth texture — GL_INVALID_OPERATION on every draw of
+        // the shadow pass. Re-point them at the compare-mode dummy DEPTH texture
+        // instead. Deliberately the DUMMY and not the real map: the real shadow
+        // map is the render target of the pass we're feeding, so sampling it
+        // would be a framebuffer feedback loop.
+        ShadowMapManager.feedDummyShadowSamplers(program, SHADOW_UNIT);
     }
 
     /** Restore the program + colortex0-only draw buffer after a {@link #begin}. */
@@ -338,36 +362,86 @@ public final class ShaderPackGbufferManager {
         return r;
     }
 
-    /** Drop any target index that exceeds what we actually allocated. */
+    /** Marks a DRAWBUFFERS slot we can't back with a real attachment. */
+    private static final int SLOT_NONE = -1;
+
+    /**
+     * Mask out any target index we didn't allocate — WITHOUT changing the
+     * position of the surviving entries.
+     *
+     * <p>The array index is the {@code gl_FragData[i]} slot, so removing an
+     * entry shifts every later output into the wrong colortex. With
+     * {@code DRAWBUFFERS:08367} and only colortex0..7 allocated, dropping the
+     * unallocatable {@code 8} would route gl_FragData[1]→colortex3,
+     * [2]→colortex6, [3]→colortex7 — cross-contaminating three buffers a pack
+     * like BSL then reads as normals/material data. GL_NONE holds the slot
+     * open instead: the write is discarded and the rest stay aligned.
+     */
     private static int[] mapDrawBuffers(int[] requested) {
-        int n = 0;
-        for (int idx : requested) if (idx <= auxCount) n++;
-        if (n == requested.length) return requested;
-        int[] r = new int[Math.max(1, n)];
-        if (n == 0) { r[0] = 0; return r; }
-        int j = 0;
-        for (int idx : requested) if (idx <= auxCount) r[j++] = idx;
-        return r;
+        int[] masked = null;
+        for (int i = 0; i < requested.length; i++) {
+            int idx = requested[i];
+            if (idx >= 0 && idx <= auxCount) continue;
+            if (masked == null) masked = requested.clone();
+            masked[i] = SLOT_NONE;
+        }
+        return masked == null ? requested : masked;
     }
 
-    /** Set glDrawBuffers to the given colortex indices (as COLOR_ATTACHMENT0+i). */
+    /**
+     * Set glDrawBuffers to the given colortex indices (as COLOR_ATTACHMENT0+i);
+     * {@link #SLOT_NONE} entries become GL_NONE placeholders.
+     */
     private static void setDrawBuffers(int[] indices) {
         DRAW_BUF.clear();
-        for (int idx : indices) DRAW_BUF.put(GL30.GL_COLOR_ATTACHMENT0 + idx);
+        for (int idx : indices) {
+            if (!DRAW_BUF.hasRemaining()) break;  // more outputs than attachments
+            DRAW_BUF.put(idx == SLOT_NONE ? GL11.GL_NONE : GL30.GL_COLOR_ATTACHMENT0 + idx);
+        }
         DRAW_BUF.flip();
         GL20.glDrawBuffers(DRAW_BUF);
     }
 
-    private static void ensureFrameSnapshot() {
+    /**
+     * The frame's shared uniform snapshot. Feed it to any pack program —
+     * gbuffer, shadow, deferred, composite or final — so every stage of the
+     * frame sees identical values. Take the snapshot first via
+     * {@link #ensureFrameSnapshot(float)}.
+     */
+    public static ShaderPackUniforms uniforms() { return UNIFORMS; }
+
+    /**
+     * Take this frame's uniform snapshot if no stage has taken it yet, using
+     * the REAL partialTicks of the frame being rendered. Idempotent within a
+     * frame — the latch resets at {@link #beginFrame()} (and at
+     * {@link #releaseFrameSnapshot()} for packs whose only consumer is the
+     * composite chain).
+     */
+    public static void ensureFrameSnapshot(float partialTicks) {
         if (snapshottedThisFrame) return;
         Minecraft mc = Minecraft.getMinecraft();
+        UNIFORMS.rotatePrev();
+        UNIFORMS.snapshot(mc.displayWidth, mc.displayHeight, partialTicks);
+        snapshottedThisFrame = true;
+    }
+
+    /**
+     * Release the snapshot latch so the next frame re-samples. Called at the
+     * end of the composite chain, which is the last consumer in a frame — a
+     * safety net for frames where {@link #beginFrame()} never fired (renderSky
+     * is skipped below 4 chunks of render distance).
+     */
+    public static void releaseFrameSnapshot() {
+        snapshottedThisFrame = false;
+    }
+
+    private static void ensureWorldFrameSnapshot() {
+        if (snapshottedThisFrame) return;
         // We're mid-world-render here (first gbuffer bind) — capture the camera
         // matrices so the later composite pass feeds them as gbufferModelView/
         // Projection instead of MC's GUI ortho matrix.
         ShaderPackUniforms.captureWorldMatrices();
-        UNIFORMS.rotatePrev();
-        UNIFORMS.snapshot(mc.displayWidth, mc.displayHeight, mc.getRenderPartialTicks());
-        snapshottedThisFrame = true;
+        ensureFrameSnapshot(Minecraft.getMinecraft().getRenderPartialTicks());
     }
 
     private static void feedSamplers(ShaderProgram program) {

@@ -119,6 +119,13 @@ public final class RenderTargetManager {
         int newScaledW = Math.max(1, Math.round(baseW * clampedScale));
         int newScaledH = Math.max(1, Math.round(baseH * clampedScale));
 
+        // Record the scale unconditionally. Two nearby scales can round to the
+        // same pixel dimensions (0.995 and 1.0 at most resolutions), in which
+        // case we correctly skip reallocation — but leaving the field on the
+        // old value makes getScale() lie to the debug overlay and to
+        // PipelineDebugStats for as long as the dimensions hold.
+        scale = clampedScale;
+
         if (sceneFbo != 0
             && baseWidth == baseW
             && baseHeight == baseH
@@ -132,7 +139,6 @@ public final class RenderTargetManager {
 
         baseWidth = baseW;
         baseHeight = baseH;
-        scale = clampedScale;
         scaledWidth = newScaledW;
         scaledHeight = newScaledH;
         hdr = requestedHDR;

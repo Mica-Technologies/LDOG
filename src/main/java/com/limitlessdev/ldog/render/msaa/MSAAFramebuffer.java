@@ -28,14 +28,25 @@ public final class MSAAFramebuffer {
 
     private MSAAFramebuffer() {}
 
+    /**
+     * Core GL 3.0 is required, not merely the EXT equivalents.
+     *
+     * <p>This class calls {@code GL30.*} exclusively — {@code glGenFramebuffers},
+     * {@code glRenderbufferStorageMultisample}, {@code glBlitFramebuffer}. On a
+     * GL 2.1 driver exposing only {@code EXT_framebuffer_multisample} +
+     * {@code EXT_framebuffer_blit} (older Intel iGPUs) those entry points are
+     * null and LWJGL throws IllegalStateException on the first call, i.e.
+     * accepting EXT here promised support we then crash on. Requiring GL 3.0
+     * outright also matches {@link
+     * com.limitlessdev.ldog.render.pipeline.RenderTargetManager#isSupported()},
+     * so the two features agree about what the GPU can do.
+     */
     public static boolean isSupported() {
         if (unsupported) return false;
-        boolean ok = GLContext.getCapabilities().OpenGL30
-            || (GLContext.getCapabilities().GL_EXT_framebuffer_multisample
-                && GLContext.getCapabilities().GL_EXT_framebuffer_blit);
+        boolean ok = GLContext.getCapabilities().OpenGL30;
         if (!ok && !loggedSupport) {
             loggedSupport = true;
-            LDOGMod.LOGGER.warn("LDOG: MSAA unsupported — missing GL 3.0 or EXT_framebuffer_multisample+blit");
+            LDOGMod.LOGGER.warn("LDOG: MSAA unsupported — GL 3.0 not available");
             unsupported = true;
         }
         return ok;
