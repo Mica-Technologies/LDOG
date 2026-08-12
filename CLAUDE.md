@@ -31,9 +31,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./gradlew test
 ```
 
-**Requirements:** Java 17 (Azul Zulu Community recommended). The project uses Jabel to allow modern Java syntax while targeting JVM 8. Heap is set to `-Xmx3G` in `gradle.properties` for decompilation.
+**Requirements:** Java 17 works for local dev, but Java 21 is now recommended -- RetroFuturaGradle deprecates older Gradle-JVM versions and CI already runs on JDK 21 (mod code still targets JVM 8 via Jabel regardless of which JDK runs Gradle). Heap is set to `-Xmx3G` in `gradle.properties` for decompilation.
 
-**JDK Location:** The JDK is managed via IntelliJ and located at `C:\Users\<username>\.jdks\azul-17.0.18`. When running Gradle from the CLI, set `JAVA_HOME` to this path:
+**JDK Location:** The JDK is managed via IntelliJ and located at `C:\Users\<username>\.jdks\azul-17.0.18` (or an equivalent `azul-21.x` install). When running Gradle from the CLI, set `JAVA_HOME` to this path:
 ```bash
 JAVA_HOME="C:/Users/<username>/.jdks/azul-17.0.18" ./gradlew build
 ```
@@ -44,31 +44,44 @@ This is **LDOG** (Limitless Development Optigame), a **Minecraft 1.12.2 Forge mo
 
 ### Project Goal
 
-Replace OptiFine's functionality with a well-architected, performant, open-source alternative. Key feature targets:
+Replace OptiFine's functionality with a well-architected, performant, open-source alternative. Status of the major feature areas (see `docs/ARCHITECTURE.md` for how each is implemented):
 
-| Feature Area | Description | Priority |
+| Feature Area | Status | Description |
 |---|---|---|
-| **Rendering Optimizations** | Chunk culling, entity batching, particle limits | High |
-| **Connected Textures (CTM)** | Glass panes, bookshelves, etc. connecting visually | High |
-| **Emissive Textures** | Glow layers on blocks/items without light emission | High |
-| **Dynamic Lights** | Light from held torches, dropped glowstone, etc. | Medium |
-| **HD Textures** | Support for textures larger than 16x16 | Medium |
-| **Custom Sky** | Configurable sky rendering, custom sun/moon | Medium |
-| **Shader Support** | GLSL shader pipeline for post-processing and lighting | Stretch |
+| **Rendering Optimizations** | Shipped | Entity/TESR distance culling + LOD, particle culling/filters/caps, FPS reducer, weather density, fog controls, biome blend radius |
+| **HD Textures** | Shipped | Textures larger than 16x16, plus extended-border mipmaps |
+| **Connected Textures (CTM)** | Shipped, partial format coverage | Glass panes, bookshelves, etc. connecting visually |
+| **Emissive Textures** | Shipped | Glow layers on blocks/items without light emission |
+| **Dynamic Lights** | Shipped | Light from held torches, dropped glowstone, etc. |
+| **Lighting Customization** | Shipped | Color temperature, fullbright, night darkness, HDR tonemapping |
+| **Custom Sky** | Shipped, partial format coverage | Configurable sky rendering, custom sun/moon |
+| **Better Grass/Snow, Natural Textures, Random Mobs, Custom Colors** | Shipped, partial format coverage | OptiFine-format resource pack features |
+| **Shader Support** | Shipped, real-pack parity expanding | OptiFine-format packs: gbuffers MRT dispatch, shadow pass, composite/final chain, GLSL preprocessor, `#include`, `worldN` overrides |
+| **Beyond OptiFine** | Shipped | FSR1/FSR2-style upscaling + RCAS, TAA, HDR pipeline + bloom, borderless windowed, tabbed settings GUI with presets |
 
 ### Source Layout
 
 ```
 src/main/java/com/limitlessdev/ldog/
-+-- LDOGMod.java          # @Mod entry point
-+-- config/                # Forge @Config-based configuration
++-- LDOGMod.java           # @Mod entry point
++-- config/                 # Forge @Config-based configuration + presets
 |   +-- LDOGConfig.java
-+-- proxy/                 # Client/server proxy pattern
+|   +-- LDOGPreset.java
++-- proxy/                  # Client/server proxy pattern
 |   +-- ClientProxy.java
 |   +-- CommonProxy.java
-+-- compat/                # Mod compatibility (OptiFine detection)
++-- compat/                 # OptiFine detection + per-feature override modes
 |   +-- OptiFineCompat.java
-+-- mixin/                 # Mixin transformations for vanilla rendering
++-- asm/                    # FML core plugin (early mixin loading)
+|   +-- LDOGCorePlugin.java
++-- gui/                    # Tabbed in-game settings GUI, shader pack pickers
++-- texture/                 # HD textures, anisotropic filtering, extended-border mipmaps
++-- mixin/                  # ~150 Mixin transformations (three configs -- see docs/CONVENTIONS.md)
++-- render/                  # Feature implementations, one package per feature
+    +-- pipeline/            # Post-process pipeline: render targets, upscalers, TAA, HDR/bloom
+    +-- shaderpack/           # OptiFine-format shader pack loading + gbuffer/shadow/composite dispatch
+    +-- ctm/, emissive/, dynamiclights/, sky/, bettergrass/, biome/,
+    |   color/, display/, font/, fxaa/, msaa/, natural/, particles/, randommobs/
 ```
 
 ### Key Design Decisions

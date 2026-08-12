@@ -18,27 +18,39 @@ if (!LDOGConfig.enableFeatureName) return;
 ```
 
 ### Mixin Configs
-- **`mixins.ldog.json`** (late, via `ILateMixinLoader`): Most mixins go here. Works for classes loaded after mod init — renderers, GUI, chunk builders.
-- **`mixins.ldog.early.json`** (also late loader): For classes loaded slightly earlier — `BlockFluidRenderer`, `TextureAtlasSprite`.
-- **Cannot target**: `World`, `Minecraft`, `Block`, `BlockLiquid` — these load before any MixinBooter config. Use Forge events or target wrapper classes (`ChunkCache` instead of `World`).
+- **`mixins.ldog.json`** (late, via `ILateMixinLoader` in `LDOGMixinLoader`): Most mixins go here. Works for classes loaded after mod init — renderers, GUI, chunk builders.
+- **`mixins.ldog.early.json`** (also `ILateMixinLoader`): For classes loaded slightly earlier — `BlockFluidRenderer`, `TextureAtlasSprite`, `TextureMap`, `Stitcher`.
+- **`mixins.ldog.vanilla.json`** (**early**, via `IEarlyMixinLoader` in `LDOGCorePlugin`, an `IFMLLoadingPlugin`): For classes loaded during the FML core-plugin phase, before either late config gets a chance to register — `Minecraft`, `FontRenderer`, `GuiIngame`, `EnumDyeColor`, `Potion`. `MixinMinecraftBorderless` is the example: it targets `Minecraft` directly and only works because it's routed through this config, not the late one.
+- **Still cannot target**: `World`, `Block`, `BlockLiquid` — no LDOG mixin targets these directly, even via the early config. Use Forge events, or target a wrapper class that loads later (`ChunkCache` instead of `World`).
 
 ### Known Target Workarounds
 | Want to target | Use instead | Why |
 |---|---|---|
-| `World.getCombinedLight` | `ChunkCache.getCombinedLight` | World loads before mixins |
-| `Block` methods | Forge events | Block loads too early |
-| `Minecraft` | Forge events | Loads too early |
+| `World.getCombinedLight` | `ChunkCache.getCombinedLight` | World loads before any mixin config, early or late |
+| `Block` methods | Forge events | Block loads too early for any mixin config |
+| `Minecraft` | `mixins.ldog.vanilla.json` (early, `IEarlyMixinLoader`) | Loads too early for the late configs, but the early config reaches it — see `MixinMinecraftBorderless` |
 
 ---
 
 ## Config Conventions (`LDOGConfig.java`)
 
 ### Organization
-Config fields are grouped by section with comment headers:
-1. **Future Features** — toggles for major feature modules (CTM, emissive, dynamic lights, shaders)
-2. **Performance** — rendering optimizations, distances, culling
-3. **FPS Management** — FPS reducer, AFK settings
-4. **Visual** — water, lighting
+Config fields are grouped by section with `// ----` comment headers. Current sections, in file order (verify against `LDOGConfig.java` — new features append a new section rather than overloading an existing one):
+1. **Global Preset** — the `globalPreset` string (`LDOGPreset`)
+2. **Future Features** — historical header name; these toggles (CTM, emissive, dynamic lights, custom sky, better grass/snow, natural textures, custom colors, random mobs, lighting customization) are all shipped, not future work — don't take the header literally
+3. **Visual: Anti-aliasing / Texture filtering** — AF, extended-border mipmaps
+4. **Font Rendering** — smooth/HD/TTF font settings
+5. **HDR pipeline** — tonemap, exposure, bloom
+6. **Performance: Rendering Optimizations** — distances, culling, LOD
+7. **Per-type particle toggles**
+8. **Vignette post-process**
+9. **Atmosphere: Clouds / Fog / Sky / Weather**
+10. **Comfort / Cinematic toggles**
+11. **Info HUD overlays**
+12. **Tier A small features** / **Tier B HUD hides**
+13. **Performance: FPS Management** — FPS reducer, AFK settings
+14. **Visual: Water**
+15. **OptiFine Interop** — per-feature `OFOverrideMode` selections
 
 ### Naming
 - Feature toggles: `enable<FeatureName>` (boolean, default `true`)
@@ -53,13 +65,24 @@ Features that overlap with OptiFine are auto-disabled at runtime via `OptiFineCo
 ## GUI Settings Conventions (`GuiLDOGSettings.java`)
 
 ### Button IDs
-Allocated in ranges by section:
-- 10-19: Performance
-- 20-29: FPS Management
-- 30-39: Visual (water)
-- 40-49: Features (CTM, emissive, etc.)
-- 50-59: Lighting (dynamic lights, temperature)
-- 200: Done button
+Allocated in ranges by section (verify against the `BTN_*` constants at the top of `GuiLDOGSettings.java` — the GUI has grown well past the original single-digit-decade scheme, so treat this as a map of occupied ranges, not an exhaustive list):
+- 10-14: Performance / render opts
+- 20-23: FPS Management
+- 30-36: Visual (water)
+- 40-48: Features (CTM, emissive, dynamic lights, custom sky, HD textures, shaders, gbuffers, shadows)
+- 50-60: Lighting (dynamic-light temperature, HDR toggle)
+- 70-75: Better grass/snow, natural textures, custom colors, random mobs, perf overlay
+- 80-85: Anisotropic filtering, MSAA, FXAA, extended-border mipmaps
+- 90-99, 580: Font (smooth/HD/TTF)
+- 100-114: Post-process pipeline (scale, upscaler, FSR1/RCAS, TAA, auto-scale, borderless)
+- 200: Done button (`BTN_DONE`)
+- 300: Global LDOG preset cycle
+- **400-406: OptiFine-interop mode buttons.** Deliberately placed at 400+ — an earlier revision put these in a lower range and collided with `BTN_DONE` (200); they were moved specifically to stay clear of 200 and 300 (see the comment above `BTN_OF_MODE_CTM` in `GuiLDOGSettings.java`). Don't reclaim 200-399 for new OF-interop buttons.
+- 500-573: Particle/vignette/atmosphere toggles, comfort toggles, HUD-hide/overlay toggles
+- 600-610: HDR pipeline / bloom, shader pack picker button
+- 1000+: Tab buttons (`BTN_TAB_BASE`) and Shaders-tab pack-row buttons (1090+)
+
+New buttons should go in an unused sub-range of their section, or start a new hundred-block if the section is full — don't renumber existing constants.
 
 ### Cycling Values
 Discrete options use `cycleValue(int[] values, int current)` or `cycleValue(double[] values, double current)`. Arrays define the allowed steps.
