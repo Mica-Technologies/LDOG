@@ -38,19 +38,24 @@ import java.util.zip.ZipFile;
 @Mod.EventBusSubscriber(modid = Tags.MODID, value = Side.CLIENT)
 public class EmissiveTextureRegistry {
 
-    public static String emissiveSuffix = "_e";
+    public static volatile String emissiveSuffix = "_e";
 
-    private static final Map<String, TextureAtlasSprite> emissiveSprites = new HashMap<>();
-    private static final Map<String, String> emissiveNames = new HashMap<>();
-    private static final Set<Block> emissiveBlocks = new HashSet<>();
+    // These three are read from ChunkRenderWorker threads (block/item emissive
+    // dispatch) while resource reloads rebuild them on the client thread. They
+    // are never mutated in place: each reload builds a fresh map and publishes it
+    // through a single volatile write of an unmodifiable view, so a concurrent
+    // reader either sees the whole old snapshot or the whole new one.
+    private static volatile Map<String, TextureAtlasSprite> emissiveSprites = Collections.emptyMap();
+    private static volatile Map<String, String> emissiveNames = Collections.emptyMap();
+    private static volatile Set<Block> emissiveBlocks = Collections.emptySet();
 
     @SubscribeEvent(priority = EventPriority.LOW)
     public static void onTextureStitchPre(TextureStitchEvent.Pre event) {
         if (!LDOGConfig.enableEmissiveTextures) return;
 
-        emissiveSprites.clear();
-        emissiveNames.clear();
-        emissiveBlocks.clear();
+        emissiveSprites = Collections.emptyMap();
+        emissiveNames = Collections.emptyMap();
+        emissiveBlocks = Collections.emptySet();
         loadEmissiveProperties();
 
         TextureMap map = event.getMap();
@@ -58,7 +63,9 @@ public class EmissiveTextureRegistry {
 
         // Scan resource packs directly for _e.png files
         // (can't enumerate registered sprites -- map is cleared before this event)
-        int found = scanResourcePacksForEmissives(mc, map);
+        Map<String, String> names = new HashMap<>();
+        int found = scanResourcePacksForEmissives(mc, map, names);
+        emissiveNames = Collections.unmodifiableMap(names);
 
         LDOGMod.LOGGER.info("LDOG: Registered {} emissive texture overlays (suffix='{}')",
             found, emissiveSuffix);
@@ -69,7 +76,7 @@ public class EmissiveTextureRegistry {
         if (!LDOGConfig.enableEmissiveTextures) return;
 
         TextureMap map = event.getMap();
-        emissiveSprites.clear();
+        Map<String, TextureAtlasSprite> sprites = new HashMap<>();
 
         for (Map.Entry<String, String> entry : emissiveNames.entrySet()) {
             String baseName = entry.getKey();
@@ -77,21 +84,25 @@ public class EmissiveTextureRegistry {
 
             TextureAtlasSprite emissiveSprite = map.getAtlasSprite(emissiveName);
             if (emissiveSprite != null && !"missingno".equals(emissiveSprite.getIconName())) {
-                emissiveSprites.put(baseName, emissiveSprite);
+                sprites.put(baseName, emissiveSprite);
             }
         }
 
-        if (!emissiveSprites.isEmpty()) {
-            LDOGMod.LOGGER.info("LDOG: {} emissive textures loaded into atlas", emissiveSprites.size());
+        emissiveSprites = Collections.unmodifiableMap(sprites);
+
+        if (!sprites.isEmpty()) {
+            LDOGMod.LOGGER.info("LDOG: {} emissive textures loaded into atlas", sprites.size());
         }
     }
 
     @SubscribeEvent
     public static void onModelBake(ModelBakeEvent event) {
         if (!LDOGConfig.enableEmissiveTextures) return;
+
+        emissiveBlocks = Collections.emptySet();
         if (emissiveSprites.isEmpty()) return;
 
-        emissiveBlocks.clear();
+        Set<Block> blocks = new HashSet<>();
 
         // Check each block's model to see if its textures have emissive overlays
         for (Block block : Block.REGISTRY) {
@@ -106,7 +117,7 @@ public class EmissiveTextureRegistry {
                         mrl.getNamespace().equals(regName.getNamespace())) {
                         IBakedModel model = event.getModelRegistry().getObject(mrl);
                         if (model != null && modelHasEmissive(model, block)) {
-                            emissiveBlocks.add(block);
+                            blocks.add(block);
                             break;
                         }
                     }
@@ -114,8 +125,10 @@ public class EmissiveTextureRegistry {
             }
         }
 
-        if (!emissiveBlocks.isEmpty()) {
-            LDOGMod.LOGGER.info("LDOG: {} blocks have emissive textures", emissiveBlocks.size());
+        emissiveBlocks = Collections.unmodifiableSet(blocks);
+
+        if (!blocks.isEmpty()) {
+            LDOGMod.LOGGER.info("LDOG: {} blocks have emissive textures", blocks.size());
         }
     }
 
@@ -157,7 +170,8 @@ public class EmissiveTextureRegistry {
      * For each "textures/blocks/foo_e.png" found, register "blocks/foo_e" as a sprite
      * and map "blocks/foo" -> "blocks/foo_e".
      */
-    private static int scanResourcePacksForEmissives(Minecraft mc, TextureMap map) {
+    private static int scanResourcePacksForEmissives(Minecraft mc, TextureMap map,
+                                                      Map<String, String> names) {
         File resourcePacksDir = new File(mc.gameDir, "resourcepacks");
         if (!resourcePacksDir.exists()) return 0;
 
@@ -167,15 +181,16 @@ public class EmissiveTextureRegistry {
 
         for (File packFile : packs) {
             if (packFile.isDirectory()) {
-                found += scanDirectoryForEmissives(packFile, map);
+                found += scanDirectoryForEmissives(packFile, map, names);
             } else if (packFile.getName().endsWith(".zip")) {
-                found += scanZipForEmissives(packFile, map);
+                found += scanZipForEmissives(packFile, map, names);
             }
         }
         return found;
     }
 
-    private static int scanDirectoryForEmissives(File packDir, TextureMap map) {
+    private static int scanDirectoryForEmissives(File packDir, TextureMap map,
+                                                  Map<String, String> names) {
         // Look for textures/blocks/*_e.png and textures/items/*_e.png
         int found = 0;
         for (String subDir : new String[]{"textures/blocks", "textures/items"}) {
@@ -193,7 +208,7 @@ public class EmissiveTextureRegistry {
                         + fileName.substring(0, fileName.length() - 4); // remove .png
                     String basePath = spritePath.substring(0, spritePath.length() - emissiveSuffix.length());
 
-                    registerEmissive(map, basePath, spritePath);
+                    registerEmissive(map, names, basePath, spritePath);
                     found++;
                 }
             }
@@ -201,7 +216,8 @@ public class EmissiveTextureRegistry {
         return found;
     }
 
-    private static int scanZipForEmissives(File zipFile, TextureMap map) {
+    private static int scanZipForEmissives(File zipFile, TextureMap map,
+                                            Map<String, String> names) {
         int found = 0;
         try (ZipFile zip = new ZipFile(zipFile)) {
             Enumeration<? extends ZipEntry> entries = zip.entries();
@@ -221,7 +237,7 @@ public class EmissiveTextureRegistry {
                     String spritePath = afterTextures.substring(0, afterTextures.length() - 4); // remove .png
                     String basePath = spritePath.substring(0, spritePath.length() - emissiveSuffix.length());
 
-                    registerEmissive(map, basePath, spritePath);
+                    registerEmissive(map, names, basePath, spritePath);
                     found++;
                 }
             }
@@ -231,7 +247,8 @@ public class EmissiveTextureRegistry {
         return found;
     }
 
-    private static void registerEmissive(TextureMap map, String basePath, String emissivePath) {
+    private static void registerEmissive(TextureMap map, Map<String, String> names,
+                                          String basePath, String emissivePath) {
         // basePath = "blocks/diamond_ore"
         // emissivePath = "blocks/diamond_ore_e"
 
@@ -249,7 +266,7 @@ public class EmissiveTextureRegistry {
         String emissiveName = "minecraft:" + emissivePath;
 
         map.registerSprite(new ResourceLocation("minecraft", emissivePath));
-        emissiveNames.put(baseName, emissiveName);
+        names.put(baseName, emissiveName);
 
         LDOGMod.LOGGER.info("LDOG: Found emissive: {} -> {}", baseName, emissiveName);
     }

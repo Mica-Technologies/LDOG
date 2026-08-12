@@ -36,12 +36,17 @@ import java.util.*;
 @Mod.EventBusSubscriber(modid = Tags.MODID, value = Side.CLIENT)
 public class RandomEntityTextureHandler {
 
-    // Maps vanilla texture path -> list of variant texture paths
-    // e.g., "textures/entity/cow/cow.png" -> ["textures/entity/cow/cow.png", ".../cow2.png", ...]
-    private static final Map<String, List<ResourceLocation>> variantMap = new HashMap<>();
+    // Maps vanilla texture location -> list of variant texture locations
+    // e.g., minecraft:textures/entity/cow/cow.png -> [.../cow.png, .../cow2.png, ...]
+    //
+    // Keyed by ResourceLocation rather than its String form: getVariantTexture
+    // runs in the entity bind path (every entity, every frame) and toString()
+    // allocated there. ResourceLocation's equals/hashCode are String-backed, so
+    // the lookup is allocation-free.
+    private static final Map<ResourceLocation, List<ResourceLocation>> variantMap = new HashMap<>();
 
     // Optional weights per texture group (from .properties files)
-    private static final Map<String, int[]> weightMap = new HashMap<>();
+    private static final Map<ResourceLocation, int[]> weightMap = new HashMap<>();
 
     @SubscribeEvent
     public static void onTextureStitchPre(TextureStitchEvent.Pre event) {
@@ -58,8 +63,7 @@ public class RandomEntityTextureHandler {
     public static ResourceLocation getVariantTexture(ResourceLocation originalTexture, Entity entity) {
         if (!LDOGConfig.enableRandomEntityTextures || entity == null) return null;
 
-        String key = originalTexture.toString();
-        List<ResourceLocation> variants = variantMap.get(key);
+        List<ResourceLocation> variants = variantMap.get(originalTexture);
         if (variants == null || variants.size() <= 1) return null;
 
         // UUID-based deterministic selection. Mask the sign bit rather than
@@ -67,7 +71,7 @@ public class RandomEntityTextureHandler {
         // bounds.
         int hash = entity.getUniqueID().hashCode() & 0x7fffffff;
 
-        int[] weights = weightMap.get(key);
+        int[] weights = weightMap.get(originalTexture);
         if (weights != null && weights.length == variants.size()) {
             // Weighted selection
             int totalWeight = 0;
@@ -122,7 +126,8 @@ public class RandomEntityTextureHandler {
             // Check OptiFine random paths
             List<ResourceLocation> variants = findVariants(mc, vanillaPath, entityName);
             if (variants.size() > 1) {
-                String key = "minecraft:" + vanillaPath;
+                // variants.get(0) is the vanilla location findVariants seeded.
+                ResourceLocation key = variants.get(0);
                 variantMap.put(key, variants);
                 totalVariants += variants.size();
 
@@ -188,7 +193,8 @@ public class RandomEntityTextureHandler {
         return variants;
     }
 
-    private static void loadVariantProperties(Minecraft mc, String entityName, String key, int variantCount) {
+    private static void loadVariantProperties(Minecraft mc, String entityName,
+                                               ResourceLocation key, int variantCount) {
         for (String prefix : new String[]{"optifine/random/", "mcpatcher/mob/"}) {
             ResourceLocation propsLoc = new ResourceLocation("minecraft",
                 prefix + "entity/" + entityName + ".properties");

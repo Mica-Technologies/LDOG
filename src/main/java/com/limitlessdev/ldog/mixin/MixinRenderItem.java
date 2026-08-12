@@ -30,6 +30,13 @@ public abstract class MixinRenderItem {
             at = @At("RETURN"))
     private void ldog$renderEmissiveItemOverlay(IBakedModel model, int color,
                                                  ItemStack stack, CallbackInfo ci) {
+        // renderEffect() re-runs the whole model twice through this same method
+        // (via the public renderModel(model, color) overload, which passes
+        // ItemStack.EMPTY) with the glint texture bound, a scaled texture matrix
+        // and additive blending. Re-tessellating the emissive overlay under that
+        // state smears it across the item, so the glint passes are skipped: an
+        // empty stack is vanilla's only way into here.
+        if (stack.isEmpty()) return;
         if (LDOGConfig.enableEmissiveTextures && EmissiveTextureRegistry.getEmissiveSpriteCount() > 0) {
             EmissiveItemRenderHandler.renderEmissiveOverlay(model);
         }

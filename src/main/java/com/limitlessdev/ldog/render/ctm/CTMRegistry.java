@@ -151,9 +151,8 @@ public class CTMRegistry {
         // If the resource pack explicitly lists matchTiles, respect those
         if (!props.getMatchTiles().isEmpty()) {
             Set<String> result = new HashSet<>();
-            for (String t : props.getMatchTiles()) {
-                result.add("minecraft:" + t);
-                result.add(t);  // also try without namespace prefix
+            for (String raw : props.getMatchTiles()) {
+                addMatchTileAliases(result, raw);
             }
             return result;
         }
@@ -177,6 +176,39 @@ public class CTMRegistry {
         // null = no restriction (apply to all sprites); used for full-block models
         // where the glass surface quads all have cullface and don't appear here.
         return sideSprites.isEmpty() ? null : sideSprites;
+    }
+
+    /**
+     * Expands one {@code matchTiles} entry into every form it could surface as a
+     * sprite icon name.
+     *
+     * <p>The comparison site ({@code CTMBakedModel}) tests against
+     * {@code TextureAtlasSprite#getIconName()}, which in 1.12 is the full
+     * {@code "minecraft:blocks/glass"} form. OptiFine, however, lets packs write
+     * a bare {@code glass} (resolved relative to {@code textures/blocks}) or an
+     * explicit {@code blocks/glass}, optionally with a {@code .png} suffix —
+     * none of which ever equalled an icon name, so any matchBlocks+matchTiles
+     * definition silently matched nothing.
+     */
+    private static void addMatchTileAliases(Set<String> out, String raw) {
+        String t = raw.trim();
+        if (t.endsWith(".png")) {
+            t = t.substring(0, t.length() - ".png".length());
+        }
+        if (t.isEmpty()) return;
+
+        int colon = t.indexOf(':');
+        String namespace = colon >= 0 ? t.substring(0, colon) : "minecraft";
+        String path = colon >= 0 ? t.substring(colon + 1) : t;
+
+        out.add(t);
+        out.add(path);
+        out.add(namespace + ":" + path);
+        if (path.indexOf('/') < 0) {
+            // Bare tile name: OptiFine resolves it under textures/blocks.
+            out.add("blocks/" + path);
+            out.add(namespace + ":blocks/" + path);
+        }
     }
 
     private static void scanResourcePacks(Minecraft mc, TextureMap map) {

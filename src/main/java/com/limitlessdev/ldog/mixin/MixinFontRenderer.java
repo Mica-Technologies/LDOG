@@ -34,13 +34,21 @@ public abstract class MixinFontRenderer {
             remap = false))
     private void ldog$bindActiveFontTexture(FontRenderer self, ResourceLocation vanillaFont) {
         FontRendererInvoker invoker = (FontRendererInvoker) self;
-        // Only swap for the main Minecraft FontRenderer. Forge's SplashFontRenderer
-        // (and potentially other mod subclasses) overrides bindTexture with a
-        // private texture pool that throws on unknown ResourceLocations, and runs
-        // on a dedicated thread with its own GL context — binding our HD location
-        // there would crash and running our filter refresh would hit the wrong
-        // context. Pass-through for any subclass.
-        if (self.getClass() != FontRenderer.class) {
+        // Only swap for the main Minecraft FontRenderer.
+        //
+        // 1. Forge's SplashFontRenderer (and potentially other mod subclasses)
+        //    overrides bindTexture with a private texture pool that throws on
+        //    unknown ResourceLocations, and runs on a dedicated thread with its
+        //    own GL context — binding our HD location there would crash and
+        //    running our filter refresh would hit the wrong context.
+        // 2. Minecraft#standardGalacticFontRenderer is an *exact* FontRenderer
+        //    instance, so the class check alone let the HD/TTF font replace the
+        //    enchanting table's Standard Galactic glyphs. It is distinguished by
+        //    its texture (textures/font/ascii_sga.png), which the redirected
+        //    bindTexture call hands us as `vanillaFont`.
+        if (self.getClass() != FontRenderer.class
+                || !"textures/font/ascii.png".equals(vanillaFont.getPath())
+                || !"minecraft".equals(vanillaFont.getNamespace())) {
             invoker.ldog$invokeBindTexture(vanillaFont);
             return;
         }

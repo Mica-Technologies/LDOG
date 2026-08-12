@@ -46,45 +46,53 @@ public class CustomSkyLayer {
         this.axisZ = axisZ;
     }
 
+    /** Length of a Minecraft day in ticks. */
+    public static final int DAY_TICKS = 24000;
+
     /**
      * Compute the alpha (0.0-1.0) for this layer based on the current world time.
      * Returns 0 if the layer is fully faded out.
      */
     public float getAlpha(long worldTime) {
-        int time = (int) (worldTime % 24000L);
-
-        // Handle wrap-around (e.g., fadeIn starts at 23000, ends at 1000)
-        float fadeInAlpha = getFadeAlpha(time, startFadeIn, endFadeIn);
-        float fadeOutAlpha = 1.0f - getFadeAlpha(time, startFadeOut, endFadeOut);
-
-        return Math.min(fadeInAlpha, fadeOutAlpha);
+        return computeAlpha((int) (worldTime % DAY_TICKS),
+            startFadeIn, endFadeIn, startFadeOut, endFadeOut);
     }
 
-    private static float getFadeAlpha(int time, int start, int end) {
-        if (start == end) return time >= start ? 1.0f : 0.0f;
+    /**
+     * Piecewise fade-in / hold / fade-out alpha, evaluated on the 24000-tick
+     * circle rather than the linear tick line.
+     *
+     * <p>All four keyframes are first rotated so that {@code startFadeIn} sits at
+     * 0; every configuration then reduces to the plain ordered case
+     * {@code 0 <= endFadeIn <= startFadeOut <= endFadeOut}, which is how OptiFine
+     * evaluates sky layers. Comparing raw tick values instead breaks for any
+     * schedule that crosses midnight — e.g. fade in 21000-22000 with fade out
+     * 2000-3000 read as fully transparent at t=1000, and a wrapped fade-in
+     * (23000 -> 1000) vanished the instant it finished fading in.
+     */
+    public static float computeAlpha(int timeOfDay,
+                                      int startFadeIn, int endFadeIn,
+                                      int startFadeOut, int endFadeOut) {
+        int time = normalize(timeOfDay - startFadeIn);
+        int fadeInEnd = normalize(endFadeIn - startFadeIn);
+        int fadeOutStart = normalize(startFadeOut - startFadeIn);
+        int fadeOutEnd = normalize(endFadeOut - startFadeIn);
 
-        int duration;
-        int elapsed;
-
-        if (end > start) {
-            // Normal range (e.g., 6000 to 8000)
-            duration = end - start;
-            if (time < start) return 0.0f;
-            if (time >= end) return 1.0f;
-            elapsed = time - start;
-        } else {
-            // Wrapping range (e.g., 23000 to 1000)
-            duration = (24000 - start) + end;
-            if (time >= start) {
-                elapsed = time - start;
-            } else if (time < end) {
-                elapsed = (24000 - start) + time;
-            } else {
-                return 0.0f;
-            }
-            if (elapsed >= duration) return 1.0f;
+        if (time < fadeInEnd) {
+            return (float) time / (float) fadeInEnd;
         }
+        if (time < fadeOutStart) {
+            return 1.0f;
+        }
+        if (time < fadeOutEnd) {
+            return 1.0f - (float) (time - fadeOutStart) / (float) (fadeOutEnd - fadeOutStart);
+        }
+        return 0.0f;
+    }
 
-        return (float) elapsed / (float) duration;
+    /** Wraps a tick delta into [0, 24000). */
+    private static int normalize(int ticks) {
+        int t = ticks % DAY_TICKS;
+        return t < 0 ? t + DAY_TICKS : t;
     }
 }

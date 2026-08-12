@@ -42,19 +42,13 @@ public final class EmissiveRenderHandler {
         CompiledChunk compiledChunk = EmissiveRenderLayer.getCompiledChunk();
         if (cacheBuilder == null || compiledChunk == null) return;
 
-        BufferBuilder buffer = cacheBuilder.getWorldRendererByLayer(BlockRenderLayer.CUTOUT_MIPPED);
+        // Blocks that declare more than one render layer are dispatched through
+        // BlockModelRenderer once per layer; the overlay is layer-independent, so
+        // emit it only for the first visit to this position in this rebuild.
+        if (!EmissiveRenderLayer.claimOverlayPos(pos)) return;
 
-        // Ensure the CUTOUT_MIPPED layer is started (buffer needs begin() call)
-        // Translation must match RenderChunk.preRenderBlocks: negative of chunk base position
-        if (!compiledChunk.isLayerStarted(BlockRenderLayer.CUTOUT_MIPPED)) {
-            compiledChunk.setLayerStarted(BlockRenderLayer.CUTOUT_MIPPED);
-            EmissiveRenderLayer.markEmissiveBufferStarted();
-            buffer.begin(7, DefaultVertexFormats.BLOCK);
-            buffer.setTranslation(
-                -(double)(pos.getX() & ~15),
-                -(double)(pos.getY() & ~15),
-                -(double)(pos.getZ() & ~15));
-        }
+        BufferBuilder buffer = cacheBuilder.getWorldRendererByLayer(BlockRenderLayer.CUTOUT_MIPPED);
+        boolean bufferReady = compiledChunk.isLayerStarted(BlockRenderLayer.CUTOUT_MIPPED);
 
         // Sided quads
         for (EnumFacing face : EnumFacing.values()) {
@@ -64,6 +58,7 @@ public final class EmissiveRenderHandler {
             for (BakedQuad quad : quads) {
                 TextureAtlasSprite emissive = EmissiveTextureRegistry.getEmissiveSprite(quad.getSprite());
                 if (emissive != null) {
+                    bufferReady = startBuffer(buffer, compiledChunk, pos, bufferReady);
                     addFullbrightQuad(buffer, quad, emissive, pos, face);
                 }
             }
@@ -74,9 +69,33 @@ public final class EmissiveRenderHandler {
         for (BakedQuad quad : generalQuads) {
             TextureAtlasSprite emissive = EmissiveTextureRegistry.getEmissiveSprite(quad.getSprite());
             if (emissive != null) {
+                bufferReady = startBuffer(buffer, compiledChunk, pos, bufferReady);
                 addFullbrightQuad(buffer, quad, emissive, pos, quad.getFace());
             }
         }
+    }
+
+    /**
+     * Starts the CUTOUT_MIPPED layer buffer on first use, and always flags that
+     * emissive geometry was written this rebuild.
+     *
+     * <p>Begun lazily (on the first emissive quad rather than up front) so a block
+     * flagged emissive whose current state happens to have no emissive quads does
+     * not open — and thereby force the render of — an empty layer.
+     */
+    private static boolean startBuffer(BufferBuilder buffer, CompiledChunk compiledChunk,
+                                        BlockPos pos, boolean alreadyStarted) {
+        EmissiveRenderLayer.markEmissiveQuadsWritten();
+        if (alreadyStarted) return true;
+
+        // Translation must match RenderChunk.preRenderBlocks: negative of chunk base position
+        compiledChunk.setLayerStarted(BlockRenderLayer.CUTOUT_MIPPED);
+        buffer.begin(7, DefaultVertexFormats.BLOCK);
+        buffer.setTranslation(
+            -(double)(pos.getX() & ~15),
+            -(double)(pos.getY() & ~15),
+            -(double)(pos.getZ() & ~15));
+        return true;
     }
 
     /**

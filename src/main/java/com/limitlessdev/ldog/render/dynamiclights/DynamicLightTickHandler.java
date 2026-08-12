@@ -20,10 +20,19 @@ public class DynamicLightTickHandler {
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
-        if (!LDOGConfig.enableDynamicLights) return;
-        if (Minecraft.getMinecraft().world == null) return;
 
-        DynamicLightManager.getInstance().tickUpdate();
+        DynamicLightManager manager = DynamicLightManager.getInstance();
+        if (!LDOGConfig.enableDynamicLights || Minecraft.getMinecraft().world == null) {
+            // Drop tracked sources once on logout (or when the feature is turned
+            // off). Each source pins an Entity, and through it a whole dead World
+            // graph, which would otherwise survive for the entire menu session.
+            if (manager.getActiveLightCount() > 0) {
+                manager.clear();
+            }
+            return;
+        }
+
+        manager.tickUpdate();
     }
 
     @SubscribeEvent
