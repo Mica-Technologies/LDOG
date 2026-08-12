@@ -1,6 +1,5 @@
 package com.limitlessdev.ldog.mixin;
 
-import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.emissive.EmissiveRenderHandler;
 import com.limitlessdev.ldog.render.emissive.EmissiveTextureRegistry;
 import net.minecraft.block.state.IBlockState;
@@ -37,9 +36,14 @@ public abstract class MixinBlockModelRenderer {
         // Per-block early-out: only emissive-mapped blocks need the overlay.
         // Without this, every block in a chunk rebuild paid a 6-face getQuads
         // scan (and started the emissive layer buffer) for nothing.
-        if (LDOGConfig.enableEmissiveTextures
-                && EmissiveTextureRegistry.getEmissiveSpriteCount() > 0
-                && EmissiveTextureRegistry.isEmissiveBlock(stateIn.getBlock())) {
+        //
+        // isActive() (config toggle + OptiFine interop decision) is tested LAST
+        // on purpose: this runs per block per chunk rebuild, on worker threads,
+        // so the two array-lookup guards ahead of it eliminate all but the
+        // handful of blocks that were about to do real work anyway.
+        if (EmissiveTextureRegistry.getEmissiveSpriteCount() > 0
+                && EmissiveTextureRegistry.isEmissiveBlock(stateIn.getBlock())
+                && EmissiveTextureRegistry.isActive()) {
             EmissiveRenderHandler.renderEmissiveOverlay(
                 modelIn, stateIn, worldIn, posIn, checkSides, rand);
         }

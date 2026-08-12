@@ -2,6 +2,7 @@ package com.limitlessdev.ldog.mixin;
 
 import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.dynamiclights.DynamicLightManager;
+import com.limitlessdev.ldog.render.dynamiclights.DynamicLightTickHandler;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.ChunkCache;
 import org.spongepowered.asm.mixin.Mixin;
@@ -30,6 +31,14 @@ public abstract class MixinWorldDynamicLights {
 
         int dynamicLight = DynamicLightManager.getInstance().getDynamicLightLevel(pos);
         if (dynamicLight <= 0) return;
+
+        // OptiFine interop check deliberately sits behind the "no light here"
+        // guard: this runs for every block of every chunk rebuild, on worker
+        // threads. When OF owns dynamic lights the tick handler never registers
+        // a source, so the manager is empty and we exit above without ever
+        // touching the compat cache. This is the belt-and-braces path for a
+        // mid-session interop-mode flip that leaves stale sources behind.
+        if (!DynamicLightTickHandler.isActive()) return;
 
         int original = cir.getReturnValue();
         int skyLight = (original >> 20) & 0xF;

@@ -1,5 +1,6 @@
 {
   "package": "com.limitlessdev.ldog.mixin",
+  "plugin": "com.limitlessdev.ldog.asm.LDOGMixinPlugin",
   "refmap": "mixins.ldog.refmap.json",
   "target": "@env(DEFAULT)",
   "minVersion": "0.8",

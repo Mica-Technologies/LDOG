@@ -153,4 +153,32 @@ public final class OptiFineCompat {
     public static boolean shouldHandleRenderOptimizations() {
         return true;
     }
+
+    // ===== Test seam =====
+    // Package-private and never referenced from production code. Exists only so
+    // unit tests can exercise the AUTO / LDOG_OVERRIDE / OPTIFINE_OVERRIDE
+    // decision matrix for the "OptiFine present" half, which is otherwise
+    // unreachable without an actual OptiFine install on the classpath.
+
+    /**
+     * TEST ONLY — force the detection result and drop the decision cache.
+     *
+     * @param simulateOptiFineLoaded what {@link #isOptiFineLoaded()} should
+     *        report, or {@code null} to restore real classpath detection
+     */
+    static void setDetectedForTests(Boolean simulateOptiFineLoaded) {
+        decisionCache.clear();
+        if (simulateOptiFineLoaded == null) {
+            detectionDone = false;
+            optiFineDetected = false;
+        } else {
+            detectionDone = true;
+            optiFineDetected = simulateOptiFineLoaded;
+        }
+    }
+
+    /** TEST ONLY — restore real classpath detection. Call from test teardown. */
+    static void resetForTests() {
+        setDetectedForTests(null);
+    }
 }

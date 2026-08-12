@@ -2,6 +2,7 @@ package com.limitlessdev.ldog.render.ctm;
 
 import com.limitlessdev.ldog.LDOGMod;
 import com.limitlessdev.ldog.Tags;
+import com.limitlessdev.ldog.compat.OptiFineCompat;
 import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.mixin.AccessorTextureMap;
 import net.minecraft.block.Block;
@@ -37,6 +38,17 @@ public class CTMRegistry {
 
     private static final Map<Integer, CTMEntry> ctmByBlockId = new HashMap<>();
 
+    /**
+     * Feature gate: the user's toggle AND the OptiFine interop decision.
+     * {@link OptiFineCompat#shouldHandleCTM()} is a cached O(1) lookup, so this
+     * is cheap enough to call from every gate site. All three sites below are
+     * load-time (stitch / model bake), never per-quad — once bake declines to
+     * wrap models there is nothing left for CTM to cost at render time.
+     */
+    public static boolean isActive() {
+        return LDOGConfig.enableConnectedTextures && OptiFineCompat.shouldHandleCTM();
+    }
+
     private static class CTMEntry {
         final CTMProperties properties;
         final List<ResourceLocation> tileLocations;
@@ -50,7 +62,7 @@ public class CTMRegistry {
 
     @SubscribeEvent(priority = EventPriority.LOW)
     public static void onTextureStitchPre(TextureStitchEvent.Pre event) {
-        if (!LDOGConfig.enableConnectedTextures) return;
+        if (!isActive()) return;
 
         ctmByBlockId.clear();
         TextureMap map = event.getMap();
@@ -65,7 +77,7 @@ public class CTMRegistry {
 
     @SubscribeEvent
     public static void onTextureStitchPost(TextureStitchEvent.Post event) {
-        if (!LDOGConfig.enableConnectedTextures) return;
+        if (!isActive()) return;
 
         TextureMap map = event.getMap();
 
@@ -85,7 +97,7 @@ public class CTMRegistry {
 
     @SubscribeEvent
     public static void onModelBake(ModelBakeEvent event) {
-        if (!LDOGConfig.enableConnectedTextures) return;
+        if (!isActive()) return;
         if (ctmByBlockId.isEmpty()) return;
 
         int wrapped = 0;

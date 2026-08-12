@@ -1,6 +1,7 @@
 package com.limitlessdev.ldog.mixin;
 
 import com.limitlessdev.ldog.LDOGMod;
+import com.limitlessdev.ldog.compat.OptiFineCompat;
 import com.limitlessdev.ldog.config.LDOGConfig;
 import net.minecraft.client.renderer.texture.PngSizeInfo;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
@@ -36,7 +37,9 @@ public abstract class MixinTextureAtlasSprite {
     @Inject(method = "loadSprite", at = @At("HEAD"), cancellable = true)
     private void ldog$handleHDTextures(PngSizeInfo sizeInfo, boolean hasAnimation,
                                         CallbackInfo ci) {
-        if (!LDOGConfig.enableHDTextures) return;
+        // Runs once per sprite at stitch time — the cached OptiFine interop
+        // lookup rides along with the config toggle at no meaningful cost.
+        if (!LDOGConfig.enableHDTextures || !OptiFineCompat.shouldHandleHDTextures()) return;
 
         int w = sizeInfo.pngWidth;
         int h = sizeInfo.pngHeight;

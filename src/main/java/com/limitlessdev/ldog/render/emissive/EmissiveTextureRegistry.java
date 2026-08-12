@@ -2,6 +2,7 @@ package com.limitlessdev.ldog.render.emissive;
 
 import com.limitlessdev.ldog.LDOGMod;
 import com.limitlessdev.ldog.Tags;
+import com.limitlessdev.ldog.compat.OptiFineCompat;
 import com.limitlessdev.ldog.config.LDOGConfig;
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
@@ -49,9 +50,26 @@ public class EmissiveTextureRegistry {
     private static volatile Map<String, String> emissiveNames = Collections.emptyMap();
     private static volatile Set<Block> emissiveBlocks = Collections.emptySet();
 
+    /**
+     * Feature gate: the user's toggle AND the OptiFine interop decision.
+     * {@link OptiFineCompat#shouldHandleEmissive()} is a cached O(1) lookup.
+     *
+     * <p>The three call sites below are load-time (stitch / model bake), and
+     * declining there is what actually switches the feature off: nothing gets
+     * registered, so {@link #getEmissiveSpriteCount()} stays 0 for the session.
+     * The render-path mixins
+     * ({@link com.limitlessdev.ldog.mixin.MixinBlockModelRenderer},
+     * {@link com.limitlessdev.ldog.mixin.MixinRenderItem}) also call this, but
+     * only after their sprite-count / emissive-block guards have already passed,
+     * so it stays off the hot path for the overwhelming majority of draws.
+     */
+    public static boolean isActive() {
+        return LDOGConfig.enableEmissiveTextures && OptiFineCompat.shouldHandleEmissive();
+    }
+
     @SubscribeEvent(priority = EventPriority.LOW)
     public static void onTextureStitchPre(TextureStitchEvent.Pre event) {
-        if (!LDOGConfig.enableEmissiveTextures) return;
+        if (!isActive()) return;
 
         emissiveSprites = Collections.emptyMap();
         emissiveNames = Collections.emptyMap();
@@ -73,7 +91,7 @@ public class EmissiveTextureRegistry {
 
     @SubscribeEvent
     public static void onTextureStitchPost(TextureStitchEvent.Post event) {
-        if (!LDOGConfig.enableEmissiveTextures) return;
+        if (!isActive()) return;
 
         TextureMap map = event.getMap();
         Map<String, TextureAtlasSprite> sprites = new HashMap<>();
@@ -97,7 +115,7 @@ public class EmissiveTextureRegistry {
 
     @SubscribeEvent
     public static void onModelBake(ModelBakeEvent event) {
-        if (!LDOGConfig.enableEmissiveTextures) return;
+        if (!isActive()) return;
 
         emissiveBlocks = Collections.emptySet();
         if (emissiveSprites.isEmpty()) return;

@@ -1,6 +1,7 @@
 package com.limitlessdev.ldog.render.shaderpack;
 
 import com.limitlessdev.ldog.LDOGMod;
+import com.limitlessdev.ldog.compat.OptiFineCompat;
 import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.pipeline.RenderTargetManager;
 import com.limitlessdev.ldog.render.pipeline.ShaderProgram;
@@ -101,6 +102,10 @@ public final class ShaderPackGbufferManager {
     /** True when the dispatcher should attempt to take over draws at all. */
     public static boolean isActive() {
         if (!LDOGConfig.enableShaders || !LDOGConfig.enableShaderGbuffers) return false;
+        // Never drive a gbuffer program while OptiFine owns the shader pipeline —
+        // two systems rebinding GL programs around the same draws is a guaranteed
+        // corrupt frame. Cached O(1) lookup, so it is safe on this per-draw path.
+        if (!OptiFineCompat.shouldHandleShaders()) return false;
         ShaderPackRuntime rt = ShaderPackManager.INSTANCE.getRuntime();
         return rt != null && rt.hasGbuffers();
     }

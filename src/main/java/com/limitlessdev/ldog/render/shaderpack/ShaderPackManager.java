@@ -1,6 +1,7 @@
 package com.limitlessdev.ldog.render.shaderpack;
 
 import com.limitlessdev.ldog.LDOGMod;
+import com.limitlessdev.ldog.compat.OptiFineCompat;
 import com.limitlessdev.ldog.config.LDOGConfig;
 import net.minecraft.client.Minecraft;
 
@@ -341,7 +342,11 @@ public final class ShaderPackManager {
      * any time the user changes the selection in the GUI.
      */
     public void applyConfigSelection() {
-        if (!LDOGConfig.enableShaders) {
+        // Master gate for the whole shader-pack stack. Deactivating here leaves
+        // no runtime for the gbuffer dispatcher, composite pass or shadow map to
+        // pick up, so this single check switches the feature off wholesale when
+        // OptiFine owns shaders.
+        if (!LDOGConfig.enableShaders || !OptiFineCompat.shouldHandleShaders()) {
             deactivate();
             return;
         }

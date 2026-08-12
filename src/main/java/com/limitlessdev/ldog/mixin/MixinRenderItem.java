@@ -1,6 +1,5 @@
 package com.limitlessdev.ldog.mixin;
 
-import com.limitlessdev.ldog.config.LDOGConfig;
 import com.limitlessdev.ldog.render.emissive.EmissiveItemRenderHandler;
 import com.limitlessdev.ldog.render.emissive.EmissiveTextureRegistry;
 import net.minecraft.client.renderer.RenderItem;
@@ -37,7 +36,11 @@ public abstract class MixinRenderItem {
         // state smears it across the item, so the glint passes are skipped: an
         // empty stack is vanilla's only way into here.
         if (stack.isEmpty()) return;
-        if (LDOGConfig.enableEmissiveTextures && EmissiveTextureRegistry.getEmissiveSpriteCount() > 0) {
+        // isActive() folds in the OptiFine interop decision alongside the config
+        // toggle; it is a cached O(1) lookup, tested after the sprite-count guard
+        // so the common "no emissive textures loaded" case costs one int compare.
+        if (EmissiveTextureRegistry.getEmissiveSpriteCount() > 0
+                && EmissiveTextureRegistry.isActive()) {
             EmissiveItemRenderHandler.renderEmissiveOverlay(model);
         }
     }

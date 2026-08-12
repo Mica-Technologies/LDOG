@@ -107,7 +107,7 @@ Version is derived from Git tags. No manual version setting needed (see `modVers
 ## Documentation
 
 `docs/` holds tracked technical documentation about the code:
-- `docs/ARCHITECTURE.md` -- Planned architecture for each feature module
+- `docs/ARCHITECTURE.md` -- Architecture of each feature module
 - `docs/CONVENTIONS.md` -- Code/mixin/GUI conventions established during development
 
 `docs/agent-plans/` is a **gitignored** folder for plans and session logs worked on with Claude/agents (local-only, never committed):

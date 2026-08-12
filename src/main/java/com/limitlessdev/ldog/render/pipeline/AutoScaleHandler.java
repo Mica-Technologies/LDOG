@@ -199,18 +199,8 @@ public final class AutoScaleHandler {
     /** Original 9a.9 logic — adjust internalRenderScale only. */
     private static void tickSimple(int fps, int target) {
         int currentIdx = findLadderIdx(LDOGConfig.internalRenderScale);
-        int newIdx = currentIdx;
-        String decision;
-
-        if (fps < target * DOWNSHIFT_THRESHOLD && currentIdx < LADDER.length - 1) {
-            newIdx = currentIdx + 1;
-            decision = "DOWN";
-        } else if (fps > target * UPSHIFT_THRESHOLD && currentIdx > 0) {
-            newIdx = currentIdx - 1;
-            decision = "UP";
-        } else {
-            decision = "HOLD";
-        }
+        int newIdx = decideStep(fps, target, currentIdx, LADDER.length);
+        String decision = describeStep(currentIdx, newIdx);
 
         if (newIdx != currentIdx) {
             LDOGConfig.internalRenderScale = LADDER[newIdx];
@@ -246,18 +236,8 @@ public final class AutoScaleHandler {
                 currentAggressiveIdx, AGGRESSIVE_LADDER[currentAggressiveIdx].label);
         }
 
-        int newIdx = currentAggressiveIdx;
-        String decision;
-
-        if (fps < target * DOWNSHIFT_THRESHOLD && currentAggressiveIdx < AGGRESSIVE_LADDER.length - 1) {
-            newIdx = currentAggressiveIdx + 1;
-            decision = "DOWN";
-        } else if (fps > target * UPSHIFT_THRESHOLD && currentAggressiveIdx > 0) {
-            newIdx = currentAggressiveIdx - 1;
-            decision = "UP";
-        } else {
-            decision = "HOLD";
-        }
+        int newIdx = decideStep(fps, target, currentAggressiveIdx, AGGRESSIVE_LADDER.length);
+        String decision = describeStep(currentAggressiveIdx, newIdx);
 
         if (newIdx != currentAggressiveIdx) {
             applyAggressiveTier(AGGRESSIVE_LADDER[newIdx]);
@@ -307,6 +287,34 @@ public final class AutoScaleHandler {
     }
 
     /**
+     * The FPS-vs-target threshold decision, shared by both modes: step one tier
+     * down below {@link #DOWNSHIFT_THRESHOLD}x target, one tier up above
+     * {@link #UPSHIFT_THRESHOLD}x, hold in the dead zone between. Clamped at
+     * both ends of the ladder.
+     *
+     * <p>Pure function of its arguments (no config, no Minecraft) so the
+     * decision rule is unit-testable on its own.
+     *
+     * @return the ladder index to move to, equal to {@code currentIdx} on HOLD
+     */
+    static int decideStep(int fps, int target, int currentIdx, int ladderLength) {
+        if (fps < target * DOWNSHIFT_THRESHOLD && currentIdx < ladderLength - 1) {
+            return currentIdx + 1;
+        }
+        if (fps > target * UPSHIFT_THRESHOLD && currentIdx > 0) {
+            return currentIdx - 1;
+        }
+        return currentIdx;
+    }
+
+    /** Log label for a {@link #decideStep} result. */
+    static String describeStep(int currentIdx, int newIdx) {
+        if (newIdx > currentIdx) return "DOWN";
+        if (newIdx < currentIdx) return "UP";
+        return "HOLD";
+    }
+
+    /**
      * Find the AGGRESSIVE_LADDER tier that best matches the current settings.
      * Score is a weighted distance: scale-delta dominates, with penalties for
      * mismatched upscaler / FXAA toggle / FXAA quality. The non-zero weights
@@ -320,14 +328,25 @@ public final class AutoScaleHandler {
      * intent, since {@link #applyAggressiveTier} leaves FSR2 in place.
      */
     private static int snapToAggressiveTier() {
+        return snapToAggressiveTier(LDOGConfig.internalRenderScale, LDOGConfig.upscalerAlgorithm,
+            LDOGConfig.enableFXAA, LDOGConfig.fxaaQuality);
+    }
+
+    /**
+     * Pure form of {@link #snapToAggressiveTier()} — takes the four settings it
+     * scores against explicitly instead of reading {@link LDOGConfig}, so the
+     * scoring rule is unit-testable without touching global state.
+     */
+    static int snapToAggressiveTier(double scale, String upscalerAlgorithm,
+                                    boolean fxaaEnabled, String fxaaQuality) {
         int best = 0;
         double bestScore = Double.MAX_VALUE;
         for (int i = 0; i < AGGRESSIVE_LADDER.length; i++) {
             AggressiveTier t = AGGRESSIVE_LADDER[i];
-            double score = Math.abs(t.scale - LDOGConfig.internalRenderScale);
-            if (!t.upscalerKey.equalsIgnoreCase(LDOGConfig.upscalerAlgorithm)) score += 0.4;
-            if (t.fxaaEnabled != LDOGConfig.enableFXAA) score += 0.2;
-            if (!t.fxaaKey.equalsIgnoreCase(LDOGConfig.fxaaQuality)) score += 0.1;
+            double score = Math.abs(t.scale - scale);
+            if (!t.upscalerKey.equalsIgnoreCase(upscalerAlgorithm)) score += 0.4;
+            if (t.fxaaEnabled != fxaaEnabled) score += 0.2;
+            if (!t.fxaaKey.equalsIgnoreCase(fxaaQuality)) score += 0.1;
             if (score < bestScore) {
                 bestScore = score;
                 best = i;
@@ -335,6 +354,23 @@ public final class AutoScaleHandler {
         }
         return best;
     }
+
+    // ===== Read-only ladder accessors (package-private, for unit tests) =====
+
+    /** Number of tiers in the simple-mode scale ladder. */
+    static int simpleLadderSize() { return LADDER.length; }
+
+    /** Render scale of simple-mode ladder tier {@code idx}. */
+    static double simpleLadderScale(int idx) { return LADDER[idx]; }
+
+    /** Number of tiers in the aggressive-mode ladder. */
+    static int aggressiveLadderSize() { return AGGRESSIVE_LADDER.length; }
+
+    /** Render scale of aggressive-mode ladder tier {@code idx}. */
+    static double aggressiveLadderScale(int idx) { return AGGRESSIVE_LADDER[idx].scale; }
+
+    /** Upscaler config key of aggressive-mode ladder tier {@code idx}. */
+    static String aggressiveLadderUpscaler(int idx) { return AGGRESSIVE_LADDER[idx].upscalerKey; }
 
     /** min(display refresh, MC's limitFramerate). Falls back to 60 on query failure. */
     private static int computeTargetFPS(Minecraft mc) {
@@ -354,8 +390,8 @@ public final class AutoScaleHandler {
         return Math.min(refresh, limit);
     }
 
-    /** Snap a continuous scale to the nearest ladder index. */
-    private static int findLadderIdx(double scale) {
+    /** Snap a continuous scale to the nearest ladder index. Package-private for unit tests. */
+    static int findLadderIdx(double scale) {
         int best = 0;
         double bestDelta = Math.abs(LADDER[0] - scale);
         for (int i = 1; i < LADDER.length; i++) {

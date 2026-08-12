@@ -166,7 +166,10 @@ public abstract class MixinRenderGlobal {
     // We want to render in every pass the vanilla sky renders in — no skip.
     @Inject(method = "renderSky(FI)V", at = @At("RETURN"))
     private void ldog$renderCustomSkyPost(float partialTicks, int pass, CallbackInfo ci) {
-        if (LDOGConfig.enableCustomSky) {
+        // Per-frame (not per-quad), so folding the cached OptiFine interop
+        // decision in alongside the config toggle costs nothing measurable.
+        if (LDOGConfig.enableCustomSky
+                && com.limitlessdev.ldog.compat.OptiFineCompat.shouldHandleCustomSky()) {
             CustomSkyRenderer.renderCustomSky(partialTicks);
         }
     }

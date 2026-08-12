@@ -80,8 +80,8 @@ class LDOGConfigTest {
     }
 
     @Test
-    @DisplayName("Future features are enabled by default (ready for when implemented)")
-    void futureFeatureDefaults() {
+    @DisplayName("OptiFine-parity features are enabled by default")
+    void optiFineParityFeatureDefaults() {
         assertTrue(LDOGConfig.enableConnectedTextures);
         assertTrue(LDOGConfig.enableEmissiveTextures);
         assertTrue(LDOGConfig.enableDynamicLights);

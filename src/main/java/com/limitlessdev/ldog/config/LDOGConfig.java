@@ -20,7 +20,9 @@ public class LDOGConfig {
     })
     public static String globalPreset = "custom";
 
-    // ---- Future Features (not yet implemented) ----
+    // ---- OptiFine Feature Parity (CTM / emissive / dynamic lights / lighting) ----
+    // All shipped. Each auto-defers to OptiFine when it is installed, per the
+    // per-feature interop modes in the "OptiFine Interop" section below.
 
     @Config.Comment({
         "Enable connected textures (CTM).",
