@@ -3,13 +3,12 @@
 # Boot a dedicated server via `./gradlew runServer` and assert it reaches "Done (".
 #
 # Why this exists: LDOG is a client-side rendering mod that claims to be safe to
-# install with no server dependency. Its @Mod does not set clientSideOnly, so a
-# dedicated server fully loads the mod — entry point, proxies, mixin bootstrap.
-# Code that compiles fine can still be impossible to load there: a client-only
-# class (Minecraft, GL, renderers) referenced from common/proxy code, or a
-# Side.CLIENT handler touching the client directly. Forge only catches those at
-# server startup, so `./gradlew build` is perfectly happy right up until a server
-# admin installs the jar. This single boot is what verifies the server-safe claim.
+# install with no server dependency. Its @Mod sets clientSideOnly = true, so FML
+# skips the mod container on a dedicated server — but the coremod path
+# (LDOGCorePlugin, the mixin bootstrap) still runs there, and a bad early mixin
+# or a client-only class reached from coremod code fails only at server startup,
+# where `./gradlew build` is perfectly happy. This single boot verifies both the
+# clean skip of the mod container and the server-safety of the coremod path.
 # (The sibling SUM mod shipped three such bugs at once in 2026.07.19 and took the
 # Alto server down; every one of them was reachable from a single server boot.)
 #

@@ -132,6 +132,17 @@ public class GuiLDOGSettingsList extends GuiListExtended {
 
         @Override
         public void updatePosition(int slotIndex, int x, int y, float partialTicks) {
+            // Deliberately empty, matching vanilla's own GuiOptionsRowList.Row.
+            // GuiSlot.drawSelectionBox calls this for rows scrolled out of the
+            // clipped viewport, but it *also* unconditionally calls drawSlot ->
+            // drawEntry for every row right after regardless of visibility, which
+            // resets leftButton/rightButton.y to the row's real current position.
+            // Any state set here would just be overwritten later in the same
+            // frame, so there's nothing useful to do here. The actual hazard this
+            // method's name suggests (a hidden row's button occupying the same
+            // screen position as other UI, e.g. the tab strip, once scrolled) is
+            // guarded where it matters: GuiLDOGSettings.handleListButtonClick
+            // bounds its row scan to [settingsList.top, settingsList.bottom).
         }
 
         @Override

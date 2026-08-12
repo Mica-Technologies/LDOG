@@ -94,6 +94,23 @@ public class GuiShaderPackPicker extends GuiScreen {
     }
 
     @Override
+    protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws java.io.IOException {
+        super.mouseClicked(mouseX, mouseY, mouseButton);
+        // GuiListExtended's row click handling (PackEntry.mousePressed) is only
+        // reached via GuiListExtended.mouseClicked, which vanilla input never
+        // calls on its own — handleMouseInput above only covers scroll-wheel
+        // and drag polling. Without this explicit forward, rows in this
+        // standalone picker were unclickable. Mirrors GuiLDOGSettings.mouseClicked.
+        if (list != null) list.mouseClicked(mouseX, mouseY, mouseButton);
+    }
+
+    @Override
+    protected void mouseReleased(int mouseX, int mouseY, int state) {
+        super.mouseReleased(mouseX, mouseY, state);
+        if (list != null) list.mouseReleased(mouseX, mouseY, state);
+    }
+
+    @Override
     public boolean doesGuiPauseGame() { return false; }
 
     private void openShaderpacksFolder() {

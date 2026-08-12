@@ -91,6 +91,17 @@ public enum LDOGPreset {
         LDOGConfig.enableRenderOptimizations = true;
         LDOGConfig.enableParticleCulling = false;
         LDOGConfig.enableEntityLOD = false;
+        // Atmosphere / comfort settings are visual tweaks just like the feature
+        // toggles above — without resetting them, "closest to vanilla look" is
+        // false for anyone who'd previously tweaked these outside a preset.
+        LDOGConfig.cloudHeightOverride = -1;
+        LDOGConfig.fogDistanceMultiplier = 1.0;
+        LDOGConfig.sunSizeMultiplier = 1.0;
+        LDOGConfig.moonSizeMultiplier = 1.0;
+        LDOGConfig.enableWeatherRender = true;
+        LDOGConfig.weatherDensity = 1.0;
+        LDOGConfig.enableFullbright = false;
+        LDOGConfig.nightDarkness = 1.0;
     }
 
     /** Max perf: visuals off, optimizations + upscaling to scale 0.5. */
@@ -121,6 +132,12 @@ public enum LDOGPreset {
         LDOGConfig.enablePostProcessPipeline = true;
         UpscalerPreset.PERFORMANCE.apply();
         LDOGConfig.enableRcasSharpen = false;
+        // TAA/HDR-pipeline/bloom are all extra render cost with no perf upside —
+        // a "Performance" preset that leaves them on (if the user had them on
+        // under Custom) would silently undercut the point of picking it.
+        LDOGConfig.enableTAA = false;
+        LDOGConfig.enableHDRPipeline = false;
+        LDOGConfig.enableBloom = false;
     }
 
     /** LDOG's opinionated defaults as of first install. */

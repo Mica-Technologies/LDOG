@@ -39,6 +39,14 @@ public final class FXAAHandler {
 
     private static boolean currentlyLoaded = false;
 
+    /**
+     * The exact {@link ShaderGroup} instance FXAAHandler itself installed via
+     * {@link EntityRenderer#loadShader(ResourceLocation)}. Compared by
+     * identity in {@link #unload} so we only ever tear down our own shader —
+     * see that method for why.
+     */
+    private static ShaderGroup fxaaShaderGroup = null;
+
     private FXAAHandler() {}
 
     /**
@@ -61,11 +69,13 @@ public final class FXAAHandler {
         if (shouldBeLoaded) {
             try {
                 mc.entityRenderer.loadShader(FXAA_SHADER);
+                fxaaShaderGroup = ((AccessorEntityRenderer) mc.entityRenderer).ldog$getShaderGroup();
                 currentlyLoaded = true;
                 LDOGMod.LOGGER.info("LDOG: FXAA shader loaded");
             } catch (Exception e) {
                 LDOGMod.LOGGER.error("LDOG: Failed to load FXAA shader", e);
                 currentlyLoaded = false;
+                fxaaShaderGroup = null;
             }
         } else {
             unload(mc.entityRenderer);
@@ -77,10 +87,18 @@ public final class FXAAHandler {
     private static void unload(EntityRenderer renderer) {
         AccessorEntityRenderer accessor = (AccessorEntityRenderer) renderer;
         ShaderGroup current = accessor.ldog$getShaderGroup();
-        if (current != null) {
+        // EntityRenderer's shaderGroup slot is shared with vanilla's mob-vision
+        // shaders (spectating through a creeper/enderman swaps in
+        // shaders/post/creeper.json or spider.json independently of LDOG).
+        // Only tear down the group if it's the exact instance we loaded —
+        // otherwise mob vision (or anything else) owns it right now, and
+        // deleting it out from under the player would kill their vision shader
+        // mid-spectate. Just drop our own tracking in that case.
+        if (current != null && current == fxaaShaderGroup) {
             current.deleteShaderGroup();
+            accessor.ldog$setShaderGroup(null);
+            accessor.ldog$setUseShader(false);
         }
-        accessor.ldog$setShaderGroup(null);
-        accessor.ldog$setUseShader(false);
+        fxaaShaderGroup = null;
     }
 }

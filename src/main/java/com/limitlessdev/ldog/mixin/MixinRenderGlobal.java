@@ -9,6 +9,7 @@ import com.limitlessdev.ldog.render.sky.CustomSkyRenderer;
 import net.minecraft.client.renderer.RenderGlobal;
 import net.minecraft.client.renderer.culling.ICamera;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.util.BlockRenderLayer;
 import org.lwjgl.opengl.GL30;
 import org.spongepowered.asm.mixin.Mixin;
@@ -91,8 +92,16 @@ public abstract class MixinRenderGlobal {
         double dz = entity.posZ - camZ;
         double distSq = dx * dx + dy * dy + dz * dz;
 
+        // Bosses (Ender Dragon, Wither, ...) and other players are exempt from
+        // the distance cull below. entityRenderDistance defaults to 64 blocks —
+        // applied uniformly that would make a dragon, wither, or a nearby
+        // player vanish well within normal engagement/visibility range, a
+        // visible vanilla regression. They still render vanilla-far and are
+        // still subject to the entity-LOD skip-frame logic further down.
+        boolean ldog$exemptFromDistanceCull = entity instanceof EntityPlayer || !entity.isNonBoss();
+
         // Distance culling
-        if (LDOGConfig.entityRenderDistance > 0) {
+        if (!ldog$exemptFromDistanceCull && LDOGConfig.entityRenderDistance > 0) {
             double maxDist = LDOGConfig.entityRenderDistance;
             if (distSq > maxDist * maxDist) {
                 LDOGStats.entitiesCulledByDistance++;

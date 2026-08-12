@@ -181,7 +181,7 @@ public class GuiLDOGSettings extends GuiScreen {
 
     private static final int[] ANISOTROPIC_VALUES = {2, 4, 8, 16};
     private static final int[] MSAA_VALUES = {2, 4, 8};
-    private static final double[] PIPELINE_SCALE_VALUES = {1.0, 0.85, 0.75, 0.5};
+    private static final double[] PIPELINE_SCALE_VALUES = {1.0, 0.85, 0.75, 0.67, 0.5};
     private static final double[] FSR1_SHARPNESS_VALUES = {0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0};
     private static final double[] RCAS_STRENGTH_VALUES = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.75, 1.0};
     private static final double[] VIGNETTE_INTENSITY_VALUES = {0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0};
@@ -845,11 +845,21 @@ public class GuiLDOGSettings extends GuiScreen {
     }
 
     private void handleListButtonClick(int mouseX, int mouseY) {
+        // Only dispatch clicks that land inside the list's visible viewport.
+        // Rows currently scrolled out of view still get their real (x, y) kept
+        // up to date every frame (see ButtonRowEntry.updatePosition), so a
+        // scrolled-off row's button can end up sitting at the same screen
+        // position as unrelated UI above/below the list — the tab strip or the
+        // Done button. Without this bounds check (mirrors drawHoveredTooltip's
+        // guard below), a click on that other UI could ALSO hit the hidden
+        // row's button, since the scan below only tests button rectangles and
+        // has no notion of the list's own clip region.
+        if (mouseY < settingsList.top || mouseY >= settingsList.bottom) return;
         // Find which button in the list was clicked and dispatch actionPerformed.
         // Returns on the first hit so a single click can only fire one button —
         // prior behavior iterated through ALL rows and dispatched every hit,
-        // which could double-fire if stale coordinates on off-screen rows
-        // happened to coincide with the click point.
+        // which could double-fire if a click point happened to hit more than
+        // one row's button rectangle.
         for (int i = 0; i < settingsList.getSize(); i++) {
             net.minecraft.client.gui.GuiListExtended.IGuiListEntry entry = settingsList.getListEntry(i);
             if (!(entry instanceof GuiLDOGSettingsList.ButtonRowEntry)) continue;
@@ -1317,10 +1327,12 @@ public class GuiLDOGSettings extends GuiScreen {
             }
             // Phase C4 OF interop mode cycles. Each delegates to cycleOFMode
             // which: reads current mode from LDOGConfig, advances via .next(),
-            // writes back, recomputes label. Cache invalidation happens on
-            // the settings-screen save event in LDOGConfig.EventHandler so we
-            // don't need to call OptiFineCompat.invalidateCache() per-click
-            // (settings only commit on Done).
+            // writes back, recomputes label. Cache invalidation does NOT happen
+            // per-click: LDOGConfig.EventHandler.onConfigChanged only fires on
+            // Forge's ConfigChangedEvent, which this GUI never posts (it commits
+            // via ConfigManager.sync directly). Instead, doSave() calls
+            // OptiFineCompat.invalidateCache() once when the screen closes
+            // (Done button or Esc — see onGuiClosed).
             case BTN_OF_MODE_CTM:
                 LDOGConfig.ofModeCTM = cycleOFMode(LDOGConfig.ofModeCTM);
                 button.displayString = ofInteropLabel(com.limitlessdev.ldog.compat.OFFeature.CONNECTED_TEXTURES,
@@ -2523,6 +2535,33 @@ public class GuiLDOGSettings extends GuiScreen {
     }
 
     private void saveAndClose() {
+        doSave();
+        this.mc.displayGuiScreen(this.parentScreen);
+    }
+
+    /**
+     * Guards {@link #doSave()} against running twice: once from the Done
+     * button's {@link #saveAndClose()}, and again from {@link #onGuiClosed()},
+     * which Minecraft calls on every path that replaces this screen — including
+     * vanilla's default Esc handling (this screen doesn't override
+     * {@code keyTyped}, so Esc goes through {@code GuiScreen}'s base
+     * {@code keyTyped} → {@code displayGuiScreen(null)} → {@code onGuiClosed()},
+     * bypassing saveAndClose entirely unless we also hook onGuiClosed).
+     */
+    private boolean saved = false;
+
+    /**
+     * Persists the in-memory {@link LDOGConfig} statics mutated by button
+     * clicks and runs the follow-up applies (water chunk rebuild, resource
+     * reload, FXAA reconciliation, OptiFine cache invalidation). Without this
+     * running on every close path (not just Done), pressing Esc would leave
+     * config statics mutated in memory but never synced to disk — a silent
+     * revert on the next restart, with whatever partial state was in memory
+     * simply discarded.
+     */
+    private void doSave() {
+        if (saved) return;
+        saved = true;
         ConfigManager.sync(Tags.MODID, Config.Type.INSTANCE);
         if (waterSettingsChanged && this.mc.renderGlobal != null) {
             // Water opacity/tint is baked into chunk vertex data — must rebuild.
@@ -2544,7 +2583,24 @@ public class GuiLDOGSettings extends GuiScreen {
         if (fxaaSettingsChanged) {
             com.limitlessdev.ldog.render.fxaa.FXAAHandler.apply();
         }
-        this.mc.displayGuiScreen(this.parentScreen);
+        // This GUI commits via ConfigManager.sync directly rather than posting
+        // Forge's ConfigChangedEvent, so LDOGConfig.EventHandler.onConfigChanged
+        // (which only fires on that event) never runs for this path. Invalidate
+        // the OptiFine per-feature decision cache here so OF-mode changes made in
+        // this screen take effect immediately instead of waiting for a
+        // Forge-driven config change that may never come.
+        OptiFineCompat.invalidateCache();
+    }
+
+    /**
+     * Called by Minecraft on every path that replaces this screen (Done
+     * button, Esc, or anything else). Ensures settings are saved even when the
+     * screen closes without going through {@link #saveAndClose()}.
+     */
+    @Override
+    public void onGuiClosed() {
+        super.onGuiClosed();
+        doSave();
     }
 
     // ---- Label helpers ----
