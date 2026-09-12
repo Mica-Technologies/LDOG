@@ -271,6 +271,28 @@ public final class ShaderPackCompositePass implements PostProcessPass {
         program.setUniform1i("depthtex1", 1);  // alias to depthtex0 (no shadows)
         program.setUniform1i("depthtex2", 1);
         program.setUniform1i("noisetex", 10);
+        // OptiFine's legacy sampler spellings for the same attachments. Packs
+        // from before the colortexN naming (SEUS v11) declare ONLY these, and an
+        // unassigned sampler uniform reads texture unit 0 — the scene colour —
+        // so every gnormal/gdepth/gaux lookup silently returned the rendered
+        // image instead of normals or material data.
+        for (java.util.Map.Entry<String, Integer> e :
+                com.limitlessdev.ldog.render.shaderpack.ShaderSamplerAliases.LEGACY_COLORTEX.entrySet()) {
+            int idx = e.getValue();
+            program.setUniform1i(e.getKey(), idx == 0 ? 0 : idx + 1);
+        }
+        program.setUniform1i(
+            com.limitlessdev.ldog.render.shaderpack.ShaderSamplerAliases.LEGACY_DEPTH, 1);
+        // Shadow colour attachments: we render a depth-only shadow map, so point
+        // every spelling at the 1x1 black texture. Left unassigned they would
+        // read unit 0 (the scene colour) and tint the whole frame.
+        GL13.glActiveTexture(GL13.GL_TEXTURE0 + 11);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, blackTex);
+        GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        program.setUniform1i("shadowcolor0", 11);
+        program.setUniform1i("shadowcolor1", 11);
+        program.setUniform1i(
+            com.limitlessdev.ldog.render.shaderpack.ShaderSamplerAliases.LEGACY_SHADOW_COLOR, 11);
         program.setUniform1i("noiseTextureResolution",
             com.limitlessdev.ldog.render.shaderpack.ShaderNoiseTexture.RESOLUTION);
         // Snapshot's standard uniforms (cameraPosition, sunPosition, ...).
