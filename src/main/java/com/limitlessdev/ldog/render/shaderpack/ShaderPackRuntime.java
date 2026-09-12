@@ -88,12 +88,22 @@ public final class ShaderPackRuntime {
      */
     private final boolean[] gbufferWrites = new boolean[8];
 
+    /** Custom uniforms/variables declared in the pack's shaders.properties. */
+    private final ShaderCustomUniforms customUniforms;
+
     public ShaderPackRuntime(ShaderPack pack) {
         this.pack = pack;
+        this.customUniforms = new ShaderCustomUniforms(pack.properties);
         compileChain();
         compileGbuffers();
         logResolvedBuffers();
+        if (!customUniforms.isEmpty()) {
+            LDOGMod.LOGGER.info("LDOG: '{}' declares {} custom uniform(s) in shaders.properties: {}",
+                pack.name, customUniforms.uniformCount(), customUniforms.uniformNames());
+        }
     }
+
+    public ShaderCustomUniforms customUniforms() { return customUniforms; }
 
     /**
      * Dump each stage's resolved {@code DRAWBUFFERS} mapping + declared colortex

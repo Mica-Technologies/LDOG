@@ -92,7 +92,7 @@ public final class ShaderPackGbufferManager {
     private static int gbufferFbo;
     private static final int[] aux = new int[MAX_AUX + 1]; // aux[1..N]; aux[0] unused (colortex0 = scene)
     private static int auxCount;
-    private static int lastSceneColor, lastSceneDepth, lastW, lastH, lastAuxCount;
+    private static int lastSceneColor, lastSceneDepth, lastW, lastH, lastAuxCount, lastGeneration;
     /** Reusable scratch for glDrawBuffers. */
     private static final IntBuffer DRAW_BUF = BufferUtils.createIntBuffer(MAX_AUX + 1);
     private static boolean gbufferBound;
@@ -292,10 +292,16 @@ public final class ShaderPackGbufferManager {
         ShaderPackRuntime rt = ShaderPackManager.INSTANCE.getRuntime();
         int wantAux = rt == null ? 0 : Math.min(MAX_AUX, rt.maxColortex());
 
+        // Compare the target GENERATION, not just the texture names: GL hands
+        // back the same name after a delete+gen, so an HDR toggle (same size,
+        // new RGBA16F textures) left this FBO attached to dead objects and the
+        // world rendered solid black until the pack was re-activated.
+        int generation = rtm.generation();
         if (gbufferFbo != 0 && sceneColor == lastSceneColor && sceneDepth == lastSceneDepth
-            && w == lastW && h == lastH && wantAux == lastAuxCount) {
+            && w == lastW && h == lastH && wantAux == lastAuxCount && generation == lastGeneration) {
             return gbufferFbo;
         }
+        lastGeneration = generation;
 
         disposeGBuffer();
         auxCount = wantAux;
@@ -425,6 +431,8 @@ public final class ShaderPackGbufferManager {
     public static void ensureFrameSnapshot(float partialTicks) {
         if (snapshottedThisFrame) return;
         Minecraft mc = Minecraft.getMinecraft();
+        ShaderPackRuntime rt = ShaderPackManager.INSTANCE.getRuntime();
+        UNIFORMS.setCustomUniforms(rt == null ? null : rt.customUniforms());
         UNIFORMS.rotatePrev();
         UNIFORMS.snapshot(mc.displayWidth, mc.displayHeight, partialTicks);
         snapshottedThisFrame = true;

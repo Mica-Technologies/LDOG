@@ -96,6 +96,25 @@ public final class ShaderPackUniforms {
     private float eyeBrightnessSky;
     private static final java.nio.FloatBuffer FOG_BUF = BufferUtils.createFloatBuffer(16);
 
+    // Inputs the shaders.properties expression language can read that are not
+    // otherwise pushed as uniforms (biome, moon phase, GUI state, held items).
+    private int currentBiomeId;
+    private float currentBiomeTemperature;
+    private float currentBiomeRainfall;
+    private int currentMoonPhase;
+    private boolean currentHideGui;
+    private int heldItemId = -1, heldItemId2 = -1;
+    private int heldBlockLightValue, heldBlockLightValue2;
+    private long lastSnapshotNanos;
+    private float lastFrameDt = 1f / 60f;
+
+    /** The active pack's custom uniform definitions, or null. */
+    private ShaderCustomUniforms custom;
+
+    public void setCustomUniforms(ShaderCustomUniforms custom) {
+        this.custom = custom;
+    }
+
     /**
      * Refresh all per-frame values from the live MC state. Call ONCE per frame
      * (via {@link ShaderPackGbufferManager#ensureFrameSnapshot(float)}) with the
@@ -127,39 +146,33 @@ public final class ShaderPackUniforms {
         currentNear = 0.05F;
         currentFar = mc.gameSettings.renderDistanceChunks * 16.0F;
 
-        // Sun angle in OF's [0,1] domain (0 = noon, 0.5 = midnight).
+        // sunAngle in OptiFine's convention: 0 = sunrise, 0.25 = noon,
+        // 0.5 = sunset, 0.75 = midnight. MC's celestial angle is 0 at noon
+        // and 0.75 at sunrise, so it is shifted by a quarter turn. Packs bake
+        // this convention into their maths (BSL's shadowFade window is centred
+        // on 0.25 and is exactly ZERO at raw-celestial noon) — feeding the raw
+        // angle is what made every daytime scene render as if the sun had set.
+        float celestial;
         if (world != null) {
             currentWorldTime = (int) (world.getWorldTime() % 24000L);
-            float celestial = world.getCelestialAngle(partialTicks);
-            currentSunAngle = celestial;
+            celestial = world.getCelestialAngle(partialTicks);
             currentRainStrength = world.getRainStrength(partialTicks);
         } else {
             currentWorldTime = 0;
-            currentSunAngle = 0.0F;
+            celestial = 0.0F;
             currentRainStrength = 0.0F;
         }
+        currentSunAngle = celestial < 0.75F ? celestial + 0.25F : celestial - 0.75F;
 
-        // Sun / moon direction in view space — OF convention is roughly:
-        // sun rotates around the Z axis in world space; "up" is (0,1,0).
-        // We don't have the live GL matrix here (composite runs without
-        // GL_MODELVIEW), so we compute the celestial direction from the
-        // sun angle alone. Good enough for time-of-day shader effects.
-        double sa = currentSunAngle * 2.0 * Math.PI;
-        float sx = (float) -Math.sin(sa);
-        float sy = (float)  Math.cos(sa);
-        sunPos[0] = sx * 100.0F;
-        sunPos[1] = sy * 100.0F;
-        sunPos[2] = 0.0F;
-        moonPos[0] = -sunPos[0];
-        moonPos[1] = -sunPos[1];
-        moonPos[2] = 0.0F;
-        upPos[0] = 0.0F; upPos[1] = 100.0F; upPos[2] = 0.0F;
-        // Shadow light = whichever celestial body is above the horizon
-        // (vanilla switches at angle 0.25..0.75 = night).
-        boolean isNight = currentSunAngle > 0.25F && currentSunAngle < 0.75F;
-        shadowLightPos[0] = isNight ? moonPos[0] : sunPos[0];
-        shadowLightPos[1] = isNight ? moonPos[1] : sunPos[1];
-        shadowLightPos[2] = 0.0F;
+        // World-space sun direction, matching how vanilla draws the sun:
+        // rotate(-90 about Y) · rotate(celestial·360 about X) · (0, 1, 0)
+        // = (−sin θ, cos θ, 0). Transformed into VIEW space below, once the
+        // camera matrix is loaded — OF's sunPosition/moonPosition/upPosition
+        // are eye-space vectors (packs dot them against view-space normals).
+        double sa = celestial * 2.0 * Math.PI;
+        float wsx = (float) -Math.sin(sa) * 100.0F;
+        float wsy = (float)  Math.cos(sa) * 100.0F;
+        float wsz = 0.0F;
 
         // gbufferModelView + gbufferProjection. Prefer the matrices captured
         // during the world render (correct camera transform); fall back to the
@@ -185,6 +198,17 @@ public final class ShaderPackUniforms {
             MAT_BUF.rewind();
             proj.load(MAT_BUF);
         }
+
+        // Celestial vectors into view space: rotation part of the camera
+        // modelview only (direction vectors, w = 0). Shadow light = the body
+        // above the horizon; OF switches at sunAngle 0.5.
+        rotateInto(cur, wsx, wsy, wsz, sunPos);
+        moonPos[0] = -sunPos[0]; moonPos[1] = -sunPos[1]; moonPos[2] = -sunPos[2];
+        rotateInto(cur, 0.0F, 100.0F, 0.0F, upPos);
+        boolean isNight = currentSunAngle > 0.5F;
+        shadowLightPos[0] = isNight ? moonPos[0] : sunPos[0];
+        shadowLightPos[1] = isNight ? moonPos[1] : sunPos[1];
+        shadowLightPos[2] = isNight ? moonPos[2] : sunPos[2];
 
         // Fog colour — read live GL fog state. Accurate during the world
         // render (gbuffer path); may be stale in the composite/GUI context.
@@ -221,8 +245,143 @@ public final class ShaderPackUniforms {
             }
         }
 
+        // Biome / moon / GUI / held-item state for the custom-uniform expressions
+        // (and the heldItemId family, which BSL declares directly).
+        currentBiomeId = 0;
+        currentBiomeTemperature = 0.5f;
+        currentBiomeRainfall = 0.5f;
+        currentMoonPhase = 0;
+        currentHideGui = mc.gameSettings != null && mc.gameSettings.hideGUI;
+        heldItemId = heldItemId2 = -1;
+        heldBlockLightValue = heldBlockLightValue2 = 0;
+        if (world != null && mc.player != null) {
+            net.minecraft.util.math.BlockPos at = new net.minecraft.util.math.BlockPos(mc.player.posX, mc.player.posY, mc.player.posZ);
+            net.minecraft.world.biome.Biome biome = world.getBiome(at);
+            if (biome != null) {
+                currentBiomeId = net.minecraft.world.biome.Biome.getIdForBiome(biome);
+                currentBiomeTemperature = biome.getDefaultTemperature();
+                currentBiomeRainfall = biome.getRainfall();
+            }
+            currentMoonPhase = world.getMoonPhase();
+            heldItemId = itemIdOf(mc.player.getHeldItemMainhand());
+            heldItemId2 = itemIdOf(mc.player.getHeldItemOffhand());
+            heldBlockLightValue = blockLightOf(mc.player.getHeldItemMainhand());
+            heldBlockLightValue2 = blockLightOf(mc.player.getHeldItemOffhand());
+        }
+
+        // Frame delta for smooth(); clamp so a hitch cannot snap a 10 s fade.
+        long now = System.nanoTime();
+        if (lastSnapshotNanos != 0L) {
+            lastFrameDt = (float) Math.min(0.25, (now - lastSnapshotNanos) / 1_000_000_000.0);
+        }
+        lastSnapshotNanos = now;
+
         // Advance frame counter + cache prev matrices for next frame's snapshot.
         frameCounter++;
+
+        if (custom != null) custom.evaluateFrame(BUILTINS, lastFrameDt);
+    }
+
+    private static int itemIdOf(net.minecraft.item.ItemStack stack) {
+        return stack == null || stack.isEmpty() ? -1 : net.minecraft.item.Item.getIdFromItem(stack.getItem());
+    }
+
+    private static int blockLightOf(net.minecraft.item.ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return 0;
+        net.minecraft.block.Block b = net.minecraft.block.Block.getBlockFromItem(stack.getItem());
+        if (b == null || b == net.minecraft.init.Blocks.AIR) return 0;
+        try {
+            return b.getDefaultState().getLightValue();
+        } catch (RuntimeException e) {
+            return 0;
+        }
+    }
+
+    /**
+     * Resolver for the names a {@code shaders.properties} expression may use.
+     * Mirrors what {@link #feedTo} pushes, plus the expression-only inputs
+     * OptiFine exposes ({@code biome}, {@code moonPhase}, {@code hideGUI},
+     * {@code BIOME_*} constants from the biome registry).
+     */
+    private final ShaderUniformExpression.Env BUILTINS = new ShaderUniformExpression.Env() {
+        @Override public float[] get(String name) {
+            switch (name) {
+                case "sunAngle": return new float[]{ currentSunAngle };
+                case "shadowAngle": return new float[]{ currentSunAngle > 0.5F ? currentSunAngle - 0.5F : currentSunAngle };
+                case "moonPhase": return new float[]{ currentMoonPhase };
+                case "worldTime": return new float[]{ currentWorldTime };
+                case "worldDay": return new float[]{ Minecraft.getMinecraft().world == null ? 0f : (float) (Minecraft.getMinecraft().world.getWorldTime() / 24000L) };
+                case "frameCounter": return new float[]{ frameCounter };
+                case "frameTime": return new float[]{ lastFrameDt };
+                case "frameTimeCounter": return new float[]{ (float) (((System.nanoTime() - startNanos) / 1_000_000_000.0) % 3600.0) };
+                case "rainStrength": case "wetness": return new float[]{ currentRainStrength };
+                case "blindness": return new float[]{ currentBlindness };
+                case "nightVision": return new float[]{ currentNightVision };
+                case "screenBrightness": return new float[]{ currentScreenBrightness };
+                case "isEyeInWater": return new float[]{ eyeInWater() };
+                case "eyeBrightness": case "eyeBrightnessSmooth": return new float[]{ eyeBrightnessBlock, eyeBrightnessSky };
+                case "cameraPosition": return new float[]{ (float) currentCameraX, (float) currentCameraY, (float) currentCameraZ };
+                case "previousCameraPosition": return new float[]{ (float) prevCameraX, (float) prevCameraY, (float) prevCameraZ };
+                case "sunPosition": return sunPos.clone();
+                case "moonPosition": return moonPos.clone();
+                case "shadowLightPosition": return shadowLightPos.clone();
+                case "upPosition": return upPos.clone();
+                case "skyColor": return skyColor.clone();
+                case "fogColor": return new float[]{ fogColor[0], fogColor[1], fogColor[2] };
+                case "biome": return new float[]{ currentBiomeId };
+                case "temperature": return new float[]{ currentBiomeTemperature };
+                case "rainfall": return new float[]{ currentBiomeRainfall };
+                case "hideGUI": return new float[]{ currentHideGui ? 1f : 0f };
+                case "heldItemId": return new float[]{ heldItemId };
+                case "heldItemId2": return new float[]{ heldItemId2 };
+                case "heldBlockLightValue": return new float[]{ heldBlockLightValue };
+                case "heldBlockLightValue2": return new float[]{ heldBlockLightValue2 };
+                case "viewWidth": return new float[]{ currentViewWidth };
+                case "viewHeight": return new float[]{ currentViewHeight };
+                case "aspectRatio": return new float[]{ currentViewHeight > 0 ? (float) currentViewWidth / currentViewHeight : 1f };
+                case "near": return new float[]{ currentNear };
+                case "far": return new float[]{ currentFar };
+                case "PI": return new float[]{ (float) Math.PI };
+                default:
+                    if (name.startsWith("BIOME_")) return new float[]{ biomeConstant(name) };
+                    return null;
+            }
+        }
+
+        @Override public float smooth(int id, float value, float fadeUp, float fadeDown) {
+            return value; // unused: ShaderCustomUniforms owns the smoothing state
+        }
+    };
+
+    private static final java.util.Map<String, Float> BIOME_CONSTANTS = new java.util.HashMap<>();
+
+    /**
+     * {@code BIOME_<REGISTRY_NAME>} -> numeric biome id, built from the Forge
+     * registry on first use. Names a pack uses that this MC version lacks
+     * (BIOME_GROVE, BIOME_SNOWY_PLAINS...) resolve to -1 so {@code in(biome, ...)}
+     * never matches them -- the same outcome as OptiFine on 1.12.2.
+     */
+    private static float biomeConstant(String name) {
+        if (BIOME_CONSTANTS.isEmpty()) {
+            for (net.minecraft.world.biome.Biome b : net.minecraftforge.fml.common.registry.ForgeRegistries.BIOMES) {
+                net.minecraft.util.ResourceLocation rl = b.getRegistryName();
+                if (rl == null) continue;
+                String key = "BIOME_" + rl.getPath().toUpperCase(java.util.Locale.ROOT);
+                BIOME_CONSTANTS.put(key, (float) net.minecraft.world.biome.Biome.getIdForBiome(b));
+            }
+        }
+        Float v = BIOME_CONSTANTS.get(name);
+        return v == null ? -1f : v;
+    }
+
+    private static int eyeInWater() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.player == null || mc.player.world == null) return 0;
+        net.minecraft.block.material.Material m = mc.player.world.getBlockState(new net.minecraft.util.math.BlockPos(
+            mc.player.posX, mc.player.posY + mc.player.getEyeHeight(), mc.player.posZ)).getMaterial();
+        if (m == net.minecraft.block.material.Material.WATER) return 1;
+        if (m == net.minecraft.block.material.Material.LAVA) return 2;
+        return 0;
     }
 
     /**
@@ -338,6 +497,18 @@ public final class ShaderPackUniforms {
         int eyeSky = (int) eyeBrightnessSky;
         program.setUniform2i("eyeBrightness", eyeBlock, eyeSky);
         program.setUniform2i("eyeBrightnessSmooth", eyeBlock, eyeSky);
+
+        // Held-item family (OF spec: ints). Packs use these for hand light.
+        program.setUniform1i("heldItemId", heldItemId);
+        program.setUniform1i("heldItemId2", heldItemId2);
+        program.setUniform1i("heldBlockLightValue", heldBlockLightValue);
+        program.setUniform1i("heldBlockLightValue2", heldBlockLightValue2);
+        program.setUniform1i("moonPhase", currentMoonPhase);
+        program.setUniform1i("hideGUI", currentHideGui ? 1 : 0);
+
+        // Pack-defined uniforms from shaders.properties (BSL's shadowFade,
+        // timeAngle, biome flags ...). Evaluated once in snapshot().
+        if (custom != null) custom.feedTo(program);
     }
 
     /** Rotate this frame's matrices into the "prev" slot for next frame. */
@@ -348,6 +519,14 @@ public final class ShaderPackUniforms {
         prevCameraY = currentCameraY;
         prevCameraZ = currentCameraZ;
         hasPrev = true;
+    }
+
+    /** out = upper-3×3(m) · (x, y, z) — a direction through the modelview. */
+    private static void rotateInto(Matrix4f m, float x, float y, float z, float[] out) {
+        // LWJGL Matrix4f is column-major: mAB = column A, row B.
+        out[0] = m.m00 * x + m.m10 * y + m.m20 * z;
+        out[1] = m.m01 * x + m.m11 * y + m.m21 * z;
+        out[2] = m.m02 * x + m.m12 * y + m.m22 * z;
     }
 
     private static void writeMat4(FloatBuffer buf, Matrix4f m) {

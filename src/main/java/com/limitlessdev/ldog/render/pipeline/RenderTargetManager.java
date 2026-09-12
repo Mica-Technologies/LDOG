@@ -83,6 +83,15 @@ public final class RenderTargetManager {
 
     public int getSceneFbo() { return sceneFbo; }
     public int getSceneColorTexture() { return sceneColorTex; }
+
+    /**
+     * Bumps every time the targets are (re)allocated or disposed. Consumers
+     * that wrap the scene textures in their own FBO (the shader-pack G-buffer)
+     * must compare this rather than the texture names: GL reuses names after
+     * a delete, so a same-size reallocation (HDR toggle) is invisible by name.
+     */
+    public int generation() { return generation; }
+    private int generation;
     public int getSceneDepthTexture() { return sceneDepthTex; }
     public int getSceneReactiveMaskTexture() { return sceneReactiveMaskTex; }
     public int getPingPongFbo() { return pingFbo; }
@@ -136,6 +145,7 @@ public final class RenderTargetManager {
         }
 
         disposeTargets();
+        generation++;
 
         baseWidth = baseW;
         baseHeight = baseH;
