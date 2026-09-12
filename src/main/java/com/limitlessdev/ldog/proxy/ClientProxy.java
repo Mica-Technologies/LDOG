@@ -1,5 +1,6 @@
 package com.limitlessdev.ldog.proxy;
 
+import com.limitlessdev.ldog.command.CommandLdog;
 import com.limitlessdev.ldog.render.color.CustomColorHandler;
 import com.limitlessdev.ldog.render.dynamiclights.DynamicLightTickHandler;
 import com.limitlessdev.ldog.render.font.SmoothFontHandler;
@@ -7,6 +8,7 @@ import com.limitlessdev.ldog.render.font.TTFFontCatalog;
 import com.limitlessdev.ldog.render.shaderpack.ShaderPackManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.IReloadableResourceManager;
+import net.minecraftforge.client.ClientCommandHandler;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
@@ -33,6 +35,10 @@ public class ClientProxy extends CommonProxy {
             (IReloadableResourceManager) Minecraft.getMinecraft().getResourceManager();
         resourceManager.registerReloadListener(CustomColorHandler.INSTANCE);
         resourceManager.registerReloadListener(SmoothFontHandler.INSTANCE);
+
+        // `/ldog` opens the settings screen from chat. Client-only command; a
+        // dedicated server never sees it.
+        ClientCommandHandler.instance.registerCommand(new CommandLdog());
     }
 
     @Override
