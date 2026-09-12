@@ -128,8 +128,15 @@ public final class EmissiveRenderHandler {
             buffer.pos(x, y, z)
                   .color(255, 255, 255, 255)
                   .tex(newU, newV)
-                  .lightmap(240, 240)
-                  .endVertex();
+                  .lightmap(240, 240);
+            // With the extended terrain format the vertex also carries a normal;
+            // give it the face direction so shader packs light the overlay like
+            // the block it sits on (MixinBufferBuilderNormal would otherwise
+            // fill a generic up-normal).
+            if (com.limitlessdev.ldog.render.shaderpack.TerrainVertexFormat.isExtended()) {
+                buffer.normal(face.getXOffset(), face.getYOffset(), face.getZOffset());
+            }
+            buffer.endVertex();
         }
     }
 }

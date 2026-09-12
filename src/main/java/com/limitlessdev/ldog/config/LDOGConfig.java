@@ -517,6 +517,17 @@ public class LDOGConfig {
     public static boolean enableShaderShadows = false;
 
     @Config.Comment({
+        "Add a per-vertex normal to the terrain vertex format so shader packs",
+        "can light block faces (dot(normal, sun)). Vanilla chunk geometry has",
+        "no normals, which leaves every pack's direct-light term at zero.",
+        "Applied at startup (restart to change); needs Forge's light pipeline",
+        "(forgeLightPipelineEnabled in forge.cfg, the default). Turn OFF only",
+        "if a mod that hand-writes terrain vertices renders garbage."
+    })
+    @Config.RequiresMcRestart
+    public static boolean extendTerrainVertexFormat = true;
+
+    @Config.Comment({
         "Shadow map resolution (square). Higher = crisper shadows, more VRAM",
         "+ fill cost. Only consumed when enableShaderShadows is on."
     })

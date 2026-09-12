@@ -6,6 +6,7 @@ import com.limitlessdev.ldog.render.dynamiclights.DynamicLightTickHandler;
 import com.limitlessdev.ldog.render.font.SmoothFontHandler;
 import com.limitlessdev.ldog.render.font.TTFFontCatalog;
 import com.limitlessdev.ldog.render.shaderpack.ShaderPackManager;
+import com.limitlessdev.ldog.render.shaderpack.TerrainVertexFormat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.IReloadableResourceManager;
 import net.minecraftforge.client.ClientCommandHandler;
@@ -23,6 +24,9 @@ public class ClientProxy extends CommonProxy {
         // with AWT's GraphicsEnvironment so the TTF rasterizer can pick them up
         // by family name just like built-in fonts.
         TTFFontCatalog.init(event.getModConfigurationDirectory());
+        // Must run before any chunk is compiled and before Forge's block lighter
+        // caches BLOCK's normal-augmented twin (first block render), i.e. here.
+        TerrainVertexFormat.applyAtStartup();
     }
 
     @Override
