@@ -27,9 +27,11 @@ import java.util.List;
  * below-adjacent (pos.offset(side).down()) is also a grass-type block,
  * preserving natural-looking cliff edges.
  *
- * The model wrapper checks quad sprites by name: grass_side quads are
- * retextured with grass_top (gaining tintIndex=0 for biome color), and
- * grass_side_overlay quads are removed since the full face is now tinted.
+ * The face's base (untinted) quad is retextured with grass_top and gains
+ * tintIndex=0 for biome color; the tinted overlay quad is dropped since the
+ * full face is now tinted. Base and overlay are identified by structure
+ * rather than by sprite name so re-textured packs keep working — see
+ * {@link GrassSideSelection}.
  * When Better Snow is enabled and the block is snowy (snowed side sprite
  * detected), side quads are replaced with the snow texture instead, so
  * lighting is handled by the vanilla pipeline (smooth AO) rather than
@@ -41,7 +43,6 @@ import java.util.List;
 public class BetterGrassBakedModel extends BakedModelWrapper<IBakedModel> {
 
     private final TextureAtlasSprite topSprite;
-    private final String sideSpriteName;
     @Nullable
     private final String overlaySpriteName;
     @Nullable
@@ -50,12 +51,11 @@ public class BetterGrassBakedModel extends BakedModelWrapper<IBakedModel> {
     private final TextureAtlasSprite snowSprite;
 
     public BetterGrassBakedModel(IBakedModel original, TextureAtlasSprite topSprite,
-                                  String sideSpriteName, @Nullable String overlaySpriteName,
+                                  @Nullable String overlaySpriteName,
                                   @Nullable String snowedSideSpriteName,
                                   @Nullable TextureAtlasSprite snowSprite) {
         super(original);
         this.topSprite = topSprite;
-        this.sideSpriteName = sideSpriteName;
         this.overlaySpriteName = overlaySpriteName;
         this.snowedSideSpriteName = snowedSideSpriteName;
         this.snowSprite = snowSprite;
@@ -110,22 +110,39 @@ public class BetterGrassBakedModel extends BakedModelWrapper<IBakedModel> {
             }
         }
 
-        // Replace side quads with top texture
-        List<BakedQuad> result = new ArrayList<>(original.size());
+        // Replace the face's base quad with the top texture and drop the overlay.
+        //
+        // Which quad is which is decided structurally (untinted base + tinted
+        // overlay), NOT by sprite name: a pack is free to re-texture the grass
+        // model, and Stratum 256x does exactly that — its grass_normal.json sets
+        // "side": "blocks/dirt" and carries the whole fringe in the tinted
+        // overlay. Matching the literal name minecraft:blocks/grass_side found
+        // nothing there, so Better Grass silently no-opped in every mode.
+        // See GrassSideSelection.
+        int n = original.size();
+        String[] sprites = new String[n];
+        int[] tints = new int[n];
+        for (int i = 0; i < n; i++) {
+            BakedQuad q = original.get(i);
+            sprites[i] = q.getSprite().getIconName();
+            tints[i] = q.getTintIndex();
+        }
+        int[] plan = GrassSideSelection.classify(sprites, tints, overlaySpriteName);
+
+        List<BakedQuad> result = new ArrayList<>(n);
         boolean anyReplaced = false;
-
-        for (BakedQuad quad : original) {
-            String spriteName = quad.getSprite().getIconName();
-
-            if (sideSpriteName.equals(spriteName)) {
-                // Replace grass_side with grass_top, set tintIndex=0 for biome coloring
-                result.add(retextureWithTint(quad, topSprite, 0));
-                anyReplaced = true;
-            } else if (overlaySpriteName != null && overlaySpriteName.equals(spriteName)) {
-                // Skip the overlay quad — the full face is now the tinted top texture
-                anyReplaced = true;
-            } else {
-                result.add(quad);
+        for (int i = 0; i < n; i++) {
+            switch (plan[i]) {
+                case GrassSideSelection.RETEXTURE:
+                    // Tint index 0 so the biome colouriser greens the whole face.
+                    result.add(retextureWithTint(original.get(i), topSprite, 0));
+                    anyReplaced = true;
+                    break;
+                case GrassSideSelection.DROP:
+                    anyReplaced = true;
+                    break;
+                default:
+                    result.add(original.get(i));
             }
         }
 
@@ -153,8 +170,15 @@ public class BetterGrassBakedModel extends BakedModelWrapper<IBakedModel> {
         TextureAtlasSprite oldSprite = original.getSprite();
         int[] vertexData = original.getVertexData().clone();
 
+        // Stride from the quad's own format rather than a hard-coded 7: the
+        // terrain format carries a normal when TerrainVertexFormat extended it,
+        // and a quad baked against that layout is 8 ints per vertex. The UV
+        // pair stays at ints 4-5 either way (position 0-2, colour 3, uv 4-5).
+        int stride = original.getFormat().getIntegerSize() / 4;
+        if (stride < 6) stride = 7;
+
         for (int v = 0; v < 4; v++) {
-            int offset = v * 7;
+            int offset = v * stride;
             float u = Float.intBitsToFloat(vertexData[offset + 4]);
             float vCoord = Float.intBitsToFloat(vertexData[offset + 5]);
 

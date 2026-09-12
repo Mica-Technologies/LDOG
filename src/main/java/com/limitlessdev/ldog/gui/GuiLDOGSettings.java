@@ -103,6 +103,16 @@ public class GuiLDOGSettings extends GuiScreen {
     };
     private int currentPresetIndex = -1; // -1 = custom (no preset matched)
     private boolean waterSettingsChanged = false; // triggers chunk rebuild on close
+    /**
+     * Set by any toggle whose result is baked into chunk geometry rather than
+     * read per frame — connected textures, emissive overlays, Better Grass /
+     * Snow, natural-texture UV rotation and biome-driven custom colours all
+     * live in the compiled chunk mesh. Without a rebuild on close the toggle
+     * appears to do nothing at all until something else happens to invalidate
+     * the chunk (a block change, a resource reload, walking far enough away),
+     * which reads exactly like a broken feature.
+     */
+    private boolean chunkRebuildNeeded = false;
     private static final int BTN_CTM = 40;
     private static final int BTN_EMISSIVE = 41;
     private static final int BTN_DYNAMIC_LIGHTS = 42;
@@ -1174,10 +1184,12 @@ public class GuiLDOGSettings extends GuiScreen {
             case BTN_CTM:
                 LDOGConfig.enableConnectedTextures = !LDOGConfig.enableConnectedTextures;
                 button.displayString = featureLabel("Connected Textures", LDOGConfig.enableConnectedTextures, OptiFineCompat.shouldHandleCTM());
+                chunkRebuildNeeded = true;
                 break;
             case BTN_EMISSIVE:
                 LDOGConfig.enableEmissiveTextures = !LDOGConfig.enableEmissiveTextures;
                 button.displayString = featureLabel("Emissive Textures", LDOGConfig.enableEmissiveTextures, OptiFineCompat.shouldHandleEmissive());
+                chunkRebuildNeeded = true;
                 break;
             case BTN_DYNAMIC_LIGHTS:
                 LDOGConfig.enableDynamicLights = !LDOGConfig.enableDynamicLights;
@@ -1270,10 +1282,12 @@ public class GuiLDOGSettings extends GuiScreen {
             case BTN_BETTER_GRASS:
                 LDOGConfig.betterGrass = cycleStringValue(BETTER_GRASS_MODES, LDOGConfig.betterGrass);
                 button.displayString = betterGrassLabel(LDOGConfig.betterGrass);
+                chunkRebuildNeeded = true;
                 break;
             case BTN_BETTER_SNOW:
                 LDOGConfig.enableBetterSnow = !LDOGConfig.enableBetterSnow;
                 button.displayString = toggleLabel("Better Snow", LDOGConfig.enableBetterSnow);
+                chunkRebuildNeeded = true;
                 break;
             case BTN_PERF_OVERLAY:
                 LDOGConfig.enablePerformanceOverlay = !LDOGConfig.enablePerformanceOverlay;
@@ -1282,10 +1296,12 @@ public class GuiLDOGSettings extends GuiScreen {
             case BTN_NATURAL_TEXTURES:
                 LDOGConfig.enableNaturalTextures = !LDOGConfig.enableNaturalTextures;
                 button.displayString = toggleLabel("Natural Textures", LDOGConfig.enableNaturalTextures);
+                chunkRebuildNeeded = true;
                 break;
             case BTN_CUSTOM_COLORS:
                 LDOGConfig.enableCustomColors = !LDOGConfig.enableCustomColors;
                 button.displayString = toggleLabel("Custom Colors", LDOGConfig.enableCustomColors);
+                chunkRebuildNeeded = true;
                 break;
             case BTN_RANDOM_MOBS:
                 LDOGConfig.enableRandomEntityTextures = !LDOGConfig.enableRandomEntityTextures;
@@ -2563,8 +2579,11 @@ public class GuiLDOGSettings extends GuiScreen {
         if (saved) return;
         saved = true;
         ConfigManager.sync(Tags.MODID, Config.Type.INSTANCE);
-        if (waterSettingsChanged && this.mc.renderGlobal != null) {
-            // Water opacity/tint is baked into chunk vertex data — must rebuild.
+        if ((waterSettingsChanged || chunkRebuildNeeded) && this.mc.renderGlobal != null) {
+            // Water opacity/tint, CTM, emissive overlays, Better Grass/Snow,
+            // natural-texture rotation and custom colours are all baked into
+            // chunk vertex data — the toggle does nothing visible until the
+            // meshes are rebuilt.
             this.mc.renderGlobal.loadRenderers();
         }
         if (extBorderSettingsChanged || fontSettingsChanged) {

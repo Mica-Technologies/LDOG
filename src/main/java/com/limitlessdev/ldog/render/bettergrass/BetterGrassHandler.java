@@ -30,11 +30,9 @@ import net.minecraftforge.fml.relauncher.Side;
 public class BetterGrassHandler {
 
     private static final String GRASS_TOP = "minecraft:blocks/grass_top";
-    private static final String GRASS_SIDE = "minecraft:blocks/grass_side";
     private static final String GRASS_SIDE_OVERLAY = "minecraft:blocks/grass_side_overlay";
     private static final String GRASS_SIDE_SNOWED = "minecraft:blocks/grass_side_snowed";
     private static final String MYCELIUM_TOP = "minecraft:blocks/mycelium_top";
-    private static final String MYCELIUM_SIDE = "minecraft:blocks/mycelium_side";
     private static final String MYCELIUM_SIDE_SNOWED = "minecraft:blocks/mycelium_side_snowed";
     private static final String SNOW_SPRITE = "minecraft:blocks/snow";
 
@@ -61,9 +59,9 @@ public class BetterGrassHandler {
 
         int wrapped = 0;
         wrapped += wrapBlockModels(event, Blocks.GRASS, grassTopSprite,
-            GRASS_SIDE, GRASS_SIDE_OVERLAY, GRASS_SIDE_SNOWED, snowSprite);
+            GRASS_SIDE_OVERLAY, GRASS_SIDE_SNOWED, snowSprite);
         wrapped += wrapBlockModels(event, Blocks.MYCELIUM, myceliumTopSprite,
-            MYCELIUM_SIDE, null, MYCELIUM_SIDE_SNOWED, snowSprite);
+            null, MYCELIUM_SIDE_SNOWED, snowSprite);
 
         if (wrapped > 0) {
             LDOGMod.LOGGER.info("LDOG: Better Grass wrapped {} models (mode={})",
@@ -78,7 +76,7 @@ public class BetterGrassHandler {
      */
     private static int wrapBlockModels(ModelBakeEvent event, Block block,
                                         TextureAtlasSprite topSprite,
-                                        String sideSpriteName, String overlaySpriteName,
+                                        String overlaySpriteName,
                                         String snowedSideSpriteName,
                                         TextureAtlasSprite snowSpriteRef) {
         ResourceLocation regName = block.getRegistryName();
@@ -96,7 +94,7 @@ public class BetterGrassHandler {
             if (original != null) {
                 event.getModelRegistry().putObject(mrl,
                     new BetterGrassBakedModel(original, topSprite,
-                        sideSpriteName, overlaySpriteName,
+                        overlaySpriteName,
                         snowedSideSpriteName, snowSpriteRef));
                 count++;
             }
