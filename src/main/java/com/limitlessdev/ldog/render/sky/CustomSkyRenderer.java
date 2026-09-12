@@ -19,6 +19,7 @@ import org.lwjgl.opengl.GL11;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
 
@@ -36,16 +37,24 @@ import java.util.Properties;
 @Mod.EventBusSubscriber(modid = Tags.MODID, value = Side.CLIENT)
 public class CustomSkyRenderer {
 
-    private static final List<CustomSkyLayer> layers = new ArrayList<>();
+    /**
+     * Published as a whole, never mutated in place: a reload builds a fresh
+     * list and swaps the reference, and the render path reads the reference
+     * once per frame. A resource reload triggered while a frame is mid-render
+     * (mods can kick refreshResources off-thread, and Forge's splash reloads
+     * while the splash thread is drawing) therefore cannot throw
+     * ConcurrentModificationException out of the sky loop.
+     */
+    private static volatile List<CustomSkyLayer> layers = Collections.emptyList();
     private static final float SKY_RADIUS = 100.0f;
-    private static boolean loggedOnce = false;
-    private static boolean loaded = false;
+    private static volatile boolean loggedOnce = false;
+    private static volatile boolean loaded = false;
 
     @SubscribeEvent
     public static void onTextureStitchPre(TextureStitchEvent.Pre event) {
         // Mark as needing reload — actual load happens lazily on first render
         // so resource packs are guaranteed to be available
-        layers.clear();
+        layers = Collections.emptyList();
         loaded = false;
         loggedOnce = false;
     }
@@ -53,6 +62,8 @@ public class CustomSkyRenderer {
     private static void loadSkyLayers() {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.getResourceManager() == null) return;
+
+        List<CustomSkyLayer> layers = new ArrayList<>();
 
         for (String basePath : new String[]{"optifine/sky/world0", "mcpatcher/sky/world0"}) {
             boolean found = false;
@@ -89,6 +100,7 @@ public class CustomSkyRenderer {
         if (layers.isEmpty()) {
             LDOGMod.LOGGER.info("LDOG: No custom sky layers found in resource packs");
         }
+        CustomSkyRenderer.layers = Collections.unmodifiableList(layers);
     }
 
     private static CustomSkyLayer parseLayer(Properties props, String basePath) {
@@ -153,6 +165,8 @@ public class CustomSkyRenderer {
             LDOGMod.LOGGER.info("LDOG: Lazy load complete. Layers: {}", layers.size());
         }
 
+        // Single read of the published reference for this frame.
+        List<CustomSkyLayer> layers = CustomSkyRenderer.layers;
         if (layers.isEmpty()) return;
 
         WorldClient world = Minecraft.getMinecraft().world;

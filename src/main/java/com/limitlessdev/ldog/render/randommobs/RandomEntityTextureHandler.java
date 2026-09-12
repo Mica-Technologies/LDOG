@@ -43,16 +43,24 @@ public class RandomEntityTextureHandler {
     // runs in the entity bind path (every entity, every frame) and toString()
     // allocated there. ResourceLocation's equals/hashCode are String-backed, so
     // the lookup is allocation-free.
-    private static final Map<ResourceLocation, List<ResourceLocation>> variantMap = new HashMap<>();
+    //
+    // Both maps are published whole via a volatile swap and never mutated after
+    // publication. The bind path reads them on the render thread while a
+    // resource reload (which may be driven off-thread by another mod, or by
+    // Forge's splash during startup) rebuilds them; clearing and refilling the
+    // live map instead would race a HashMap.get against a resize.
+    private static volatile Map<ResourceLocation, List<ResourceLocation>> variantMap = Collections.emptyMap();
 
     // Optional weights per texture group (from .properties files)
-    private static final Map<ResourceLocation, int[]> weightMap = new HashMap<>();
+    private static volatile Map<ResourceLocation, int[]> weightMap = Collections.emptyMap();
 
     @SubscribeEvent
     public static void onTextureStitchPre(TextureStitchEvent.Pre event) {
-        if (!LDOGConfig.enableRandomEntityTextures) return;
-        variantMap.clear();
-        weightMap.clear();
+        if (!LDOGConfig.enableRandomEntityTextures) {
+            variantMap = Collections.emptyMap();
+            weightMap = Collections.emptyMap();
+            return;
+        }
         scanForVariants();
     }
 
@@ -63,6 +71,11 @@ public class RandomEntityTextureHandler {
     public static ResourceLocation getVariantTexture(ResourceLocation originalTexture, Entity entity) {
         if (!LDOGConfig.enableRandomEntityTextures || entity == null) return null;
 
+        // One read of each published reference — a reload swapping them
+        // mid-call cannot leave us with a variant list from one generation and
+        // a weight table from another of a different length.
+        Map<ResourceLocation, List<ResourceLocation>> variantMap = RandomEntityTextureHandler.variantMap;
+        Map<ResourceLocation, int[]> weightMap = RandomEntityTextureHandler.weightMap;
         List<ResourceLocation> variants = variantMap.get(originalTexture);
         if (variants == null || variants.size() <= 1) return null;
 
@@ -118,6 +131,8 @@ public class RandomEntityTextureHandler {
             {"textures/entity/parrot/parrot_red_blue.png", "parrot/parrot_red_blue"},
         };
 
+        Map<ResourceLocation, List<ResourceLocation>> newVariants = new HashMap<>();
+        Map<ResourceLocation, int[]> newWeights = new HashMap<>();
         int totalVariants = 0;
         for (String[] entry : entityPaths) {
             String vanillaPath = entry[0];
@@ -128,17 +143,23 @@ public class RandomEntityTextureHandler {
             if (variants.size() > 1) {
                 // variants.get(0) is the vanilla location findVariants seeded.
                 ResourceLocation key = variants.get(0);
-                variantMap.put(key, variants);
+                newVariants.put(key, Collections.unmodifiableList(variants));
                 totalVariants += variants.size();
 
                 // Try loading .properties for weights
-                loadVariantProperties(mc, entityName, key, variants.size());
+                int[] weights = loadVariantProperties(mc, entityName, variants.size());
+                if (weights != null) newWeights.put(key, weights);
             }
         }
 
+        // Publish both generations together; readers snapshot each reference
+        // once, so the worst case during a swap is one frame on the old set.
+        weightMap = Collections.unmodifiableMap(newWeights);
+        variantMap = Collections.unmodifiableMap(newVariants);
+
         if (totalVariants > 0) {
             LDOGMod.LOGGER.info("LDOG: Found {} random entity texture variants across {} entity types",
-                totalVariants, variantMap.size());
+                totalVariants, newVariants.size());
         }
     }
 
@@ -193,8 +214,8 @@ public class RandomEntityTextureHandler {
         return variants;
     }
 
-    private static void loadVariantProperties(Minecraft mc, String entityName,
-                                               ResourceLocation key, int variantCount) {
+    /** Returns the parsed weight table, or null when the pack ships none. */
+    private static int[] loadVariantProperties(Minecraft mc, String entityName, int variantCount) {
         for (String prefix : new String[]{"optifine/random/", "mcpatcher/mob/"}) {
             ResourceLocation propsLoc = new ResourceLocation("minecraft",
                 prefix + "entity/" + entityName + ".properties");
@@ -214,11 +235,12 @@ public class RandomEntityTextureHandler {
                     }
                     // Fill remaining with 1
                     for (int i = parts.length; i < variantCount; i++) weights[i] = 1;
-                    weightMap.put(key, weights);
+                    return weights;
                 }
-                break;
+                return null;
             } catch (IOException ignored) {}
         }
+        return null;
     }
 
     private static String getFileName(String path) {

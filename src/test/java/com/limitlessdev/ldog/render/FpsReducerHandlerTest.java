@@ -58,6 +58,26 @@ class FpsReducerHandlerTest {
     }
 
     @Test
+    @DisplayName("applyLimit leaves vanilla's cap alone when the reducer is disabled")
+    void applyLimitPassThroughWhenDisabled() {
+        LDOGConfig.enableFpsReducer = false;
+        assertEquals(260, FpsReducerHandler.applyLimit(260));
+        assertEquals(60, FpsReducerHandler.applyLimit(60));
+    }
+
+    @Test
+    @DisplayName("applyLimit takes the lower of vanilla's cap and the reducer target")
+    void applyLimitTakesMinimum() {
+        // getTargetFpsLimit() reads Display.isActive(), which needs LWJGL; the
+        // pure combination rule is what this pins down. Simulate both sides.
+        assertEquals(15, FpsReducerHandler.combine(60, 15));
+        assertEquals(30, FpsReducerHandler.combine(30, 45));
+        assertEquals(15, FpsReducerHandler.combine(260, 15)); // 260 = vanilla "unlimited"
+        assertEquals(15, FpsReducerHandler.combine(0, 15));   // defensive: 0 treated as no vanilla cap
+        assertEquals(60, FpsReducerHandler.combine(60, 0));   // no reducer target
+    }
+
+    @Test
     @DisplayName("Config values are within valid ranges")
     void configRangesValid() {
         assertTrue(LDOGConfig.unfocusedFpsLimit >= 1 && LDOGConfig.unfocusedFpsLimit <= 60);

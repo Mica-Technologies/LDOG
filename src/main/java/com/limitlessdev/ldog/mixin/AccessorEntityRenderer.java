@@ -20,5 +20,8 @@ public interface AccessorEntityRenderer {
     void ldog$setShaderGroup(ShaderGroup shaderGroup);
 
     @Accessor("useShader")
+    boolean ldog$getUseShader();
+
+    @Accessor("useShader")
     void ldog$setUseShader(boolean useShader);
 }

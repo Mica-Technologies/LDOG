@@ -53,8 +53,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *     would clobber the interleaving, so anaglyph users are not served by
  *     the pipeline in 8c.
  *   - RenderTargetManager.ensure() succeeds and isReady()
+ *
+ * Ordering against MixinEntityRendererMSAA (same target method, HEAD and
+ * RETURN): that mixin declares priority 900 so it is applied before this one
+ * (default 1000). Its resolve therefore runs before ldog$pipelineResolve,
+ * which is what lets the non-binding passes operate on the already-resolved
+ * main framebuffer when MSAA owns the world pass. Keep this mixin at the
+ * default priority, or above 900, or the frame order silently inverts.
  */
-@Mixin(EntityRenderer.class)
+@Mixin(value = EntityRenderer.class, priority = 1000)
 public abstract class MixinEntityRendererPostPipeline {
 
     @Unique private int ldog$savedFbo = 0;
@@ -169,6 +176,21 @@ public abstract class MixinEntityRendererPostPipeline {
         // require bindingActive (RCAS, FXAA, vignette) applied themselves twice
         // to the same framebuffer every frame.
         if (pass != 2) return;
+
+        // MSAA owns the world-pass FBO: the HEAD bind yielded (pipelineActive
+        // is false) and MixinEntityRendererMSAA has already resolved into the
+        // main framebuffer by the time this runs (see the class javadoc on
+        // priority). The chain still ticks below so that passes which do not
+        // need the scene binding (RCAS, FXAA, vignette) apply to the resolved
+        // image — that is deliberate, not a missing guard. Passes that need
+        // the scaled scene target check ctx.bindingActive() themselves.
+        boolean msaaOwnsFrame = PostProcessPipeline.hasConflictingFeatureOn();
+        if (msaaOwnsFrame && ldog$pipelineActive) {
+            // Cannot happen (HEAD returns before activating when MSAA is on),
+            // but if a future edit breaks that invariant, do not blit over the
+            // MSAA resolve: drop our binding state and let the frame through.
+            ldog$pipelineActive = false;
+        }
 
         // World draw done — the G-buffer is no longer the active draw target.
         ShaderPackGbufferManager.endWorldGBuffer();

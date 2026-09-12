@@ -62,30 +62,62 @@ public final class FXAAHandler {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc == null || mc.entityRenderer == null) return;
 
+        // The accessor mixin can fail to apply (another coremod replacing
+        // EntityRenderer, a refmap mismatch in a broken build). A raw cast then
+        // throws ClassCastException on every tick. Degrade to "FXAA unmanaged"
+        // with one warning instead.
+        if (!(mc.entityRenderer instanceof AccessorEntityRenderer)) {
+            if (!warnedNoAccessor) {
+                warnedNoAccessor = true;
+                LDOGMod.LOGGER.warn("LDOG: AccessorEntityRenderer mixin not applied; FXAA shader cannot be managed");
+            }
+            return;
+        }
+        AccessorEntityRenderer accessor = (AccessorEntityRenderer) mc.entityRenderer;
+
         boolean pipelineHandlesFxaa = LDOGConfig.enablePostProcessPipeline;
         boolean shouldBeLoaded = LDOGConfig.enableFXAA && !pipelineHandlesFxaa;
         if (shouldBeLoaded == currentlyLoaded) return;
 
         if (shouldBeLoaded) {
+            boolean ok = false;
             try {
                 mc.entityRenderer.loadShader(FXAA_SHADER);
-                fxaaShaderGroup = ((AccessorEntityRenderer) mc.entityRenderer).ldog$getShaderGroup();
-                currentlyLoaded = true;
-                LDOGMod.LOGGER.info("LDOG: FXAA shader loaded");
+                // Vanilla's loadShader swallows IOException / JsonSyntaxException
+                // and just clears useShader, so "no exception" is not "loaded".
+                ok = accessor.ldog$getUseShader() && accessor.ldog$getShaderGroup() != null;
             } catch (Exception e) {
                 LDOGMod.LOGGER.error("LDOG: Failed to load FXAA shader", e);
+            }
+            if (ok) {
+                fxaaShaderGroup = accessor.ldog$getShaderGroup();
+                currentlyLoaded = true;
+                LDOGMod.LOGGER.info("LDOG: FXAA shader loaded");
+            } else {
+                // loadShader deleted whatever group was there before it started,
+                // so anything left in the slot now is the half-built FXAA group
+                // (framebuffers allocated, program failed). Release it rather
+                // than leaking GL objects on every retry.
+                ShaderGroup partial = accessor.ldog$getShaderGroup();
+                if (partial != null) {
+                    try { partial.deleteShaderGroup(); } catch (Exception ignored) { }
+                    accessor.ldog$setShaderGroup(null);
+                }
+                accessor.ldog$setUseShader(false);
                 currentlyLoaded = false;
                 fxaaShaderGroup = null;
+                LDOGMod.LOGGER.warn("LDOG: FXAA shader did not load; MC's post shader slot cleared");
             }
         } else {
-            unload(mc.entityRenderer);
+            unload(accessor);
             currentlyLoaded = false;
             LDOGMod.LOGGER.info("LDOG: FXAA shader unloaded");
         }
     }
 
-    private static void unload(EntityRenderer renderer) {
-        AccessorEntityRenderer accessor = (AccessorEntityRenderer) renderer;
+    private static boolean warnedNoAccessor = false;
+
+    private static void unload(AccessorEntityRenderer accessor) {
         ShaderGroup current = accessor.ldog$getShaderGroup();
         // EntityRenderer's shaderGroup slot is shared with vanilla's mob-vision
         // shaders (spectating through a creeper/enderman swaps in

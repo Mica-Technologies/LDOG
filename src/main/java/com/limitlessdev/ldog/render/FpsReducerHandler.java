@@ -92,21 +92,36 @@ public class FpsReducerHandler {
         return wasAfk;
     }
 
+    /**
+     * The frame-rate cap the game loop should use this frame, given vanilla's
+     * own answer. Called from the mixin on {@code Minecraft.getLimitFramerate},
+     * which is what {@code runGameLoop} feeds to {@code Display.sync} and what
+     * {@code isFramerateLimitBelowMax} gates the sync on. Lowering the value
+     * there is the only way to actually cap rendering: the earlier approach of
+     * calling {@code Display.sync(target)} from the 20 Hz client tick just
+     * slept inside the tick, which throttled game ticks, not frames.
+     *
+     * <p>Vanilla returns 260 for "unlimited"; {@code Math.min} still yields the
+     * reducer's target in that case, which is what we want.
+     */
+    public static int applyLimit(int vanillaLimit) {
+        return combine(vanillaLimit, getTargetFpsLimit());
+    }
+
+    /** Pure combination rule behind {@link #applyLimit}; {@code target <= 0} means no reduction. */
+    static int combine(int vanillaLimit, int target) {
+        if (target <= 0) return vanillaLimit;
+        return vanillaLimit > 0 ? Math.min(vanillaLimit, target) : target;
+    }
+
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.START) return;
         if (!LDOGConfig.enableFpsReducer) return;
 
-        // Poll mouse position since Forge doesn't fire events for movement
+        // Poll mouse position since Forge doesn't fire events for movement.
+        // The actual frame cap is applied by MixinMinecraftFpsLimit every
+        // frame via applyLimit(); nothing to do here beyond activity tracking.
         checkMouseMovement();
-
-        int targetFps = getTargetFpsLimit();
-        if (targetFps > 0) {
-            Minecraft mc = Minecraft.getMinecraft();
-            int currentLimit = mc.gameSettings.limitFramerate;
-            if (currentLimit == 0 || currentLimit > targetFps) {
-                Display.sync(targetFps);
-            }
-        }
     }
 }

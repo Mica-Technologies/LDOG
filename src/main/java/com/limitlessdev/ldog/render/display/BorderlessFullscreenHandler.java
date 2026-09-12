@@ -51,8 +51,29 @@ public final class BorderlessFullscreenHandler {
      * get dodge behavior at startup and their strict-fullscreen preference
      * only on F11 toggle afterward — acceptable edge case.
      */
+    /**
+     * The desktop mode LWJGL captured at Display class-init, or null when it
+     * could not (headless-ish setups, some remote-desktop drivers, a display
+     * implementation that failed to query the primary monitor). Callers must
+     * treat null as "leave the window alone" — a bare
+     * {@code getDesktopDisplayMode().getWidth()} here was a startup NPE that
+     * took the whole client down for a feature that is purely cosmetic.
+     */
+    private static DisplayMode desktopModeOrNull() {
+        try {
+            return Display.getDesktopDisplayMode();
+        } catch (RuntimeException e) {
+            LDOGMod.LOGGER.warn("LDOG: Display.getDesktopDisplayMode() failed; borderless sizing skipped", e);
+            return null;
+        }
+    }
+
     public static void setupAtStartup() throws LWJGLException {
-        DisplayMode desktop = Display.getDesktopDisplayMode();
+        DisplayMode desktop = desktopModeOrNull();
+        if (desktop == null) {
+            LDOGMod.LOGGER.warn("LDOG: no desktop display mode available at startup; leaving window size to vanilla");
+            return;
+        }
         int w = desktop.getWidth();
         int h = LDOGConfig.blockFullscreenOptimizations
             ? desktop.getHeight() - 1
@@ -66,6 +87,13 @@ public final class BorderlessFullscreenHandler {
     }
 
     public static void enterBorderless(Minecraft mc) throws LWJGLException {
+        DisplayMode desktop = desktopModeOrNull();
+        if (desktop == null) {
+            // Surface as the exception the mixin already handles: it logs and
+            // falls through to vanilla's exclusive-fullscreen toggle.
+            throw new LWJGLException("no desktop display mode available for borderless sizing");
+        }
+
         if (!hasSavedState) {
             savedWidth = Display.getWidth();
             savedHeight = Display.getHeight();
@@ -74,7 +102,6 @@ public final class BorderlessFullscreenHandler {
             hasSavedState = true;
         }
 
-        DisplayMode desktop = Display.getDesktopDisplayMode();
         int w = desktop.getWidth();
         // Windows 10/11's Fullscreen Optimizations feature detects a borderless
         // window sized EXACTLY to the monitor at (0,0) and auto-transitions the

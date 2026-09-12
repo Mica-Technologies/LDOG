@@ -18,8 +18,17 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *
  * GUI and HUD render to mc.framebufferMc as normal (post-resolve), so MSAA
  * doesn't smear 2D UI pixels.
+ *
+ * Priority 900 (below the default 1000 used by MixinEntityRendererPostPipeline)
+ * so this mixin is applied FIRST. Injections at the same instruction run in
+ * application order, which pins the frame to: MSAA bind → pipeline HEAD
+ * (yields, sees hasConflictingFeatureOn) … MSAA resolve → pipeline RETURN
+ * (runs the non-binding passes such as RCAS/FXAA/vignette over the resolved
+ * main framebuffer). Without an explicit priority the two mixins tie and the
+ * order would depend on config listing, so the resolve could run after the
+ * post passes and overwrite them.
  */
-@Mixin(EntityRenderer.class)
+@Mixin(value = EntityRenderer.class, priority = 900)
 public abstract class MixinEntityRendererMSAA {
 
     @Unique private int ldog$savedFbo = 0;

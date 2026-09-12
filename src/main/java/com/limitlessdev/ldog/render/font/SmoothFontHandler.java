@@ -140,13 +140,39 @@ public final class SmoothFontHandler implements IResourceManagerReloadListener {
         }
     }
 
+    /**
+     * The cell size to rasterize at: the configured value, clamped so the
+     * 16-cell-wide atlas fits {@code GL_MAX_TEXTURE_SIZE}. The config range
+     * allows 128 px cells (a 2048² atlas), which is fine on any desktop GPU,
+     * but an integrated or virtualised GL 2.1 context can report 1024 or
+     * 2048 as its maximum and would reject the upload with GL_INVALID_VALUE,
+     * leaving the font texture black. The font size is scaled with the cell
+     * so glyphs do not clip when the cell shrinks.
+     */
+    private static int clampedCellSize() {
+        int cell = LDOGConfig.ttfCellSize;
+        int maxTex = org.lwjgl.opengl.GL11.glGetInteger(org.lwjgl.opengl.GL11.GL_MAX_TEXTURE_SIZE);
+        if (maxTex <= 0) return cell; // no context / query failed: trust the config
+        int maxCell = Math.max(8, maxTex / 16);
+        if (cell > maxCell) {
+            LDOGMod.LOGGER.warn("LDOG: ttfCellSize {} needs a {}px atlas but GL_MAX_TEXTURE_SIZE is {}; using {}px cells",
+                cell, cell * 16, maxTex, maxCell);
+            return maxCell;
+        }
+        return cell;
+    }
+
     private boolean tryLoadTTFFont(TextureManager tm) {
         TTFFontRasterizer.Result result;
         try {
+            int cell = clampedCellSize();
+            int fontSize = cell == LDOGConfig.ttfCellSize
+                ? LDOGConfig.ttfFontSize
+                : Math.max(8, LDOGConfig.ttfFontSize * cell / LDOGConfig.ttfCellSize);
             result = TTFFontRasterizer.rasterize(
                 LDOGConfig.ttfFontFamily,
                 LDOGConfig.ttfBold, LDOGConfig.ttfItalic,
-                LDOGConfig.ttfFontSize, LDOGConfig.ttfCellSize,
+                fontSize, cell,
                 LDOGConfig.ttfSubpixel);
         } catch (Throwable t) {
             LDOGMod.LOGGER.warn("LDOG: TTF rasterization failed: {}", t.toString());
