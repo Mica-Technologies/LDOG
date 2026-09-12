@@ -76,6 +76,53 @@ jobs:
           git tag "${{ env.PRE_TAG }}" "${{ github.sha }}"
           git push origin "${{ env.PRE_TAG }}"
 
+      - name: Publish Which Tag Was Used
+        id: publish_tag
+        run: |
+          if [ "${{ github.event.inputs.release }}" = "true" ]; then
+            echo "tag=${{ env.REL_TAG }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ env.PRE_TAG }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # State the version instead of letting the build infer it.
+      #
+      # Left to itself the build takes it from `git describe --abbrev=0 --tags` (build.gradle
+      # getLastTag), which has no --match and, with several tags on one commit, does not prefer
+      # the one just created. A push to main tags the commit as a pre-release before anyone
+      # dispatches a release, so two tags sit on it. Within one UTC day `2026.09.08` sorts ahead
+      # of `2026.09.08-pre.1916...` and the release wins by luck; dispatch after midnight UTC and
+      # `2026.09.08-pre.2007...` sorts ahead of `2026.09.09` instead. MCMCP shipped a release on
+      # 2026-09-09 whose jar and mcmod.info were stamped with the pre-release version this way.
+      #
+      # buildscript.properties rather than `-PmodVersion`, which reads like the escape hatch
+      # build.gradle implies and is not one: loadProjectProperties copies every key of that file
+      # over the project properties unconditionally, so whatever -P supplied is overwritten by the
+      # empty value there. Writing the file is therefore the supported way in, and it is a CI-only
+      # edit that is never committed.
+      - name: Pin the mod version to the tag being published
+        run: |
+          chosen="${{ steps.publish_tag.outputs.tag }}"
+          sed -i "s|^modVersion =.*|modVersion = $chosen|" buildscript.properties
+          grep -n '^modVersion' buildscript.properties
+
+      # Still worth doing with the version pinned, because `getLastTag` also feeds the generated
+      # changelog, which asks git the same ambiguous question. Do not remove it as redundant.
+      - name: Leave only the tag being built on this commit
+        run: |
+          chosen="${{ steps.publish_tag.outputs.tag }}"
+          # The `|| true` is load-bearing: grep exits 1 when the chosen tag is the only one on the
+          # commit, which is the ordinary case for a pre-release build. This step inherits the
+          # workflow default of `bash -e`, where a non-zero exit mid-pipeline is ignored — but a step
+          # that declares `shell: bash` also gets `-o pipefail`, where the same line fails the whole
+          # release. Written to survive either.
+          others="$(git tag --points-at "${{ github.sha }}" | grep -vxF "$chosen" || true)"
+          if [ -n "$others" ]; then
+            echo "$others" | xargs git tag -d
+          fi
+          echo "Local tags now on this commit:"
+          git tag --points-at "${{ github.sha }}"
+
       - name: Assemble Mod with Gradle
         run: ./gradlew build -Dhttp.socketTimeout=60000 -Dhttp.connectionTimeout=60000 -Dorg.gradle.internal.http.socketTimeout=60000 -Dorg.gradle.internal.http.connectionTimeout=60000
 
@@ -94,6 +141,20 @@ jobs:
         run: |
           modVersion=$(${{github.workspace}}/gradlew -q printModVersion | tail -n 1 | xargs)
           echo "MOD_VERSION=$modVersion" >> $GITHUB_ENV
+
+      # A well-formed version is not the same as the version being published: a release built
+      # as `2026.09.08-pre.2007.UTC+0000+a306a0a` is perfectly well formed, just wrong. This asks
+      # the only question that matters — is it the tag we said we were publishing — and fails
+      # the release loudly instead of shipping a jar labelled as something else.
+      - name: Fail if the built version is not the tag being published
+        run: |
+          built="${{ env.MOD_VERSION }}"
+          chosen="${{ steps.publish_tag.outputs.tag }}"
+          if [ "$built" != "$chosen" ]; then
+            echo "::error::Built version '$built' does not match the published tag '$chosen'. The jar and mcmod.info would be stamped '$built'. Refusing to publish."
+            exit 1
+          fi
+          echo "Built version matches the published tag: $built"
 
       - name: Save Mod Archive Base Name to GITHUB_ENV
         run: |
