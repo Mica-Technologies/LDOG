@@ -64,13 +64,45 @@ local.properties
 .texlipse
 
 ### Intellij IDEA ###
+# Follows the JetBrains recommendation: share .idea/ (compiler, misc, vcs, code style,
+# run configurations) and exclude only user-specific or Gradle-regenerated files.
+# https://intellij-support.jetbrains.com/hc/en-us/articles/206544839
 
 *.iml
 *.ipr
 *.iws
 
-.idea/*
-!.idea/runConfigurations/
+# User-specific
+.idea/**/workspace.xml
+.idea/**/tasks.xml
+.idea/**/usage.statistics.xml
+.idea/**/dictionaries
+.idea/**/shelf
+.idea/**/aws.xml
+.idea/**/contentModel.xml
+.idea/**/dataSources/
+.idea/**/dataSources.ids
+.idea/**/dataSources.local.xml
+.idea/**/sqlDataSources.xml
+.idea/**/dynamic.xml
+.idea/**/uiDesigner.xml
+.idea/**/dbnavigator.xml
+.idea/**/mongoSettings.xml
+.idea/httpRequests
+.idea/sonarlint/
+.idea/caches/
+.idea/replstate.xml
+
+# Plugin-local state (Copilot diff cache, Material Theme project settings)
+.idea/copilotDiffState.xml
+.idea/material_theme_project_new.xml
+
+# Gradle-regenerated on import
+.idea/**/gradle.xml
+.idea/**/libraries
+.idea/modules.xml
+.idea/modules/
+
 .idea_modules/
 /classes/
 /out/
