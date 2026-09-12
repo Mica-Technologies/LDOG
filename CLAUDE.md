@@ -33,9 +33,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Requirements:** Java 17 works for local dev, but Java 21 is now recommended -- RetroFuturaGradle deprecates older Gradle-JVM versions and CI already runs on JDK 21 (mod code still targets JVM 8 via Jabel regardless of which JDK runs Gradle). Heap is set to `-Xmx3G` in `gradle.properties` for decompilation.
 
-**JDK Location:** The JDK is managed via IntelliJ and located at `C:\Users\<username>\.jdks\azul-17.0.18` (or an equivalent `azul-21.x` install). When running Gradle from the CLI, set `JAVA_HOME` to this path:
+**JDK Location:** JDKs are managed via IntelliJ under `C:\Users\<username>\.jdks\` (Azul Zulu; see `dev-configurations/jdk-gradle-setup`). Use a 17 or 21 — Gradle 8.9 cannot run on JDK 25/26 even if one is installed. When running Gradle from the CLI, set `JAVA_HOME` explicitly:
 ```bash
-JAVA_HOME="C:/Users/<username>/.jdks/azul-17.0.18" ./gradlew build
+JAVA_HOME="C:/Users/<username>/.jdks/azul-17.0.19" ./gradlew build
 ```
 
 ## Architecture Overview
@@ -111,6 +111,8 @@ Version is derived from Git tags. No manual version setting needed (see `modVers
 - `docs/CONVENTIONS.md` -- Code/mixin/GUI conventions established during development
 
 `docs/agent-plans/` is a **gitignored** folder for plans and session logs worked on with Claude/agents (local-only, never committed):
-- `docs/agent-plans/MASTER_APP_PLAN.md` -- Single source of truth for roadmap, phase status, research notes, backlog, gotchas, and resume prompt
-- `docs/agent-plans/PHASE_9B_VALIDATION.md` -- User-driven upscaler quality validation protocol
+- `docs/agent-plans/LDOG_PLAN_2026-09.md` -- The active plan: STATUS, resume prompt, decisions table, numbered phases with checklists, deferred items. Read STATUS first.
 - `docs/agent-plans/SESSION_*.md` -- Per-session work logs
+- `docs/agent-plans/done/` -- Retired plans (kept for design history; every open task from them lives in the active plan)
+
+Infrastructure gotchas that used to live in the plans are in `docs/CONVENTIONS.md` ("Gotchas Carried Forward").

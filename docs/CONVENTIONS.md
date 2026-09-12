@@ -185,13 +185,81 @@ Suffix-based: `<texture>_e.png` for emissive overlay. Suffix configurable via `e
 
 ### Quick Commands
 ```bash
-JAVA_HOME="C:/Users/ahawk/.jdks/azul-17.0.18" ./gradlew compileJava  # fast compile check
-JAVA_HOME="C:/Users/ahawk/.jdks/azul-17.0.18" ./gradlew build        # full build
-JAVA_HOME="C:/Users/ahawk/.jdks/azul-17.0.18" ./gradlew runClient     # launch game
+JAVA_HOME="C:/Users/<username>/.jdks/azul-17.0.19" ./gradlew compileJava  # fast compile check
+JAVA_HOME="C:/Users/<username>/.jdks/azul-17.0.19" ./gradlew build        # full build
+JAVA_HOME="C:/Users/<username>/.jdks/azul-17.0.19" ./gradlew runClient     # launch game
 ```
+Gradle 8.9 runs on JDK 8–21 only; a JDK 25/26 in `~/.jdks` cannot drive the wrapper. RFG prints a
+"Java < 21 is deprecated" notice on 17 — harmless, CI runs on 21.
 
 ### Checking Mixin Issues
 Search `run/logs/latest.log` for:
 - `"loaded too early"` — target class loaded before mixin applied; need different target or earlier config
 - `"Critical problem"` — mixin failed to apply
 - `"Error"` + mixin class name — injection point not found (wrong method signature)
+
+---
+
+## Gotchas Carried Forward
+
+Hard-won facts from development sessions, migrated out of the working plans on 2026-09-12 so they
+survive plan retirement. Each one cost at least an hour once.
+
+### Mixin loading and class timing
+- **A wrong method descriptor fails the entire mixin class**, not just that injector, and without a crash. `RenderGlobal.renderClouds` in 1.12.2 is `(F,I,D,D,D)`; the `(F,I)` guess silently disabled every hook in `MixinRenderGlobal` (entity culling, custom sky, reactive mask). After any mixin edit, grep `latest.log` for the target's one-shot confirmation lines (`renderSky mixin CONFIRMED` etc.).
+- **The `mixin` package may only contain mixins.** A nested helper class there (`MixinParticleManagerFilter$SpawnCounter`) makes MixinBooter throw `IllegalClassLoadError` at mod init. Helpers live under `render/`.
+- Classes touched during `Bootstrap.register` (`Potion`, `EnumDyeColor`, `GuiIngame`) must be in `mixins.ldog.vanilla.json`; a late-config mixin on them logs "Critical problem … loaded too early" and no-ops.
+- `@At` targets that reference LWJGL classes (`Project.gluPerspective`, `Display.setFullscreen`) and Forge-added methods (`TextureMap.finishLoading`, `FontRenderer.bindTexture`) need `remap = false` — there is no SRG mapping, and the annotation processor warns "Unable to locate method mapping" without it.
+- `RenderChunk.position` is a private `MutableBlockPos`; `@Shadow` the `getPosition()` accessor instead.
+- `EnumLightType` does not exist in 1.12.2 — it is `EnumSkyBlock`.
+- `TextureMap.mapRegisteredSprites` is cleared before `TextureStitchEvent.Pre` fires — sprites cannot be enumerated during Pre; scan the resource packs directly.
+- `MixinFontRenderer` must bypass subclasses (`self.getClass() != FontRenderer.class`) — Forge's `SplashProgress$SplashFontRenderer` runs on a separate GL context/thread.
+
+### LWJGL 2.9.4 / Display
+- `Display.setDisplayMode` takes a plain `new DisplayMode(w, h)`. Passing `getDesktopDisplayMode()` carries bpp/refresh metadata that triggers a fullscreen mode-switch even when not in exclusive fullscreen (the borderless flicker). Order: `setResizable` → `setLocation` → `setDisplayMode`.
+- `Display.destroy()` invalidates the whole GL context; every LDOG-owned handle (FBOs, shader programs, font atlases, MSAA FBO) dies. This is why the runtime borderless toggle is deferred.
+- Windows "Fullscreen Optimizations": a window exactly desktop-sized gets auto-promoted by DWM. Default height `desktop_h - 1` dodges it ("Block FS Optim" toggle).
+- Fullscreen-at-startup goes through `Minecraft.toggleFullscreen()`, which calls `resize(w, h)` → `currentScreen.onResize`. Use `mc.resize(w, h)`, not `updateFramebufferSize` directly.
+
+### Post-process pipeline, TAA, FSR2
+- `renderWorldPass(pass)` with `pass != 2` is the anaglyph path; default MC always passes 2. Gate on `pass != 2`, never `pass == 0`.
+- Jitter injection targets `renderWorldPass` (both `gluPerspective` ordinals), not `setupCameraTransform` — the latter's projection is overwritten before terrain draws.
+- TAA/FSR2 matrix capture happens **after** `applyJitter()`; history stores jittered pixel positions, and un-jittered matrices produce "drunk/swimming" reprojection.
+- The standalone TAA pass short-circuits when FSR2 is the upscaler; FSR2 owns history accumulation. Two history managers fight.
+- `EntityMotionVectorPass` runs **before** FSR2 in the pass list so the MV target is populated. `EntityRenderStateCache.beginFrame()` resets at `renderWorldPass` HEAD — another mixin on that method must not reset it earlier.
+- Reactive mask = MRT + per-attachment `glColorMaski`; legacy fixed-function replicates `gl_FragColor` across bound attachments, so no custom entity shader is needed. The reactive mask and the deferred gbuffer MRT path are mutually exclusive.
+- Vignette is the absolute last pass (after FXAA) so FXAA does not treat the gradient as an edge.
+- Every `RenderTargetManager.ensure(...)` caller must pass the same HDR flag. Two callers disagreeing reallocate targets every frame (symptom: enabling HDR turns the world black).
+- `glPopAttrib` restores real GL state behind `GlStateManager`'s cache, after which later `GlStateManager` calls are silently skipped. Call `GlStateSync` after every `glPopAttrib`.
+- The pass chain self-heals: a throwing pass is skipped, not removed, and `registerPasses()` rebuilds when the chain is empty. Removing passes permanently caused black screens on toggle.
+- `PipelineGlProbe.drain(stage)` runs at every stage boundary, so the first stage to report an error is where it was born. Known drained-and-benign `0x502`s: `gbuffer:bind:*`, `shadow:depth-render`, `composite (multi-write)`.
+- `AutoScaleHandler` overrides manual Render Scale and must stay quiet under the FPS-reducer cap and MSAA, or it pumps the resolution every 2 s.
+
+### Shader packs
+- Uniform **types** matter: `cameraPosition` / `sunPosition` are `vec3`, `atlasSize` is `ivec2`. Pushing the wrong type silently zeroes them (packs saw a zero camera for weeks).
+- Resolve `DRAWBUFFERS` only after `GlslPreprocessor` (seeded with `ShaderMacros`) has stripped dead branches, so the surviving directive is the active one. Pad unwritten slots with `GL_NONE` — compacting shifts `gl_FragData[i]` into the wrong colortex.
+- Composite-only colortex buffers persist frame to frame (OF `colortexNClear = false` semantics). Only re-copy buffers the gbuffer programs actually wrote; clearing everything zeroes pack TAA history (BSL "invisible except sky").
+- Render the shadow map **through the pack's `shadow` program** when it ships one. BSL warps xy and scales z in `shadow.vsh` and undoes it on the sampling side; a fixed-function ortho map makes every lookup read occluded (uniform darkness).
+- Detach all colour attachments before each multi-write composite stage; a stale attachment creates a feedback loop (`0x502`).
+- `MC_NORMAL_MAP` / `MC_SPECULAR_MAP` are deliberately undefined until real map textures are fed; defining them makes packs sample black.
+- Pack programs use `ShaderProgram.quietMissingUniforms()` (they use a subset by design); LDOG's own passes keep the warnings.
+- MC 1.16+ builds of packs (GLSL 330 core: BSL v10 for 1.16, Complementary r5, Solas, Continuum 2.0.5) cannot run on 1.12.2 GL 2.1, same as under OptiFine. The **1.12.2 builds** of BSL v8.2 / v10.1 are `#version 120` and are the reference deferred packs; SEUS v11 is the reference forward pack.
+- `colortex1..7` / `depthtex1..2` fall back to a shared 1×1 black texture when no gbuffer path allocated them — packs get zeros, not crashes.
+
+### Settings GUI
+- Tab switches defer to the next `updateScreen` tick via `pendingTabSwitch`; calling `initGui()` from `actionPerformed` clears `buttonList` while vanilla's `mouseClicked` loop is still iterating it.
+- `activeTab` is static so a child screen (shader-pack picker) round-trip does not reset it.
+- `onGuiClosed` → `doSave`: Esc saves.
+- Preset changes must set `extBorderSettingsChanged` / `fxaaSettingsChanged` / `waterSettingsChanged` so `saveAndClose` triggers the right reloads.
+- OF interop buttons live at ID 400+ (200 collided with `BTN_DONE`).
+
+### OptiFine
+- OF stores its feature toggles as **instance fields on vanilla `GameSettings`** (added by its transformer), not on a static `Config` class. `OFConfigBridge` reflects on `mc.gameSettings` and walks the hierarchy.
+- **Never put the OF jar in `run/mods/`.** `gradlew runClient` crashes at `FMLClientHandler.detectOptifine` with `NoClassDefFoundError: cer` — OF is obfuscated against notch names. Verify OF coexistence in a production launcher install.
+- `OptiFineCompat.isActive()` = config flag && `shouldHandle`; `LDOGMixinPlugin` disables the four `renderWorldPass` mixins when OF is present.
+
+### Miscellaneous
+- Biome blend radius changes need `renderGlobal.loadRenderers()` to invalidate cached chunk meshes.
+- Dynamic-light lookups run on chunk-worker threads: read the `lastPos` snapshot, never `entity.getPosition()`.
+- `skipEmptyChunkSections` must not mark an empty section's faces as occluding in `CompiledChunk` — that was the "terrain holes across a valley" bug.
+- A resource pack that ships `optifine/natural.properties` must not disable the built-in defaults for blocks it does not mention.
