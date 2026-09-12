@@ -338,20 +338,15 @@ public final class FSR2ReconstructionPass implements PostProcessPass {
         shader.setUniform1f("u_historyWeight", histWeight);
         // Sharpness slider doubles as the integrated FSR2 sharpen.
         shader.setUniform1f("u_sharpness", (float) Math.min(1.0, LDOGConfig.fsr1Sharpness * 0.25));
-        // Current-frame jitter, in SOURCE texels — MixinEntityRendererJitter
-        // shifted the projection by this much before the world was rasterised
-        // (it only jitters while TAA is on, which is also the only path that
-        // reaches here). The kernel has to be centred on the same offset or the
-        // reconstruction chases the Halton cycle every frame.
-        //
-        // CAVEAT: that mixin adds the offset to projection element 12/13 (the w
-        // column), so the resulting NDC shift is jitter/clip.w — full strength
-        // about a block away and fading with distance, rather than the
-        // depth-independent shift you get from offsetting element 8/9 (the z
-        // column, the usual TAA formulation). This uniform therefore describes
-        // the near-field shift exactly and over-states it for distant geometry.
-        // Fixing that belongs in the jitter mixin, not here.
-        shader.setUniform2f("u_jitter", JitterHelper.jitterX(), JitterHelper.jitterY());
+        // Current-frame jitter, in SOURCE texels — exactly what
+        // MixinEntityRendererJitter baked into the projection before the world
+        // was rasterised (a depth-independent NDC shift via elements 8/9), or
+        // zero on frames it skipped (TAA off, shader pack driving). Reading the
+        // APPLIED value rather than the Halton sample matters: un-jittering a
+        // frame that was never jittered is a constant sub-pixel misregistration.
+        // The kernel has to be centred on the same offset or the reconstruction
+        // chases the Halton cycle every frame.
+        shader.setUniform2f("u_jitter", JitterHelper.appliedX(), JitterHelper.appliedY());
         shader.setUniform1i("u_useEntityMV", useEntityMV ? 1 : 0);
         shader.setUniform1i("u_useReactiveMask", useMask ? 1 : 0);
 

@@ -28,7 +28,31 @@ public final class JitterHelper {
     /** Reset jitter state — called on world changes, resource reloads, etc. */
     public static void reset() {
         frameCount = 0;
+        clearApplied();
     }
+
+    // The jitter that was ACTUALLY baked into this frame's projection, in
+    // pixels of the render target — zero when the jitter mixin skipped the
+    // frame (TAA off, a shader pack driving, no GL target). Consumers that
+    // un-jitter their sampling (FSR2) must read these, not jitterX()/jitterY():
+    // the Halton sequence keeps a value even on frames where nothing was
+    // offset, and un-jittering an un-jittered frame is a constant sub-pixel
+    // misregistration.
+    private static float appliedX = 0f;
+    private static float appliedY = 0f;
+
+    public static void markApplied(float px, float py) {
+        appliedX = px;
+        appliedY = py;
+    }
+
+    public static void clearApplied() {
+        appliedX = 0f;
+        appliedY = 0f;
+    }
+
+    public static float appliedX() { return appliedX; }
+    public static float appliedY() { return appliedY; }
 
     public static long currentFrame() {
         return frameCount;

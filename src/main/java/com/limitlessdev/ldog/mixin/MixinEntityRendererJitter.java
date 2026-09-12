@@ -57,6 +57,10 @@ public abstract class MixinEntityRendererJitter {
     @Inject(method = "renderWorldPass(IFJ)V", at = @At("HEAD"))
     private void ldog$advanceJitter(int pass, float partialTicks, long finishTimeNano, CallbackInfo ci) {
         if (pass != 2) return;
+        // Whatever applyJitter records below is for THIS frame only; if no
+        // jitter ends up applied (TAA off, pack driving) the consumers must
+        // see zero, not last frame's value.
+        JitterHelper.clearApplied();
         // Jitter is applied only for TAA. FSR2-without-TAA still needs the camera
         // capture (below) but NOT jitter — LDOG's FSR2 doesn't fully resolve the
         // sub-pixel offset, so it shows up as flicker/shimmer during motion.
@@ -129,6 +133,24 @@ public abstract class MixinEntityRendererJitter {
         CameraState.captureCurrentMatrices();
     }
 
+    /**
+     * Shifts the projection by the frame's sub-pixel jitter, as a constant
+     * NDC offset independent of depth.
+     *
+     * <p>The offset goes into column-major elements 8 and 9 (row 0 / row 1 of
+     * the z column): clip.x = P0·x + P8·z + P12·w, and for a perspective
+     * matrix w_clip = −z_eye, so a delta on P8 becomes an NDC shift of
+     * −delta for EVERY depth. Elements 12/13 (the w column) — which is where
+     * this used to write — divide by w_clip too, so the shift there was
+     * delta / −z_eye: full strength one block away, a few percent of a pixel
+     * at render distance. TAA was effectively un-jittered on everything but
+     * the hand, and FSR2's un-jitter (a fixed pixel offset) disagreed with
+     * what was rendered.
+     *
+     * <p>Sign: we want NDC += jitter (content moves right/up by jitterX/Y
+     * pixels), matching FSR2's {@code kUV = sUV + u_jitter} sampling. Hence
+     * P8 −= jx, P9 −= jy.
+     */
     private static void applyJitter() {
         RenderTargetManager rtm = RenderTargetManager.INSTANCE;
         int srcW;
@@ -142,14 +164,17 @@ public abstract class MixinEntityRendererJitter {
         }
         if (srcW <= 0 || srcH <= 0) return;
 
-        float jx = JitterHelper.jitterX() * 2f / srcW;
-        float jy = JitterHelper.jitterY() * 2f / srcH;
+        float px = JitterHelper.jitterX();
+        float py = JitterHelper.jitterY();
+        float jx = px * 2f / srcW;
+        float jy = py * 2f / srcH;
 
         FloatBuffer buf = BufferUtils.createFloatBuffer(16);
         GL11.glGetFloat(GL11.GL_PROJECTION_MATRIX, buf);
-        buf.put(12, buf.get(12) + jx);
-        buf.put(13, buf.get(13) + jy);
+        buf.put(8, buf.get(8) - jx);
+        buf.put(9, buf.get(9) - jy);
         buf.rewind();
         GL11.glLoadMatrix(buf);
+        JitterHelper.markApplied(px, py);
     }
 }
