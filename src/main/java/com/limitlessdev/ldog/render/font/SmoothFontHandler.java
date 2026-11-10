@@ -61,12 +61,6 @@ public final class SmoothFontHandler implements IResourceManagerReloadListener {
         new ResourceLocation("minecraft", "mcpatcher/font/ascii.png"),
     };
 
-    private static final ResourceLocation[] WIDTH_PROPERTY_CANDIDATES = {
-        new ResourceLocation("minecraft", "optifine/font/ascii.properties"),
-        new ResourceLocation("minecraft", "mcpatcher/font/ascii.properties"),
-        new ResourceLocation("minecraft", "font/ascii.properties"),
-    };
-
     /** One of: "none", "ttf", "hd" — tracks which source populated the atlas. */
     private String activeSource = "none";
     private HDFontTexture hdFontTexture;
@@ -246,14 +240,36 @@ public final class SmoothFontHandler implements IResourceManagerReloadListener {
             return;
         }
 
-        if (!LDOGConfig.useFontPropertyWidths) return;
-        for (ResourceLocation candidate : WIDTH_PROPERTY_CANDIDATES) {
-            if (tryLoadProperties(resourceManager, candidate)) {
-                LDOGMod.LOGGER.info("LDOG: Loaded font width overrides from {}", candidate);
-                return;
+        if (!"hd".equals(activeSource) || hdFontTexture == null) return;
+
+        // A .properties file beside the sheet that was actually loaded wins, as in
+        // OptiFine. A file beside some other sheet (the pack's font/ascii.properties
+        // describes font/ascii.png, not optifine/font/ascii.png) must not be used:
+        // its widths belong to a different font.
+        if (LDOGConfig.useFontPropertyWidths) {
+            ResourceLocation sheet = hdFontTexture.getSourceLocation();
+            String path = sheet.getPath();
+            if (path.endsWith(".png")) {
+                ResourceLocation props = new ResourceLocation(sheet.getNamespace(),
+                    path.substring(0, path.length() - 4) + ".properties");
+                if (tryLoadProperties(resourceManager, props)) {
+                    LDOGMod.LOGGER.info("LDOG: Loaded font width overrides from {}", props);
+                    return;
+                }
             }
         }
-        LDOGMod.LOGGER.debug("LDOG: No font width properties in resource pack");
+
+        // Otherwise measure the glyphs in the HD sheet itself. Vanilla only measures
+        // its own ascii.png, which gave a narrower pack font vanilla's advances.
+        int[] measured = hdFontTexture.getMeasuredWidths();
+        if (measured == null) return;
+        int count = 0;
+        for (int i = 0; i < Math.min(measured.length, widthOverrides.length); i++) {
+            widthOverrides[i] = measured[i];
+            count++;
+        }
+        hasAnyWidthOverrides = count > 0;
+        LDOGMod.LOGGER.info("LDOG: Measured {} font widths from the HD font sheet", count);
     }
 
     /**
@@ -264,9 +280,6 @@ public final class SmoothFontHandler implements IResourceManagerReloadListener {
      */
     private void applyWidthOverridesToFontRenderer() {
         if (!hasAnyWidthOverrides || !isActive()) return;
-        // TTF widths are authoritative for their source; HD widths only apply when
-        // the user opted in via useFontPropertyWidths.
-        if ("hd".equals(activeSource) && !LDOGConfig.useFontPropertyWidths) return;
         Minecraft mc = Minecraft.getMinecraft();
         if (mc == null) return;
         FontRenderer fr = mc.fontRenderer;

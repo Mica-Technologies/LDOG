@@ -6,6 +6,8 @@ import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.util.ResourceLocation;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Constant;
+import org.spongepowered.asm.mixin.injection.ModifyConstant;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
@@ -59,6 +61,41 @@ public abstract class MixinFontRenderer {
             invoker.ldog$invokeBindTexture(vanillaFont);
         }
         handler.onFirstBindAfterReload();
+    }
+
+    /**
+     * Halves the offset of bold text's second pass while an HD or TTF font is
+     * active. Vanilla draws bold by rendering each glyph twice, one whole unit
+     * apart, which thickens an 8-pixel bitmap font by exactly one of its
+     * pixels. An HD glyph's strokes are much thinner than a unit, so the two
+     * copies separate and read as a ghost image. OptiFine does the same for
+     * its custom fonts.
+     *
+     * <p>The local is {@code f1} in {@code renderStringAtPos}, the first float
+     * stored there: 1 for the default font, already 0.5 for the Unicode font.
+     */
+    @ModifyVariable(
+        method = "renderStringAtPos",
+        at = @At(value = "STORE", ordinal = 0),
+        ordinal = 0)
+    private float ldog$hdBoldOffset(float offset) {
+        if (offset != 1.0F || ((Object) this).getClass() != FontRenderer.class) return offset;
+        return SmoothFontHandler.INSTANCE.hasCustomFont() ? 0.5F : offset;
+    }
+
+    /**
+     * The extra advance a bold glyph gets ({@code ++f} after the second pass)
+     * follows the same halving, so bold HD text is not spaced a whole unit
+     * wider per letter than the offset that now thickens it. It is the second
+     * {@code 1.0F} constant in {@code renderStringAtPos}; the first is the
+     * {@code f1} ternary handled above.
+     */
+    @ModifyConstant(
+        method = "renderStringAtPos",
+        constant = @Constant(floatValue = 1.0F, ordinal = 1))
+    private float ldog$hdBoldAdvance(float advance) {
+        if (((Object) this).getClass() != FontRenderer.class) return advance;
+        return SmoothFontHandler.INSTANCE.hasCustomFont() ? 0.5F : advance;
     }
 
     /**
