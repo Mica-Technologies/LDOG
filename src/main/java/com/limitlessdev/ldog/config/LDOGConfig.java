@@ -521,11 +521,17 @@ public class LDOGConfig {
         "can light block faces (dot(normal, sun)). Vanilla chunk geometry has",
         "no normals, which leaves every pack's direct-light term at zero.",
         "Applied at startup (restart to change); needs Forge's light pipeline",
-        "(forgeLightPipelineEnabled in forge.cfg, the default). Turn OFF only",
-        "if a mod that hand-writes terrain vertices renders garbage."
+        "(forgeLightPipelineEnabled in forge.cfg, the default).",
+        "",
+        "Off by default, like the rest of the shader-pack path: it changes a",
+        "format every mod shares, and Forge refuses to bake a vanilla JSON",
+        "model to a BLOCK format that carries a normal, so a mod that bakes",
+        "models that way (Railcraft does) crashes the game at startup. Turn it",
+        "ON together with enableShaderGbuffers when you use LDOG shader packs",
+        "and no such mod is installed."
     })
     @Config.RequiresMcRestart
-    public static boolean extendTerrainVertexFormat = true;
+    public static boolean extendTerrainVertexFormat = false;
 
     @Config.Comment({
         "Shadow map resolution (square). Higher = crisper shadows, more VRAM",
