@@ -62,6 +62,11 @@ public abstract class MixinTextureAtlasSprite {
         // Runs once per sprite at stitch time — the cached OptiFine interop
         // lookup rides along with the config toggle at no meaningful cost.
         if (!LDOGConfig.enableHDTextures || !OptiFineCompat.shouldHandleHDTextures()) return;
+        // VintageFix's parallel texture preload calls loadSprite with no size
+        // info. Without the PNG size there is nothing to square up, and
+        // dereferencing it here threw on every sprite, which left the whole
+        // atlas as missing textures.
+        if (sizeInfo == null) return;
 
         int w = sizeInfo.pngWidth;
         int h = sizeInfo.pngHeight;
